@@ -229,6 +229,65 @@ REALTIME_NODE_TYPES: frozenset = frozenset({
 })
 
 
+# 노드 타입 → 선언된 출력 포트((이름, 타입) 튜플). 노드를 **실행하지 않고** 출력만
+# 심어야 할 때(상류 조건 통과 0건 스킵), 그 노드가 평소 내보내던 포트 집합을 그대로
+# 빈 값으로 채우기 위한 조회다.
+#
+# 🔴 왜 필요한가 — 스킵 출력을 `{result, reason, ...}` 한 봉투로 **교체**하면 하류가
+#    조용히 오작동한다: ConditionNode 의 `result` 가 bool 이 아니라 [] 가 되어
+#    `{{ nodes.cond.result }} == true` 비교가 깨지고, `passed_symbols` 포트가 아예
+#    사라져 LogicNode 가 그 조건을 'symbol-bearing' 이 아니라 'boolean-gate' 로
+#    재분류한다(None 과 [] 를 구분하는 설계 — `LogicNodeExecutor` 참조).
+#    그래서 스킵은 "출력 교체" 가 아니라 "선언된 포트를 빈 값으로" 여야 한다.
+_DECLARED_OUTPUT_PORTS_CACHE: Dict[str, Tuple[Tuple[str, str], ...]] = {}
+
+
+def _declared_output_ports(node_type: str) -> Tuple[Tuple[str, str], ...]:
+    """``node_type`` 이 선언한 출력 포트 ``((name, type), ...)``. 못 찾으면 빈 튜플."""
+    cached = _DECLARED_OUTPUT_PORTS_CACHE.get(node_type)
+    if cached is not None:
+        return cached
+    ports: Tuple[Tuple[str, str], ...] = ()
+    try:
+        from programgarden_core.registry.node_registry import NodeTypeRegistry
+
+        node_class = NodeTypeRegistry().get(node_type)
+        raw = getattr(node_class, "_outputs", None) if node_class is not None else None
+        # pydantic v2 는 `_outputs` 를 ModelPrivateAttr 로 감싼다 — .default 에 원본이 있다.
+        declared = getattr(raw, "default", raw)
+        if isinstance(declared, list):
+            ports = tuple(
+                (getattr(port, "name"), str(getattr(port, "type", "") or ""))
+                for port in declared
+                if getattr(port, "name", None)
+            )
+    except Exception as exc:  # pragma: no cover - 레지스트리 없는 환경/커뮤니티 노드
+        logger.debug("_declared_output_ports(%s) failed: %s", node_type, exc)
+        ports = ()
+    _DECLARED_OUTPUT_PORTS_CACHE[node_type] = ports
+    return ports
+
+
+# 포트 타입별 "값 없음" 표현. 배열 계열이 기본값이다 — 선언에 없는 타입이 와도
+# 하류 `{{ ... }}` 가 None 이 아니라 빈 배열로 풀리는 쪽이 안전하다.
+_EMPTY_PORT_SCALARS: Dict[str, Any] = {
+    "boolean": False,
+    "number": 0,
+    "integer": 0,
+    "float": 0,
+    "string": "",
+}
+
+
+def _empty_port_value(port_type: str) -> Any:
+    """선언된 포트 타입에 맞는 빈 값."""
+    if port_type in _EMPTY_PORT_SCALARS:
+        return _EMPTY_PORT_SCALARS[port_type]
+    if port_type in ("object", "order", "connection", "account"):
+        return {}
+    return []
+
+
 def _order_failure_from_outputs(outputs: Any) -> Optional[str]:
     """Return a human-readable reason if an order node *failed without raising*.
 
@@ -248,6 +307,19 @@ def _order_failure_from_outputs(outputs: Any) -> Optional[str]:
     """
     if not isinstance(outputs, dict):
         return None
+
+    # 🔴 auto-iterate 병합 생존선(2026-09-14 사고 후속). `order_result` 는 배열 병합
+    #    대상이 아니라 **마지막 항목의 값만** 남는다 — 3종목 중 2건이 입력 미해결로
+    #    차단되고 마지막 1건이 성공하면 병합 결과가 성공으로 보여 노드가 COMPLETED 가
+    #    되고 차단 사실이 노드 출력·통계·알림 어디에도 안 남았다. 그래서 차단 항목은
+    #    배열 포트(`blocked_orders`)에 모으고(=병합에서 살아남는다) 여기서 **먼저** 본다.
+    blocked = outputs.get("blocked_orders")
+    if isinstance(blocked, list) and blocked:
+        first = blocked[0] if isinstance(blocked[0], dict) else {}
+        ko = str(first.get("message_ko") or first.get("detail") or "")
+        head = f"unresolved_order_input: {len(blocked)}건의 주문이 입력 미해결로 차단되었습니다"
+        return f"{head} — {ko}" if ko else head
+
     result = outputs.get("order_result")
     if not isinstance(result, dict) or result.get("success") is not False:
         return None
@@ -256,8 +328,15 @@ def _order_failure_from_outputs(outputs: Any) -> Optional[str]:
     if reason == EmptyOrderReason.NO_SIGNAL.value:
         return None
 
+    # `message_ko` 를 앞에 둔다 — 이 문자열이 node_state 의 `error` 로 그대로 실려
+    # 대시보드·파드 SSE 에 나가는데, 종전에는 영어 detail 만 사용자에게 갔다.
     parts = [
-        str(p) for p in (result.get("message"), result.get("detail"), result.get("error"))
+        str(p) for p in (
+            result.get("message_ko"),
+            result.get("message"),
+            result.get("detail"),
+            result.get("error"),
+        )
         if p
     ]
     label = reason or "order_failed"
@@ -950,7 +1029,8 @@ def _referenced_node_failure(expr: Optional[str], context: "ExecutionContext") -
 
 # 심볼을 나르는 포트 — `{{ item }}` 이 반복 밖에서 리터럴로 남았을 때 "상류 배열이 비어
 # 반복이 안 일어났다" 를 판정할 축. 메인 루프의 auto-iterate 소스 우선순위(명시 from_port
-# > symbols > 첫 출력)와 맞춘다: ConditionNode 는 0건 통과일 때도 ``symbols``(평가 대상 전체)·
+# > symbols[+passed_symbols 승격] > 첫 출력 — `WorkflowJob._select_auto_iterate_source`)와
+# 맞춘다: ConditionNode 는 0건 통과일 때도 ``symbols``(평가 대상 전체)·
 # ``failed_symbols``·``symbol_results`` 가 **비어 있지 않으므로**, 모든 리스트 포트가 비어야
 # 한다는 규칙은 D2 가 없애려던 바로 그 케이스(조건 미통과 → `symbol: {{ item }}` 경고)를
 # 남긴다. passed_symbols 가 있으면 그것만, 없으면 symbols, 둘 다 없으면 전체 리스트 포트.
@@ -10782,6 +10862,17 @@ class ConditionNodeExecutor(NodeExecutorBase):
                                 "positions (signal-independent flow exercise)",
                                 node_id,
                             )
+                        # 🔴 `symbols` 는 **평가 대상 전체**의 종목코드 문자열 배열이다 —
+                        # 통과 목록이 아니다. 하류가 반복할 정본은 `passed_symbols`
+                        # (symbol/exchange/quantity/close_side dict) 하나뿐이다.
+                        #
+                        # 2026-09-14 prod 실관측: 손절(StopLoss) 하류 매도 노드가 이
+                        # `symbols` 문자열 3개를 순회해 `{{ item.symbol }}` 이 전부 None 으로
+                        # 풀렸고 **증권사 주문내역 0건** — NIO -10.5% 에서도 손절이 안 나갔다.
+                        # 항목이 dict 였다면 반대로 **미통과 MARA 까지 전량 매도**됐을 것이다.
+                        # 이 키를 지우지는 않는다(기존 워크플로우가 표시·집계에 쓴다).
+                        # 대신 auto-iterate 우선순위에서 passed_symbols 가 앞선다 —
+                        # `WorkflowJob._select_auto_iterate_source` 참조.
                         return {
                             "symbols": [p.get("symbol") for p in positions if isinstance(p, dict)],
                             "result": True if (getattr(context, "is_deep_validate", False) and _passed) else result.get("result", False),
@@ -10803,6 +10894,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 else:
                     # 플러그인 없으면 모두 통과
                     passed_symbols = [{"symbol": s, "exchange": "UNKNOWN"} for s in positions.keys()]
+                    # `symbols` = 평가 대상 전체(문자열). 하류 반복의 정본은 passed_symbols.
+                    # (2026-09-14 사고 — 위 positions 분기 주석 참조.)
                     return {
                         "symbols": list(positions.keys()),
                         "result": True,
@@ -11100,6 +11193,10 @@ class ConditionNodeExecutor(NodeExecutorBase):
             )
 
         return {
+            # 🔴 `symbols` 는 **입력(평가 대상) 전체**다 — 통과 목록이 아니다. 0건 통과일
+            # 때도 비어 있지 않으므로, 하류가 이걸 반복하면 조건을 통과하지 못한 종목까지
+            # 주문 대상이 된다(2026-09-14 prod 손절 사고). **조건 노드 하류의 반복 정본은
+            # `passed_symbols`** — `WorkflowJob._select_auto_iterate_source` 참조.
             "symbols": normalized_symbols,  # 입력 symbols (거래소 포함)
             "result": len(passed_symbols) > 0,
             "is_condition_met": len(passed_symbols) > 0,  # alias of result, documented in node examples
@@ -15413,11 +15510,72 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         normalized_order = self._normalize_order(order, config, context, node_id)
 
         if not normalized_order:
-            context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
+            # 🔴 조용히 끝내지 않는다(2026-09-14 prod 손절 사고). 종전에는 어느 필드가
+            #    왜 비었는지 없이 "주문할 종목이 없습니다" 한 줄만 남겨, 상류가 문자열을
+            #    반복시켜 symbol/exchange/quantity 가 전부 None 이 된 것과 "오늘 신호 없음"
+            #    이 사람 눈에 똑같이 보였다. 어느 필드가 비었는지 + 반복 항목의 모양을
+            #    구체적으로 적는다.
+            #
+            # ⚠️ **순서가 중요하다.** 진단(`_describe_unfilled_order_fields`)이
+            #    분류(`_diagnose_empty_reason`)를 **선점하면 안 된다** — 선점하면
+            #    ① 계좌 조회 부분 실패(`balance._partial_failure`)한 날의 브로커 장애
+            #    원문이 "설정 누락" 으로 덮이고, ② 상류가 정직하게 `reason=no_signal`
+            #    을 낸 정상 무신호 날이 매 실행 노드 FAILED + 사용자 알림으로 승격된다
+            #    (D2, 벤치 2026-09-06 이 없애려던 바로 그 증상). 그래서 분류를 먼저
+            #    돌리고, **확실한 배선 고장**(`hard`)일 때만 NO_SYMBOL 로 승격한다.
+            unfilled = self._describe_unfilled_order_fields(order, context, node_type)
             reason, detail = self._diagnose_empty_reason(
                 order, config, raw_order_expr, context, node_id=node_id
             )
-            return self._empty_result(reason, detail)
+            hard = bool(unfilled and unfilled["hard"])
+            if hard:
+                reason, detail = EmptyOrderReason.NO_SYMBOL, unfilled["detail"]
+                context.log("warning", f"{node_type}: {unfilled['message_ko']}", node_id)
+                # 🔴 `context.log` 는 리스너(대시보드 SSE)로만 나가고 파이썬 logging 을
+                #    거치지 않는다 — 즉 **`kubectl logs pg-worker` 에 안 보인다.** 이번
+                #    사고를 진단한 표면이 바로 그 파드 stdout 이었으므로, 이 사건만은
+                #    stdout 에도 남긴다. `unresolved_order_input` 는 grep 용 고정 토큰이다.
+                logger.warning(
+                    "unresolved_order_input | node=%s type=%s unfilled=%s item=%s | %s",
+                    node_id, node_type, unfilled["fields"], unfilled["item_shape"],
+                    unfilled["detail"],
+                )
+                _safe_print(
+                    f"  ⛔ unresolved_order_input: {node_id} ({node_type}) — "
+                    f"{unfilled['detail']}"
+                )
+                await self._notify_unresolved_order_input(
+                    context, node_id, node_type, unfilled,
+                )
+            else:
+                context.log("warning", f"{node_type}: 주문할 종목이 없습니다", node_id)
+            result = self._empty_result(reason, detail)
+            if unfilled is not None:
+                # 진단은 hard/soft 무관하게 붙인다(어느 필드가 비었는지는 늘 유용하다).
+                # 다만 **사유(reason)를 바꾸는 것은 hard 일 때뿐**이다.
+                result["order_result"].update({
+                    "unfilled_fields": unfilled["fields"],
+                    "item_shape": unfilled["item_shape"],
+                    "message_ko": unfilled["message_ko"],
+                })
+            if hard:
+                # ⚠️ resilience.fallback.mode=skip 의 `_skipped` 와 **다른 사건**이다 —
+                #    저건 실행 중 예외를 재시도까지 소진하고 삼킨 것이고, 이건 애초에
+                #    입력이 안 채워져 브로커에 아무것도 보내지 않은 것이다. 키를 나눈다.
+                result["order_result"]["skipped_by"] = "unresolved_order_input"
+                # auto-iterate 병합에서 살아남는 **배열** 포트. `order_result` 는 단일
+                # 필드라 마지막 항목 값만 남아 "3건 중 2건 차단" 이 소실된다
+                # (`_order_failure_from_outputs` / `_merge_iterate_results` 참조).
+                result["blocked_orders"] = [{
+                    "node_id": node_id,
+                    "node_type": node_type,
+                    "reason": "unresolved_order_input",
+                    "unfilled_fields": unfilled["fields"],
+                    "item_shape": unfilled["item_shape"],
+                    "detail": unfilled["detail"],
+                    "message_ko": unfilled["message_ko"],
+                }]
+            return result
 
         context.log(
             "info",
@@ -15698,6 +15856,226 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 f"{quantity} for {symbol} (remainder {fractional_remainder})"
             )
         return normalized
+
+    # 주문을 만들려면 반드시 채워져야 하는 필드 — 사람이 읽는 이름과 함께.
+    _ORDER_FIELD_LABELS = {
+        "symbol": "종목코드",
+        "exchange": "거래소",
+        "quantity": "수량",
+    }
+
+    @staticmethod
+    def _required_order_fields(node_type: str) -> Tuple[str, ...]:
+        """이 주문 노드가 채워져 있어야 하는 필드.
+
+        ⚠️ ``exchange`` 는 **국내주식에서 빼야 한다** — `_execute_korea_stock` 은
+        exchange 를 한 번도 읽지 않고, `_normalize_order` 는 없으면 "NASDAQ" 으로
+        채운다. 그런데도 필수로 세면 거래소를 안 쓴 정상 국내주식 주문
+        (자금 부족으로 수량 0 인 날)이 "거래소(exchange)가 비었습니다" 라는 **틀린
+        안내**와 함께 매 실행 보고된다.
+        """
+        if "KoreaStock" in node_type:
+            return ("symbol", "quantity")
+        return ("symbol", "exchange", "quantity")
+
+    @staticmethod
+    def _unfilled_kind(key: str, value: Any) -> Optional[str]:
+        """필드가 안 채워졌으면 그 종류를, 채워졌으면 None.
+
+        - ``missing``            : None / 빈 문자열
+        - ``unresolved_template``: '{{ ... }}' 리터럴이 그대로 남음 (= **배선 고장**)
+        - ``invalid``            : 숫자여야 하는데 숫자가 아님 (= **배선 고장**)
+        - ``zero``               : 수량이 0 이하 (자금 부족·소수점 잔량 등 **정상일 수 있음**)
+        """
+        if value is None:
+            return "missing"
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return "missing"
+            # 🔴 미해석 템플릿은 "채워진 값" 이 아니다. 종전 판정(None/공백만 빈 값)은
+            #    `{{ item.symbol }}` 리터럴을 **채워진 것**으로 봐서, `_normalize_order` 의
+            #    C23 가드가 주문을 거부한 뒤에도 사유가 `no_signal`("오늘 신호 없음")로
+            #    라벨됐다 — 바인딩이 깨져 주문이 못 나간 것을 화면이 정상이라 설명했다.
+            if "{{" in stripped and "}}" in stripped:
+                return "unresolved_template"
+        if key == "quantity":
+            try:
+                if float(value) <= 0:
+                    return "zero"
+            except (TypeError, ValueError):
+                return "invalid"
+        return None
+
+    @staticmethod
+    def _describe_unfilled_order_fields(
+        order: Any,
+        context: Optional["ExecutionContext"] = None,
+        node_type: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """주문 입력이 **채워지지 않아서** 주문을 못 만든 경우의 구체 사유.
+
+        🔴 2026-09-14 prod 실관측:
+           손절 조건 하류의 매도 노드가 통과 종목 dict(`passed_symbols`) 대신 조건 노드의
+           `symbols`(**문자열** 배열)를 순회했다. `{{ item.symbol }}` 은 문자열에 속성이
+           없어 None 으로 풀렸고, 세 종목 모두 symbol/exchange/quantity 가 비어 주문이
+           만들어지지 않았다 — 증권사 주문내역 0건. 그런데 로그에는 "주문할 종목이
+           없습니다" 한 줄뿐이라 사람이 원인을 짚을 수 없었다. 그래서 여기서 **반복 항목의
+           모양까지** 사유에 적는다.
+
+        ⚠️ 이 함수는 **사유를 기술할 뿐 분류를 대신하지 않는다.** 반환 dict 의 ``hard``
+           가 True 일 때만 호출부가 NO_SYMBOL 로 승격한다. "오늘 신호 없음"(상류가 정상
+           적으로 빈 결과) 과 "계좌 조회 실패" 판정은 `_diagnose_empty_reason` 의 몫이다 —
+           여기서 가로채면 정상 무신호 날이 매일 "주문 생성 실패" 로 울린다(D2 회귀).
+
+        Returns:
+            {"fields", "kinds", "item_shape", "detail", "message_ko", "hard"} 또는 None.
+        """
+        # 반복 중인지 먼저 본다. `_iteration_item` 만 보면 ① "반복 안 함" 과 ② "반복 항목이
+        # None" 이 구분되지 않고, ③ 앞 노드의 반복 항목이 정리되지 않고 남아 있으면 무관한
+        # 노드가 남의 항목 모양을 자기 사유로 보고한다. `_iteration_total` 은 반복 중에만
+        # 1 이상이다(`clear_iteration_context` 가 0 으로 되돌린다 — finally 보장).
+        iterating = int(getattr(context, "_iteration_total", 0) or 0) > 0 if context is not None else False
+        item = getattr(context, "_iteration_item", None) if context is not None else None
+
+        # C) 반복 항목 모양 방어 — 항목이 dict 가 아니면 수량·거래소를 담을 자리가 없다.
+        #    문자열 항목을 "종목코드" 로 오해해 그 값으로 주문을 만들면 수량이 없는
+        #    주문이 되거나(거부) 엉뚱한 수량이 실린다. 만들지 않고 사유를 남긴다.
+        item_shape = None
+        if iterating and not isinstance(item, dict):
+            if item is None:
+                item_shape = (
+                    "iteration item is None — the upstream array contained an empty entry"
+                )
+            else:
+                item_shape = (
+                    f"iteration item is a {type(item).__name__} ({item!r}), not an object with "
+                    "symbol/exchange/quantity"
+                )
+
+        if isinstance(order, dict):
+            fields: List[str] = []
+            kinds: Dict[str, str] = {}
+            for key in NewOrderNodeExecutor._required_order_fields(node_type):
+                kind = NewOrderNodeExecutor._unfilled_kind(key, order.get(key))
+                if kind is not None:
+                    fields.append(key)
+                    kinds[key] = kind
+            if not fields:
+                return None
+            detail = (
+                "Order input was not filled in: "
+                + ", ".join(f"{f}={order.get(f)!r} ({kinds[f]})" for f in fields)
+            )
+            if item_shape:
+                detail += "; " + item_shape
+        else:
+            # dict 가 아닌 주문 입력. 상류가 **정상적으로** 빈 결과를 낸 경우(예: 사이징이
+            # orders=[] + reason=no_signal)까지 여기서 "입력 미해결" 로 가로채면 "오늘 신호
+            # 없음" 이 "설정 누락" 으로 뒤바뀐다(D2 회귀) — 그래서 **반복 항목의 모양이
+            # 실제로 틀렸을 때만** 진단한다. 그 외는 None 을 돌려 기존 분류로 넘긴다.
+            if item_shape is None:
+                return None
+            fields = list(NewOrderNodeExecutor._required_order_fields(node_type))
+            kinds = {f: "missing" for f in fields}
+            detail = (
+                f"Order input is a {type(order).__name__} ({order!r}), not an order object "
+                "with symbol/exchange/quantity; " + item_shape
+            )
+
+        # 🔴 "확실한 배선 고장" 인가. 이것만 NO_SYMBOL 승격 + 사용자 알림 대상이다.
+        #    - 반복 항목 모양이 틀림(이번 사고)
+        #    - 미해석 템플릿 리터럴이 남음(C23 가 거부한 그 값)
+        #    - 수량이 숫자가 아님
+        #    수량이 0/음수인 것만으로는 승격하지 않는다 — 자금 부족·소수점 잔량 등
+        #    **정상적으로 오늘 못 사는 날**이 있고, 그건 `_diagnose_empty_reason` 이
+        #    no_signal / fractional_only 로 더 정확히 분류한다.
+        hard = item_shape is not None or any(
+            kind in ("unresolved_template", "invalid") for kind in kinds.values()
+        )
+
+        labels = NewOrderNodeExecutor._ORDER_FIELD_LABELS
+        kind_ko = {
+            "missing": "비어 있음",
+            "unresolved_template": "바인딩이 풀리지 않은 템플릿 그대로",
+            "invalid": "숫자가 아님",
+            "zero": "0 이하",
+        }
+        ko_fields = ", ".join(
+            f"{labels.get(f, f)}({f})={kind_ko.get(kinds[f], kinds[f])}" for f in fields
+        )
+        message_ko = (
+            f"주문 입력이 채워지지 않아 주문을 만들지 않았습니다 — 문제 항목: {ko_fields}."
+        )
+        if item_shape is not None:
+            shape_ko = (
+                "반복 항목이 비어 있습니다(None)."
+                if item is None
+                else f"반복 항목이 {type(item).__name__} 값({item!r})이라 수량·거래소를 담고 있지 않습니다."
+            )
+            message_ko += (
+                f" {shape_ko} 상류 조건 노드의 `symbols`(평가 대상 전체 문자열)가 아니라 "
+                "`passed_symbols`(통과 종목 객체)를 반복하도록 연결하세요."
+            )
+        else:
+            message_ko += (
+                " 상류 바인딩(`{{ item.* }}` / `{{ nodes.<id>.<port> }}`)이 값을 내지 못했습니다."
+            )
+
+        return {
+            "fields": fields,
+            "kinds": kinds,
+            "item_shape": item_shape,
+            "detail": detail,
+            "message_ko": message_ko,
+            "hard": hard,
+        }
+
+    @staticmethod
+    async def _notify_unresolved_order_input(
+        context: "ExecutionContext",
+        node_id: str,
+        node_type: str,
+        unfilled: Dict[str, Any],
+    ) -> None:
+        """입력 미해결로 주문을 못 만든 사실을 사용자 알림 경로에도 올린다.
+
+        ORDER_REJECTED 를 쓰되 `blocked_before_broker=True` / `reason` 으로 브로커 거부와
+        구분한다(브로커 거부는 `rsp_cd` 를 들고 온다). 알림 실패가 주문 경로를 죽이면
+        안 되므로 예외는 삼킨다.
+
+        🔴 **이 알림은 2026-09-14 현재 실배포에서 소비자가 없다 — 이것만 믿지 말 것.**
+           `ExecutionContext.notify_notification` 은 `on_notification` 을 구현한 리스너
+           에게만 전달하는데, pg-worker `SSEListener` 도 트레이앱 `EventForwarder` 도
+           구현하지 않아 `BaseExecutionListener.on_notification`(pass)에서 끝난다.
+           그래서 이 사건이 **실제로 사람에게 도달하는 경로는 아래 셋**이다:
+             1. `logger.warning` + `_safe_print` → 파드 stdout(`kubectl logs | grep
+                unresolved_order_input`)
+             2. 노드 출력 `order_result.skipped_by/unfilled_fields/message_ko`
+                + 병합에서 살아남는 `blocked_orders` 배열
+             3. `_order_failure_from_outputs` → node_state FAILED 의 `error` 문자열
+                (message_ko 를 앞에 싣는다) → 대시보드
+           pg-worker/트레이앱에 `on_notification` 이 배선되면 이 주석을 지운다.
+        """
+        try:
+            await context.send_notification(
+                category=NotificationCategory.ORDER_REJECTED,
+                severity=NotificationSeverity.WARNING,
+                title="주문 생성 실패 — 입력이 비어 있습니다",
+                message=unfilled["message_ko"],
+                node_id=node_id,
+                node_type=node_type,
+                data={
+                    "blocked_before_broker": True,
+                    "reason": "unresolved_order_input",
+                    "unfilled_fields": unfilled["fields"],
+                    "unfilled_kinds": unfilled.get("kinds"),
+                    "item_shape": unfilled["item_shape"],
+                    "detail": unfilled["detail"],
+                },
+            )
+        except Exception as exc:  # pragma: no cover - 알림 실패는 주문 경로를 죽이지 않는다
+            logger.warning("unresolved order input notification failed: %s", exc)
 
     def _diagnose_empty_reason(
         self,
@@ -21256,74 +21634,66 @@ class WorkflowJob:
             try:
                 # === 자동 iterate 체크 ===
                 # 입력 데이터가 배열이고, 노드가 단일 아이템을 기대하면 자동으로 각 아이템마다 실행
-                input_data = None
-                # auto-iterate 소스 선택 — incoming 엣지를 **전부** 훑어 우선순위로 고른다.
-                # 예전엔 첫 매칭 엣지에서 무조건 break 해서 **엣지 선언 순서가 소스를 결정**했다:
-                #  - 예제 16/28 은 account 엣지가 먼저라 sizing 이 **계좌 보유종목**을 순회했다
-                #    (실측: 워크플로우 어디에도 없는 AUID 를 매수 후보로 처리 — 잔고가 충분했다면
-                #     보유종목에 실제 주문이 나갔다).
-                #  - 예제 28 은 `logic.passed_symbols` 를 올바로 명시했는데도 앞선 account 엣지의
-                #    break 에 가려 아래 explicit 분기까지 도달조차 못 했다.
-                # 우선순위: 명시 from_port > symbols 포트 > 소스 노드 첫 출력.
-                explicit_data = None
-                symbols_data = None
-                fallback_data = None
-
-                for edge in self.workflow.edges:
-                    if edge.to_node_id != node_id:
-                        continue
-
-                    # 1순위: 명시적 from_port (예: ExclusionListNode.filtered,
-                    # LogicNode.passed_symbols). IfNode 분기 포트(true/false/result)는
-                    # 라우팅 의미라 소스에서 제외.
-                    explicit_port = getattr(edge, "from_port", None)
-                    if explicit_port and explicit_port not in (
-                        "output", "true", "false", "result",
-                    ):
-                        port_data = self.context.get_output(
-                            edge.from_node_id, explicit_port
-                        )
-                        if port_data is not None and explicit_data is None:
-                            explicit_data = port_data
-
-                    # 2순위: symbols 포트 (Watchlist/MarketUniverse/SymbolFilter 등 배열 생성 노드)
-                    if symbols_data is None:
-                        port_symbols = self.context.get_output(edge.from_node_id, "symbols")
-                        # symbols가 문자열 배열이면 (merge 후) value 포트로 폴백
-                        # - WatchlistNode symbols: [{exchange, symbol}, ...] → dict 배열 → 그대로 사용
-                        # - HistoricalDataNode merged symbols: ["TSLA"] → string 배열 → value 포트로 전환
-                        if (isinstance(port_symbols, list) and port_symbols
-                                and not isinstance(port_symbols[0], dict)):
-                            value_data = self.context.get_output(edge.from_node_id, "value")
-                            if value_data is not None:
-                                if isinstance(value_data, list):
-                                    port_symbols = value_data
-                                elif isinstance(value_data, dict):
-                                    port_symbols = [value_data]
-                        if port_symbols is not None:
-                            symbols_data = port_symbols
-
-                    # 3순위: 소스 노드의 첫 출력. 단 계좌 노드는 제외한다 —
-                    # 첫 포트가 `positions`(보유잔고)라 매수 후보로 오인된다.
-                    if fallback_data is None:
-                        from_node = self.workflow.nodes.get(edge.from_node_id)
-                        from_type = getattr(from_node, "node_type", None) if from_node else None
-                        if from_type not in self.NO_ITERATE_SOURCE_NODE_TYPES:
-                            fallback_data = self.context.get_output(edge.from_node_id, None)
-
-                if explicit_data is not None:
-                    input_data = explicit_data
-                elif symbols_data is not None:
-                    input_data = symbols_data
-                else:
-                    input_data = fallback_data
+                input_data, iterate_source, iterate_source_node_id = (
+                    self._select_auto_iterate_source(node_id)
+                )
 
                 should_iterate, port_name, items = self._should_auto_iterate(
                     node.node_type, input_data, config,
                 )
 
-                auto_iterated = should_iterate and node_id not in branch_nodes
-                if auto_iterated:
+                # 🔴 조건 게이트가 0건 통과시켰는데(= passed_symbols 가 **정본이고
+                #    비었다**) 이 노드가 아이템 바인딩(`{{ item.* }}`)을 쓰거나 주문 노드면,
+                #    한 번 돌려 봐야 아이템 바인딩이 전부 None 으로 풀려 "종목 없는 주문"
+                #    한 건을 만들 뿐이고, 리터럴 주문이면 **조건을 통과하지 못한 종목에
+                #    실주문**이 나간다. 실행 자체를 건너뛰고 사유를 남긴다 — 브로커 TR 0.
+                #    (2026-09-14 prod 사고의 안전한 쌍둥이: 여기서 `symbols`(평가 대상 전체)
+                #     로 흘러내리면 **손절에 걸리지도 않은 종목까지 전량 매도**된다.)
+                #
+                # ⚠️ 아이템 바인딩 조건을 **떼면 안 된다** — 조건 노드를 게이트로만 물고
+                #    `{{ nodes.cond.symbols }}` 로 전체를 소비하는 알림/집계/표시 노드까지
+                #    침묵한다. "통과 0건이면 아무것도 안 하는 게 정답" 은 **주문 노드**
+                #    이야기이고, 상태 보고 노드는 그날도 말을 해야 한다(요구사항 4).
+                skip_reason = None
+                if (
+                    not should_iterate
+                    and iterate_source == self.ITERATE_SOURCE_PASSED_SYMBOLS
+                    and isinstance(input_data, list)
+                    and not input_data
+                    and (
+                        self._references_iteration_item(config)
+                        or node.node_type.endswith("OrderNode")
+                    )
+                ):
+                    skip_reason = (
+                        f"upstream condition gate '{iterate_source_node_id}' passed 0 symbols "
+                        "(passed_symbols=[]) — skipped without executing, so no broker "
+                        "request was made"
+                    )
+
+                auto_iterated = (
+                    should_iterate and node_id not in branch_nodes and skip_reason is None
+                )
+                if skip_reason is not None:
+                    # 상류 노드 id 를 반드시 적는다 — 이게 없으면 "왜 몇 주째 주문이
+                    # 없는가" 를 로그만 보고 되짚을 수 없다. `no_upstream_signal` 은
+                    # grep 용 고정 토큰(`kubectl logs | grep no_upstream_signal`);
+                    # `context.log` 는 파드 stdout 에 안 찍히므로 _safe_print 를 병기한다.
+                    self.context.log(
+                        "info",
+                        f"{node.node_type}: 상류 조건 노드 '{iterate_source_node_id}' 의 통과 "
+                        f"종목이 0건이라 실행을 건너뜁니다 (no_upstream_signal — 주문/조회 "
+                        f"요청 없음).",
+                        node_id,
+                    )
+                    _safe_print(
+                        f"  ⏭️  no_upstream_signal: {node_id} ({node.node_type}) "
+                        f"← {iterate_source_node_id}.passed_symbols=0 — not executed"
+                    )
+                    outputs = self._no_signal_skip_outputs(
+                        node.node_type, skip_reason, iterate_source_node_id,
+                    )
+                elif auto_iterated:
                     # 자동 iterate 실행 (SplitNode 브랜치가 아닌 경우에만)
                     outputs = await self._execute_with_auto_iterate(
                         node_id=node_id,
@@ -21691,6 +22061,193 @@ class WorkflowJob:
         # 리터럴 목록이거나(이미 평가된 배열 포함) 전체 바인딩 문자열
         return isinstance(value, (list, str, dict))
 
+    # auto-iterate 소스 라벨 — 어느 우선순위 단계가 반복 대상을 골랐는지.
+    # `_select_auto_iterate_source` 의 두 번째 반환값이며, 호출부가 "조건 게이트의 통과
+    # 목록인가" 를 되물을 수 있게 한다(0건 통과 시 실행 자체를 건너뛰는 판정에 쓰인다).
+    ITERATE_SOURCE_NONE = ""
+    ITERATE_SOURCE_EXPLICIT = "explicit"
+    ITERATE_SOURCE_PASSED_SYMBOLS = "passed_symbols"
+    ITERATE_SOURCE_SYMBOLS = "symbols"
+    ITERATE_SOURCE_FALLBACK = "fallback"
+
+    # IfNode 분기 포트 — 데이터가 아니라 라우팅 의미라 명시 from_port 로 쳐 주지 않는다.
+    _NON_DATA_FROM_PORTS = ("output", "true", "false", "result")
+
+    def _select_auto_iterate_source(self, node_id: str) -> Tuple[Any, str, str]:
+        """이 노드의 auto-iterate 반복 대상 / 출처 라벨 / 출처 노드 id 를 고른다.
+
+        incoming 엣지를 **전부** 훑어 우선순위로 고른다. 예전엔 첫 매칭 엣지에서 무조건
+        break 해서 **엣지 선언 순서가 소스를 결정**했다:
+         - 예제 16/28 은 account 엣지가 먼저라 sizing 이 **계좌 보유종목**을 순회했다
+           (실측: 워크플로우 어디에도 없는 AUID 를 매수 후보로 처리 — 잔고가 충분했다면
+            보유종목에 실제 주문이 나갔다).
+         - 예제 28 은 `logic.passed_symbols` 를 올바로 명시했는데도 앞선 account 엣지의
+           break 에 가려 explicit 분기까지 도달조차 못 했다.
+
+        🔴 우선순위: **명시 from_port > symbols(+passed_symbols 승격) > 소스 노드 첫 출력.**
+
+        2026-09-14 prod 실관측 사고로 가운데 단계에 "승격" 이 붙었다. ConditionNode 는
+        통과 여부와 무관하게 ``symbols``(**평가 대상 전체**의 종목코드 **문자열** 배열)를
+        함께 내보낸다. 그래서 손절 조건(StopLoss) 하류의 매도 주문 노드가
+
+          - 통과 종목 dict(`passed_symbols`: symbol/exchange/quantity/close_side) 가 아니라
+          - 문자열 3개(`symbols`: ["NIO", "MARA", "ZOMDF"]) 를 순회했고,
+
+        `{{ item.symbol }}` / `{{ item.exchange }}` / `{{ item.quantity }}` 가 전부 None 으로
+        풀려 **증권사 주문내역 0건** — 손절 -8% 를 10.5% 하락에서도 못 냈다(9/11~9/14).
+        그리고 이 항목이 dict 였다면 반대로 **손절에 걸리지 않은 MARA 까지 전량 매도**된다.
+
+        ⚠️ **승격은 "선택된 소스 노드 안에서" 만 한다 — 엣지를 가로지르지 않는다.**
+           passed_symbols 를 독립 단계로 올려 symbols 단계보다 **먼저** 반환했더니 두 가지가
+           깨졌다:
+           1) 출하 예제 47/48 처럼 `hist -> touch_check` 와 `sr_detect(ConditionNode) ->
+              touch_check` 가 함께 물린 배선에서, 진짜 반복 소스인 hist 의 시계열 대신
+              조건 노드의 통과 목록을 순회해 `items.from` 이 0행이 되고 전략이 통째로
+              신호 0 이 됐다(조용한 거래 중단).
+           2) LogicNode 는 `symbols` 포트가 없어 종전엔 첫 출력 `result`(bool)라 **반복이
+              아예 안 걸렸다**. passed_symbols 를 무조건 먼저 집으면 `logic -> order`
+              (from_port 없음, 리터럴 주문) 배선이 1회 → N회가 되어 **같은 주문이 N번**
+              브로커로 나간다.
+           그래서 승격 조건은 "이 노드가 반복하기로 고른 바로 그 소스 노드가
+           passed_symbols 도 함께 낸다" 이다 — 그게 사고를 낸 ConditionNode 의 모양이고,
+           예제 47/48(hist 가 소스) 도 LogicNode(symbols 없음) 도 여기에 걸리지 않는다.
+
+        승격되면 **빈 배열이라도 정본**이다 — 절대 `symbols`(평가 대상 전체)로 흘러내리지
+        않는다. 그게 "통과 0건이면 아무것도 하지 않는다" 를 보장하는 지점이다.
+
+        Returns:
+            (input_data, source_label, source_node_id)
+        """
+        explicit_data = None
+        explicit_port_name = ""
+        explicit_node_id = ""
+        symbols_data = None
+        symbols_node_id = ""
+        fallback_data = None
+        fallback_node_id = ""
+
+        for edge in self.workflow.edges:
+            if edge.to_node_id != node_id:
+                continue
+
+            # 1순위: 명시적 from_port (예: ExclusionListNode.filtered,
+            # LogicNode.passed_symbols). IfNode 분기 포트(true/false/result)는
+            # 라우팅 의미라 소스에서 제외.
+            explicit_port = getattr(edge, "from_port", None)
+            if explicit_port and explicit_port not in self._NON_DATA_FROM_PORTS:
+                port_data = self.context.get_output(edge.from_node_id, explicit_port)
+                if port_data is not None and explicit_data is None:
+                    explicit_data = port_data
+                    explicit_port_name = explicit_port
+                    explicit_node_id = edge.from_node_id
+
+            # 2순위: symbols 포트 (Watchlist/MarketUniverse/SymbolFilter/Condition 등)
+            if symbols_data is None:
+                port_symbols = self.context.get_output(edge.from_node_id, "symbols")
+                # symbols가 문자열 배열이면 (merge 후) value 포트로 폴백
+                # - WatchlistNode symbols: [{exchange, symbol}, ...] → dict 배열 → 그대로 사용
+                # - HistoricalDataNode merged symbols: ["TSLA"] → string 배열 → value 포트로 전환
+                if (isinstance(port_symbols, list) and port_symbols
+                        and not isinstance(port_symbols[0], dict)):
+                    value_data = self.context.get_output(edge.from_node_id, "value")
+                    if value_data is not None:
+                        if isinstance(value_data, list):
+                            port_symbols = value_data
+                        elif isinstance(value_data, dict):
+                            port_symbols = [value_data]
+                if port_symbols is not None:
+                    symbols_data = port_symbols
+                    symbols_node_id = edge.from_node_id
+
+            # 3순위: 소스 노드의 첫 출력. 단 계좌 노드는 제외한다 —
+            # 첫 포트가 `positions`(보유잔고)라 매수 후보로 오인된다.
+            if fallback_data is None:
+                from_node = self.workflow.nodes.get(edge.from_node_id)
+                from_type = getattr(from_node, "node_type", None) if from_node else None
+                if from_type not in self.NO_ITERATE_SOURCE_NODE_TYPES:
+                    candidate = self.context.get_output(edge.from_node_id, None)
+                    if candidate is not None:
+                        fallback_data = candidate
+                        fallback_node_id = edge.from_node_id
+
+        if explicit_data is not None:
+            # 명시적으로 `passed_symbols` 를 가리킨 배선도 조건 게이트다 — 0건일 때
+            # 하류를 건너뛰는 판정이 똑같이 걸려야 한다(라벨이 그 스위치다).
+            label = (
+                self.ITERATE_SOURCE_PASSED_SYMBOLS
+                if explicit_port_name == "passed_symbols"
+                else self.ITERATE_SOURCE_EXPLICIT
+            )
+            return explicit_data, label, explicit_node_id
+        if symbols_data is not None:
+            # 🔴 승격: 고른 소스 노드가 `passed_symbols` 도 낸다면(= ConditionNode 모양)
+            #    그게 정본이다. 키가 있으면 **빈 배열이라도** 여기서 끝난다.
+            port_passed = self.context.get_output(symbols_node_id, "passed_symbols")
+            if isinstance(port_passed, list):
+                return port_passed, self.ITERATE_SOURCE_PASSED_SYMBOLS, symbols_node_id
+            return symbols_data, self.ITERATE_SOURCE_SYMBOLS, symbols_node_id
+        if fallback_data is not None:
+            return fallback_data, self.ITERATE_SOURCE_FALLBACK, fallback_node_id
+        return None, self.ITERATE_SOURCE_NONE, ""
+
+    def _no_signal_skip_outputs(
+        self,
+        node_type: str,
+        detail: str,
+        source_node_id: str = "",
+    ) -> Dict[str, Any]:
+        """상류 조건 통과 0건으로 **실행하지 않은** 노드의 출력.
+
+        🔴 **출력을 교체하지 않고, 선언된 포트를 빈 값으로 채운다.** 종전 구현은
+        `{result: [], reason, message, detail, skipped_by}` 한 봉투로 갈아치웠는데,
+        그러면 하류가 조용히 오작동한다:
+          - ConditionNode 의 `result` 가 bool 이 아니라 `[]` 가 되어
+            `{{ nodes.cond.result }} == true` 비교가 깨진다.
+          - `passed_symbols` 포트가 아예 사라져(None) LogicNode 가 그 조건을
+            'symbol-bearing' 이 아니라 'boolean-gate' 로 재분류한다 — 명시적 빈 배열이
+            교집합을 0 으로 만들던 안전장치가 사라진다.
+          - 주문 노드의 `result` 행이 0건이 되어 "오늘 주문 없음" 원장 행이 증발한다
+            (`NewOrderNodeExecutor.execute` 는 어떤 경로로 끝나든 `result: [row]` 를
+             한 행 보장한다 — `tests/test_order_result_port.py`).
+
+        ⚠️ ``resilience.fallback.mode=skip`` 의 ``_skipped`` 와는 **다른 사건**이다 —
+        저 쪽은 노드가 실행됐다가 예외를 내고 재시도까지 소진한 뒤 삼켜진 경우이고,
+        이 쪽은 반복 대상이 없어 **처음부터 호출조차 하지 않은** 경우다. 소비자가 둘을
+        구분할 수 있게 키를 분리한다(`skipped_by="no_upstream_signal"`).
+        """
+        payload: Dict[str, Any] = {}
+        for port_name, port_type in _declared_output_ports(node_type):
+            payload[port_name] = _empty_port_value(port_type)
+
+        message = "No trading signal today (upstream condition passed 0 symbols)."
+        if node_type.endswith("OrderNode"):
+            # 주문 노드 소비자(원장/UI/챗봇)는 order_result 와 `result` 행을 본다.
+            order_result = {
+                "success": False,
+                "error": "No order to submit",
+                "reason": EmptyOrderReason.NO_SIGNAL.value,
+                "message": message,
+                "detail": detail,
+                "skipped_by": "no_upstream_signal",
+            }
+            payload["order_result"] = order_result
+            payload["order_id"] = ""
+            # execute() 가 만드는 행과 같은 모양 — 행이 0건이면 "오늘 주문 없음" 이
+            # 화면에서 통째로 사라진다(가장 흔한 정상 케이스만 안 보이게 된다).
+            payload["result"] = [{"order_id": "", **dict(order_result)}]
+        elif "result" not in payload:
+            # 선언을 못 찾은 노드(커뮤니티/레거시)용 최소 호환 키.
+            payload["result"] = []
+
+        payload.update({
+            "reason": EmptyOrderReason.NO_SIGNAL.value,
+            "message": message,
+            "detail": detail,
+            "skipped_by": "no_upstream_signal",
+            "skipped_source_node_id": source_node_id,
+        })
+        return payload
+
     def _should_auto_iterate(
         self,
         node_type: str,
@@ -21766,53 +22323,60 @@ class WorkflowJob:
 
         _safe_print(f"  🔄 Auto-iterate: {node_id} ({node.node_type}) - {total} items")
 
-        for idx, current_item in enumerate(items):
-            # === item, index, total을 ExecutionContext에 설정 ===
-            self.context.set_iteration_context(current_item, idx, total)
+        # 🔴 반복 컨텍스트 정리는 **finally 여야 한다.** 종전엔 for 루프 뒤 평문이라,
+        #    루프 안의 `_resolve_config_expressions` / `_guard_whole_array_reevaluation`
+        #    (per-item try 밖)이 던지면 정리가 건너뛰어졌다. 그러면 다음에 실행되는
+        #    주문 노드가 **앞 노드가 순회하던 항목**을 자기 반복 항목으로 읽고, 엉뚱한
+        #    "반복 항목이 str 이라…" 사유로 정상 무신호를 노드 실패로 뒤집는다.
+        try:
+            for idx, current_item in enumerate(items):
+                # === item, index, total을 ExecutionContext에 설정 ===
+                self.context.set_iteration_context(current_item, idx, total)
 
-            # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
-            item_config = self._resolve_config_expressions(config, node_id)
+                # config 내 표현식 평가 ({{ item.xxx }}, {{ index }} 등)
+                item_config = self._resolve_config_expressions(config, node_id)
 
-            # 방어선 2: 반복 중인데 복수 포트가 **전체 배열로 재평가**됐으면 경고 + (모의 실행
-            # 에서만) 현재 아이템으로 좁힌다 — MarketDataNodeExecutor 의 iteration_item 가드를
-            # 일반화한 것. 실전은 경고만(기존 워크플로우 의미 보존; 3.1.6 적대 검증 후 재결정).
-            item_config = self._guard_whole_array_reevaluation(
-                node_id, node.node_type, item_config, current_item, total,
-            )
-
-            # 진행 상황 로그
-            item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
-            _safe_print(f"    [{idx+1}/{total}] Processing: {item_label}")
-            self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
-
-            # A-3: per-item spacing for order / external-API nodes
-            # _rate_limit ClassVar가 있는 노드(주문, HTTP 등)에 한해 min_interval_sec
-            # 만큼 간격을 보장한다. skip이 아니라 sleep → 모든 N 아이템이 실행됨.
-            # rate-limit이 없는 순수 데이터/계산 노드는 영향 없음 (하위 호환).
-            await self._auto_iterate_pacing_sleep(node_id, node.node_type)
-
-            try:
-                outputs = await self.executor.execute_node(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    config=item_config,
-                    context=self.context,
-                    plugin=node.plugin,
-                    fields=node.fields,
-                    workflow=self.workflow,
-                    order_iteration_index=idx,
+                # 방어선 2: 반복 중인데 복수 포트가 **전체 배열로 재평가**됐으면 경고 + (모의 실행
+                # 에서만) 현재 아이템으로 좁힌다 — MarketDataNodeExecutor 의 iteration_item 가드를
+                # 일반화한 것. 실전은 경고만(기존 워크플로우 의미 보존; 3.1.6 적대 검증 후 재결정).
+                item_config = self._guard_whole_array_reevaluation(
+                    node_id, node.node_type, item_config, current_item, total,
                 )
-                all_results.append(outputs)
-            except Exception as e:
-                self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
-                # continue_on_error: 기본적으로 계속 진행
-                all_results.append({"error": str(e), "item": current_item})
-            finally:
-                # per-item 실행 완료 후 spacing 타임스탬프 갱신
-                self._auto_iterate_mark_executed(node_id)
 
-        # === 반복 종료 후 컨텍스트 정리 ===
-        self.context.clear_iteration_context()
+                # 진행 상황 로그
+                item_label = current_item.get("symbol", str(current_item)) if isinstance(current_item, dict) else str(current_item)
+                _safe_print(f"    [{idx+1}/{total}] Processing: {item_label}")
+                self.context.log("debug", f"Auto-iterate [{idx+1}/{total}]: {item_label}", node_id)
+
+                # A-3: per-item spacing for order / external-API nodes
+                # _rate_limit ClassVar가 있는 노드(주문, HTTP 등)에 한해 min_interval_sec
+                # 만큼 간격을 보장한다. skip이 아니라 sleep → 모든 N 아이템이 실행됨.
+                # rate-limit이 없는 순수 데이터/계산 노드는 영향 없음 (하위 호환).
+                await self._auto_iterate_pacing_sleep(node_id, node.node_type)
+
+                try:
+                    outputs = await self.executor.execute_node(
+                        node_id=node_id,
+                        node_type=node.node_type,
+                        config=item_config,
+                        context=self.context,
+                        plugin=node.plugin,
+                        fields=node.fields,
+                        workflow=self.workflow,
+                        order_iteration_index=idx,
+                    )
+                    all_results.append(outputs)
+                except Exception as e:
+                    self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
+                    # continue_on_error: 기본적으로 계속 진행
+                    all_results.append({"error": str(e), "item": current_item})
+                finally:
+                    # per-item 실행 완료 후 spacing 타임스탬프 갱신
+                    self._auto_iterate_mark_executed(node_id)
+
+        finally:
+            # === 반복 종료 후 컨텍스트 정리 (예외로 빠져나가도 반드시) ===
+            self.context.clear_iteration_context()
 
         # 결과 병합: 배열 필드는 병합, 단일 필드는 마지막 값
         merged = self._merge_iterate_results(all_results)
@@ -21890,10 +22454,13 @@ class WorkflowJob:
         # **마지막 1회만 살아남았다**(실측: 28 의 logic 이 5종목 중 1건만 받음).
         # `orders` 도 같은 결함이었다 — PositionSizingNode 를 종목별로 반복하면 canonical
         # `orders` 가 마지막 1건만 남았다(`order` 단수 alias 만 살아남는 셈).
+        # `blocked_orders` — 입력 미해결로 브로커에 아무것도 못 보낸 항목. 단일 필드로
+        # 두면 마지막 항목 값만 남아 "3건 중 2건 차단" 이 소실된다(마지막이 성공하면
+        # 노드가 COMPLETED 로 초록이 된다) — 2026-09-14 사고의 관측성 구멍.
         array_fields = {
             "value", "values", "items", "data", "result", "results",
             "passed_symbols", "failed_symbols", "symbols", "symbol_results",
-            "orders",
+            "orders", "blocked_orders",
         }
         # 주문 배열은 (symbol, exchange) 로 중복을 제거한다 — 같은 종목에 주문 객체가
         # 두 번 들어가면 하류 주문 노드가 그만큼 반복된다(실주문 중복 경로).
