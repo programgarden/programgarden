@@ -124,6 +124,12 @@ class EmptyOrderReason(str, Enum):
     (fractional balances measured on a real LS account, prod 2026-08-24)."""
 
 
+LS_OVERSEAS_DESK_PHONE = "02-3779-8888"
+"""LS Securities overseas-stock desk. An OTC holding can only be sold by calling this
+number: LS finds a local broker to take the shares during US regular hours
+(confirmed by LS support, relayed by the account owner 2026-09-14)."""
+
+
 # ---------------------------------------------------------------------------
 # Market-specific reject-code tables.
 #
@@ -176,8 +182,9 @@ OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
         ),
         "tip": (
             "If the account does not hold this symbol, check the ticker spelling and its exchange. "
-            "If the account does hold it, the API cannot trade it — OTC issues have to be ordered "
-            "by contacting LS Securities directly."
+            "If the account does hold it, the symbol is most likely OTC and the API cannot trade it "
+            f"at all — call the LS Securities overseas desk at {LS_OVERSEAS_DESK_PHONE} and ask them "
+            "to sell it; LS finds a local broker during US regular hours."
         ),
     },
     "03759": {
@@ -243,6 +250,18 @@ from the broker.
 """
 
 
+def looks_like_otc_ticker(symbol: object) -> bool:
+    """Heuristic from LS support: a 5-letter ticker ending in ``F`` usually means the
+    issue has moved to OTC (e.g. ``ZOMDF``).
+
+    ⚠️ LS explicitly said this is **not always true**, so it must never gate an order.
+    Use it only to make a message more helpful — the authoritative signal is the market
+    code, which the order API rejects on its own.
+    """
+    s = str(symbol or "").strip().upper()
+    return len(s) == 5 and s.endswith("F") and s.isalpha()
+
+
 def unsupported_market_reject(exchange: object, symbol: str = "") -> OrderRejectInfo:
     """Diagnostic for a symbol whose market the order API cannot address.
 
@@ -253,15 +272,20 @@ def unsupported_market_reject(exchange: object, symbol: str = "") -> OrderReject
     which reads like a mistyped ticker and hides that the symbol is untradable.
     """
     shown = str(exchange) if exchange not in (None, "") else "unknown"
+    otc_hint = (
+        " The ticker is 5 letters ending in F, which usually means the issue moved to OTC."
+        if looks_like_otc_ticker(symbol) else ""
+    )
     return OrderRejectInfo(
         rsp_cd=UNSUPPORTED_MARKET_RSP_CD,
         cause=(
             f"This symbol's market ({shown}) is not one the order API can address — "
-            "it accepts NYSE/AMEX and NASDAQ only. OTC issues arrive this way."
+            f"it accepts NYSE/AMEX and NASDAQ only. OTC issues arrive this way.{otc_hint}"
         ),
         tip=(
-            "ProgramGarden cannot place this order. Contact LS Securities to trade "
-            "the symbol by phone; automation cannot reach it."
+            "ProgramGarden cannot place this order. Call the LS Securities overseas desk at "
+            f"{LS_OVERSEAS_DESK_PHONE} and ask them to sell it — LS finds a local broker to "
+            "take the shares during US regular hours. Automation cannot reach this symbol."
         ),
         raw_msg="",
         retry=RetryAdvice.DO_NOT_RETRY,

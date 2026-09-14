@@ -28,6 +28,8 @@ from programgarden_core import (
     map_reject_code,
     diagnose_missing_order_no,
     unsupported_market_reject,
+    looks_like_otc_ticker,
+    LS_OVERSEAS_DESK_PHONE,
     OVERSEAS_STOCK_ORDER_MARKET_CODES,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
@@ -89,7 +91,9 @@ OVERSEAS_STOCK_MARKET_CODES = {
 #    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
 
 
-def resolve_overseas_stock_order_market(exchange: Any) -> "tuple[Optional[str], Optional[str]]":
+def resolve_overseas_stock_order_market(
+    exchange: Any, symbol: Any = ""
+) -> "tuple[Optional[str], Optional[str]]":
     """해외주식 주문용 시장코드 판정. ``(ord_mkt_code, None)`` 또는 ``(None, 사유)``.
 
     🔴 종전엔 호출부마다 ``STOCK_MARKET_CODES.get(exchange, "82")`` 로 **모르는 코드를
@@ -107,11 +111,17 @@ def resolve_overseas_stock_order_market(exchange: Any) -> "tuple[Optional[str], 
     code = OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key) or OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key.upper())
     if code:
         return (code, None)
+    # LS 경험칙: 5자 티커가 F 로 끝나면 보통 OTC 로 넘어간 종목이다. LS 도 "항상 맞는
+    # 룰은 아니다" 라고 단서를 달았으므로 **차단 판단에는 쓰지 않고**(차단은 거래소 코드로
+    # 한다) 안내 문구를 구체적으로 만드는 데만 쓴다.
+    otc_hint = "티커가 5자이고 F 로 끝나 장외로 넘어간 종목으로 보입니다. " if looks_like_otc_ticker(symbol) else ""
     return (
         None,
         f"이 종목이 속한 시장({key})은 자동매매가 주문할 수 없습니다. "
-        "해외주식 주문은 뉴욕·아멕스·나스닥만 지원합니다. 장외(OTC) 종목이 이 경우이며, "
-        "LS증권에 직접 문의해 주문하셔야 합니다.",
+        f"해외주식 주문은 뉴욕·아멕스·나스닥만 지원합니다. {otc_hint}"
+        "장외(OTC) 종목이 이 경우이며, 자동매매로는 매도할 수 없습니다. "
+        f"LS증권 해외주식 데스크({LS_OVERSEAS_DESK_PHONE})로 전화해 매도를 요청하세요 — "
+        "미국 정규장 시간에 현지 브로커를 찾아 매도해 줍니다.",
     )
 
 
@@ -16376,7 +16386,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         # 🔴 브로커를 부르기 전에 시장을 판정한다 — 모르는 코드를 나스닥으로 바꿔 보내면
         #    03053 "해당 종목번호가 없습니다" 로 돌아와 종목 탓처럼 보인다(2026-09-14).
-        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
         if market_error:
             reject = unsupported_market_reject(exchange, symbol)
             logger.warning(
@@ -17937,7 +17947,7 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             return self._error_result(resolve_error)
 
         # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규주문과 같은 규칙).
-        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
         if market_error:
             logger.warning(
                 "modify_unsupported_market | node=%s symbol=%s exchange=%r — %s",
@@ -18520,7 +18530,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규·정정과 같은 규칙).
         # 애초에 주문이 나갈 수 없는 시장이라 취소할 원주문도 없지만, 조용히 나스닥으로
         # 바꿔 보내면 **다른 시장의 같은 번호** 를 취소하려 드는 셈이라 더 위험하다.
-        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
         if market_error:
             logger.warning(
                 "cancel_unsupported_market | node=%s symbol=%s exchange=%r — %s",
