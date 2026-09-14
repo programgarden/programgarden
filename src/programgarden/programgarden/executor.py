@@ -165,6 +165,24 @@ def _whole_unit_quantity(value: Any) -> Optional[int]:
     return int(number) if number.is_integer() else None
 
 
+def _stock_position_fill_currency(position: Any, symbol: str, market_code: str) -> Optional[str]:
+    """Use only explicitly populated COSOQ00201 position fields for this symbol.
+
+    AS1 has no currency. StockPositionItem defaults to USD, so a model default
+    is insufficient evidence. No quote currency or account-wide default is used.
+    """
+    from programgarden_finance.ls.overseas_stock.extension.models import StockPositionItem
+
+    if not isinstance(position, StockPositionItem):
+        return None
+    if not {"symbol", "market_code", "currency_code"} <= position.model_fields_set:
+        return None
+    if position.symbol != symbol or not market_code or position.market_code != market_code:
+        return None
+    unit = position.currency_code.strip().upper()
+    return unit if re.fullmatch(r"[A-Z]{3}", unit) else None
+
+
 def _usable_execution_identity(order_no: Any, order_date: Any) -> bool:
     """체결 프레임의 (주문번호, 주문일자)가 원장 execution identity 키로 쓸 수 있나.
 
@@ -4881,10 +4899,12 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     # 읽는다. 캐시는 아직 이번 매도가 반영되기 전이라 '매도 직전 평단'.
                     # 캐시에 없으면 None → 추정 없음(오늘처럼 unavailable).
                     account_avg_price = None
+                    currency = None
                     if tracker_info and "tracker" in tracker_info:
                         acct_tracker = tracker_info["tracker"]
                         positions = getattr(acct_tracker, "_positions", None)
                         pos = positions.get(symbol) if isinstance(positions, dict) else None
+                        currency = _stock_position_fill_currency(pos, symbol, market_code)
                         buy_price = getattr(pos, "buy_price", None) if pos is not None else None
                         if buy_price is not None:
                             try:
@@ -4892,7 +4912,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                             except (TypeError, ValueError):
                                 account_avg_price = None
 
-                    await context.record_workflow_fill(
+                    fill_kwargs = dict(
                         order_no=order_no,
                         order_date=order_date,
                         symbol=symbol,
@@ -4912,12 +4932,20 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         ),
                         account_avg_price=account_avg_price,
                     )
+                    await context.record_workflow_fill(currency=currency, **fill_kwargs)
 
                     # AccountTracker refresh로 PnL 이벤트 강제 트리거
                     if tracker_info and "tracker" in tracker_info:
                         tracker = tracker_info["tracker"]
                         if hasattr(tracker, 'refresh_now'):
                             await tracker.refresh_now()
+                            positions = getattr(tracker, "_positions", None)
+                            pos = positions.get(symbol) if isinstance(positions, dict) else None
+                            refreshed_currency = _stock_position_fill_currency(pos, symbol, market_code)
+                            if refreshed_currency is not None:
+                                await context._annotate_workflow_fill_currency(
+                                    currency=refreshed_currency, **fill_kwargs
+                                )
                             logger.debug(f"📊 AccountTracker refreshed after fill")
 
                 asyncio.run_coroutine_threadsafe(record_and_refresh(), loop)
@@ -17005,9 +17033,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                 p = float(getattr(item, "OvrsExecPrc", 0) or getattr(item, "OvrsOrdPrc", 0) or 0)
                 row = out.setdefault(order_no, {
                     "filled_qty": 0, "_amount": 0.0, "symbol": "", "fill_time": "",
+                    "_currencies": set(),
                 })
                 row["filled_qty"] += q
                 row["_amount"] += q * p
+                row["_currencies"].add(str(item.CrcyCode or "").strip().upper())
                 # 🔴 LS 는 TR 마다 같은 뜻의 필드 이름이 다르고, 이 블록에는 `ShtnIsuNo`
                 #    (단축종목번호)와 `IsuNo`(종목번호)가 **둘 다** 있다. 이 저장소의 관행은
                 #    ShtnIsuNo 우선·IsuNo 폴백이다(잔고·체결 파싱이 전부 그렇게 한다).
@@ -17023,6 +17053,9 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             for row in out.values():
                 qty = row["filled_qty"]
                 row["avg_price"] = (row.pop("_amount") / qty) if qty > 0 else 0.0
+                units = row.pop("_currencies")
+                unit = next(iter(units)) if len(units) == 1 else ""
+                row["currency"] = unit if re.fullmatch(r"[A-Z]{3}", unit) else None
             return out
         except Exception as e:
             context.log("debug", f"COSAQ00102 batch fill query exception: {e}", node_id)

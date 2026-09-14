@@ -227,6 +227,7 @@ async def reconcile_workflow_fills(
                     # 빈 값이면 트래커가 '우리 주문과 일치하는가' 로만 분류한다.
                     commda_code="",
                     account_avg_price=avg_price,
+                    currency=hit.get("currency"),
                 )
             except Exception as exc:
                 report.errors.append(f"record_fill_failed[{order_no}]: {exc}")

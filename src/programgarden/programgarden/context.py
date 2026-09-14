@@ -2865,6 +2865,19 @@ class ExecutionContext:
             logger.warning(f"Failed to update order fill price: {e}")
             return False
 
+    async def _annotate_workflow_fill_currency(self, *, currency: str, **fill_kwargs: Any) -> bool:
+        """Preserve post-refresh currency without replaying the AS1 execution."""
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return False
+        fill_kwargs["fill_time"] = fill_kwargs.get("fill_time") or UNKNOWN_FILL_TIME
+        try:
+            return await tracker.annotate_fill_currency(currency=currency, **fill_kwargs)
+        except ValueError:
+            # Unusable/conflicting identity must never cause another fill write.
+            logger.warning("Cannot attach currency evidence to the retained execution")
+            return False
+
     async def record_workflow_fill(
         self,
         order_no: str,
@@ -2879,6 +2892,7 @@ class ExecutionContext:
         *,
         execution_id: Optional[str | int] = None,
         account_avg_price: Optional[float] = None,
+        currency: Optional[str] = None,
     ) -> str:
         """Record fill event for FIFO position tracking.
         
@@ -2904,6 +2918,7 @@ class ExecutionContext:
             execution_id: Optional broker execution number, preserved for durable replay detection.
             account_avg_price: Optional account average purchase price for this
                 symbol at fill time; only a workflow sell's residual tail uses it.
+            currency: Explicit broker unit at fill time; no product default.
 
         Returns:
             분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
@@ -2976,6 +2991,8 @@ class ExecutionContext:
                 # 재시도에도 유지한다 — identity 축이 아니고, 매도 잔량 추정의
                 # 유일한 근거다.
                 base_kwargs["account_avg_price"] = account_avg_price
+            if currency is not None:
+                base_kwargs["currency"] = currency
 
             try:
                 result = await self._workflow_position_tracker.record_fill(

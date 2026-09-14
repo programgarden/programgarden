@@ -1,3 +1,18 @@
+## [1.37.8] - 2026-09-15
+
+### Fixed
+- Preserve explicit currency with retained stock fills so earned, lost and net
+  amounts can be projected without a dollar default. AS1 uses matching broker
+  position fields at fill time; the existing refresh may annotate the exact
+  execution without replaying FIFO or emitting another fill. COSAQ00102 batches
+  preserve a currency only when all execution rows agree.
+- Keep old/missing currency unknown and reject conflicting monetary bases.
+  Additive SQLite migration preserves all existing fills and execution identities.
+  Futures FIFO remains non-monetary; fees and account-wide realized profit are
+  not inferred. See `docs/realized-pnl-currency.md` for evidence and limitations.
+
+Dependencies unchanged: core 1.28.1 / finance 1.9.7 / community 1.15.3.
+
 ## [1.37.7] - 2026-09-15
 
 ### Fixed

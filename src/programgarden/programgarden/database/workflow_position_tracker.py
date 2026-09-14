@@ -183,6 +183,9 @@ class PendingFill:
     # read from the broker snapshot before it refreshes. Used only to estimate a
     # workflow sell's residual tail (see _process_sell_fifo); None → no estimate.
     account_avg_price: Optional[float] = None
+    # An explicit broker unit, never inferred from the product or exchange.
+    currency: Optional[str] = None
+    currency_conflict: bool = False
 
 
 class ExecutionIdentityError(ValueError):
@@ -535,6 +538,12 @@ class WorkflowPositionTracker:
             for column in ("execution_id", "normalized_order_no", "execution_payload"):
                 if column not in columns:
                     cursor.execute(f"ALTER TABLE trade_history ADD COLUMN {column} TEXT")
+            if "currency" not in columns:
+                cursor.execute("ALTER TABLE trade_history ADD COLUMN currency TEXT")
+            if "currency_conflict" not in columns:
+                cursor.execute(
+                    "ALTER TABLE trade_history ADD COLUMN currency_conflict INTEGER NOT NULL DEFAULT 0"
+                )
             # Additive columns for the account-average-price sell estimate. A
             # workflow sell that empties the strategy's own lots and still has a
             # tail records that tail here (the residual quantity, the account
@@ -722,6 +731,7 @@ class WorkflowPositionTracker:
         *,
         execution_id: Optional[str | int] = None,
         account_avg_price: Optional[float] = None,
+        currency: Optional[str] = None,
     ) -> str:
         """
         체결 기록 및 FIFO 처리
@@ -743,6 +753,8 @@ class WorkflowPositionTracker:
             account_avg_price: Optional account average purchase price for this
                 symbol at fill time. Only a workflow sell whose own lots run out
                 uses it, to estimate the residual tail. None → no estimate.
+            currency: Explicit broker currency for this fill. Missing/invalid
+                values remain unknown and never change fill identity or amounts.
             execution_id: Optional broker execution identity. Positive numeric
                 strings/integers ignore padding; opaque strings retain case.
                 None, blank, and zero mean no identity and retain legacy replay
@@ -765,6 +777,7 @@ class WorkflowPositionTracker:
             exchange=exchange, side=side, quantity=quantity, price=price,
             fill_time=fill_time, commda_code=commda_code, received_at=datetime.now(),
             execution_id=execution_id, account_avg_price=account_avg_price,
+            currency=self._currency_code(currency),
         )
         identity = self._execution_key(fill)
         notifications: list = []
@@ -879,6 +892,59 @@ class WorkflowPositionTracker:
             "commda_code": fill.commda_code,
         }
 
+    @staticmethod
+    def _currency_code(value: Any) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        value = value.strip().upper()
+        return value if re.fullmatch(r"[A-Z]{3}", value) else None
+
+    async def annotate_fill_currency(self, *, currency: str, **fill_kwargs: Any) -> bool:
+        """Attach a contemporaneous broker unit to an exact retained execution.
+
+        Called after the existing AS1 account refresh, never to reconstruct old
+        history. No identity means no annotation. Check all canonical facts and
+        hold the ledger write lock, but do not create a fill, consume a lot, emit
+        another fill notification or alter the deduplication payload. Conflicting
+        units permanently make the unit unknown until separately investigated.
+        """
+        unit = self._currency_code(currency)
+        if unit is None or self.product != "overseas_stock":
+            return False
+        fill = PendingFill(**fill_kwargs, received_at=datetime.now(), currency=unit)
+        identity = self._execution_key(fill)
+        if identity is None:
+            return False
+        changed = False
+        async with self._buffer_lock:
+            for pending in self._pending_fills.values():
+                if self._execution_key(pending) == identity:
+                    self._assert_same_execution(pending, fill)
+                    if pending.currency_conflict or pending.currency == unit:
+                        return False
+                    pending.currency_conflict = pending.currency is not None
+                    pending.currency = None if pending.currency_conflict else unit
+                    return True
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                cursor = conn.cursor()
+                if self._find_execution(cursor, fill) is None:
+                    return False
+                where = """product=? AND provider=? AND trading_mode=? AND order_date=?
+                    AND normalized_order_no=? AND execution_id=?"""
+                stored, conflict = cursor.execute(
+                    f"SELECT currency, currency_conflict FROM trade_history WHERE {where}", identity
+                ).fetchone()
+                if not conflict and stored != unit:
+                    cursor.execute(
+                        f"UPDATE trade_history SET currency=?, currency_conflict=? WHERE {where}",
+                        (unit if stored is None else None, int(stored is not None), *identity),
+                    )
+                    changed = True
+            if changed:
+                self.fill_revision += 1
+        return changed
+
     def _assert_same_execution(self, previous: PendingFill, fill: PendingFill) -> None:
         if self._execution_facts(previous) != self._execution_facts(fill):
             raise ExecutionIdentityConflictError("Conflicting fill facts for an existing execution identity")
@@ -984,8 +1050,9 @@ class WorkflowPositionTracker:
                 (product, provider, order_no, order_date, symbol, exchange, side, quantity, price,
                  fill_datetime, classification, commda_code, realized_pnl, trading_mode, created_at,
                  execution_id, normalized_order_no, execution_payload,
-                 unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 unmatched_qty, estimate_basis_price, estimate_source, estimated_pnl,
+                 currency, currency_conflict)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.product, self.provider,
                 fill.order_no, fill.order_date, fill.symbol, fill.exchange,
@@ -996,6 +1063,8 @@ class WorkflowPositionTracker:
                 estimate["estimate_basis_price"] if estimate else None,
                 estimate["estimate_source"] if estimate else None,
                 estimate["estimated_pnl"] if estimate else None,
+                fill.currency,
+                int(fill.currency_conflict),
             ))
 
             conn.commit()
@@ -1960,8 +2029,9 @@ class WorkflowPositionTracker:
     def personal_metrics(self) -> Dict[str, Any]:
         """Read retained workflow executions without claiming account performance.
 
-        Historical FIFO rows have no currency or fee evidence. Keep their amounts
-        per symbol/exchange and reject mixed ownership or an incomplete FIFO basis.
+        Historical FIFO rows have no currency or fee evidence. New rows can carry
+        an explicit broker unit; old units are never backfilled. Keep amounts
+        per symbol/exchange and reject contradictory units or an incomplete basis.
         Futures FIFO is not a monetary ledger. No equity/MDD basis is inferred.
 
         Version 2 adds closed-trade outcomes. One closed trade = one sell fill,
@@ -1986,8 +2056,8 @@ class WorkflowPositionTracker:
         plus the estimated tail). Any other residual is an incomplete basis.
 
         Counts aggregate across symbols because a count carries no currency.
-        Amounts do not: with `currency` unproven per row, summing gross profit
-        across symbols would invent the very unit this method refuses to claim.
+        Amounts do not: the API may sum groups only when every group carries the
+        same explicit currency. Missing evidence never inherits an account unit.
         So gross amounts stay inside each group, and the top-level profit/loss
         ratio is published only when a single group carries the whole ledger —
         the one case where "the currency is the same" needs no evidence.
@@ -2025,6 +2095,8 @@ class WorkflowPositionTracker:
 
         realized = []
         for (symbol, exchange), fills in sorted(groups.items()):
+            units = {self._currency_code(fill.get("currency")) for fill in fills}
+            unit_conflict = any(fill.get("currency_conflict") for fill in fills)
             reason = None
             amount = None
             outcome = None
@@ -2036,6 +2108,9 @@ class WorkflowPositionTracker:
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
                 reason = "missing_symbol"
+            elif len(units - {None}) > 1 or unit_conflict:
+                # Contradictory units cannot establish a comparable FIFO basis.
+                reason = "incomplete_fifo_basis"
             else:
                 # The old mixed_fifo_ownership pre-check is gone: a workflow sell
                 # now consumes only workflow lots, so it can never have realized a
@@ -2137,7 +2212,10 @@ class WorkflowPositionTracker:
                 status = "available"
                 basis = "fifo"
                 estimated_quantity = 0
-            entry = {"symbol": symbol, "exchange": exchange, "currency": None,
+            unit = (next(iter(units)) if len(units) == 1 and None not in units
+                    and not unit_conflict
+                    and self.product != "overseas_futures" else None)
+            entry = {"symbol": symbol, "exchange": exchange, "currency": unit,
                      "amount": amount, "status": status, "reason": reason,
                      "basis": basis, "estimated_quantity": estimated_quantity}
             # A rejected group publishes no outcome: its trades are unknown, and
