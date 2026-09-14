@@ -16934,7 +16934,7 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         묶으면 미확정이 몇 건이든 호출 수는 날짜 수만큼이다.
 
         Returns:
-            ``{주문번호: {"filled_qty", "avg_price", "symbol", "exchange", "fill_time"}}``.
+            ``{주문번호: {"filled_qty", "avg_price", "symbol", "fill_time"}}``.
             조회 실패·응답 없음은 **빈 dict** 다 — "체결 0건" 과 구분되지 않으므로
             호출자는 이 결과만으로 "체결 안 됐다" 고 단정하면 안 된다.
         """
@@ -16962,12 +16962,20 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     continue
                 p = float(getattr(item, "OvrsExecPrc", 0) or getattr(item, "OvrsOrdPrc", 0) or 0)
                 row = out.setdefault(order_no, {
-                    "filled_qty": 0, "_amount": 0.0, "symbol": "", "exchange": "", "fill_time": "",
+                    "filled_qty": 0, "_amount": 0.0, "symbol": "", "fill_time": "",
                 })
                 row["filled_qty"] += q
                 row["_amount"] += q * p
-                row["symbol"] = row["symbol"] or str(getattr(item, "IsuNo", "") or "").strip()
-                row["exchange"] = row["exchange"] or str(getattr(item, "OrdMktCode", "") or "").strip()
+                # 🔴 LS 는 TR 마다 같은 뜻의 필드 이름이 다르고, 이 블록에는 `ShtnIsuNo`
+                #    (단축종목번호)와 `IsuNo`(종목번호)가 **둘 다** 있다. 이 저장소의 관행은
+                #    ShtnIsuNo 우선·IsuNo 폴백이다(잔고·체결 파싱이 전부 그렇게 한다).
+                #    이름을 틀리면 getattr 기본값 때문에 **예외 없이 빈 값**이 되고, 재조정의
+                #    종목 대조 가드가 조용히 무력화된다(계좌 교체 후 주문번호가 겹칠 때 남의
+                #    체결을 기록하게 됨). 필드명 계약은 test_cosaq00102_field_contract.py 가 잠근다.
+                #    거래소는 싣지 않는다 — 우리 주문 원장의 exchange 가 권위 있는 값이다.
+                row["symbol"] = row["symbol"] or str(
+                    getattr(item, "ShtnIsuNo", "") or getattr(item, "IsuNo", "") or ""
+                ).strip()
                 row["fill_time"] = row["fill_time"] or str(getattr(item, "ExecTime", "") or "").strip()
 
             for row in out.values():

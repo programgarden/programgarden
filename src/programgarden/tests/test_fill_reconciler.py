@@ -274,3 +274,48 @@ async def test_sell_without_workflow_buy_records_an_estimate(tmp_path):
     assert row["estimate_source"] == "account_balance_avg_price"
     assert row["estimated_pnl"] == pytest.approx((3.76 - 4.19) * 2)
     assert row["realized_pnl"] == 0, "추정치가 확정 실현손익에 섞이면 안 된다"
+
+
+# ── 계좌 교체 후 주문번호 충돌 (2026-09-14) ────────────────────────────────
+#
+# workflow_orders 에는 계좌 컬럼이 없어서, 계좌를 바꿔도 **옛 계좌 주문이 그대로 남는다**.
+# 주문번호는 계좌 안에서만 유일하므로, 새 계좌에서 같은 날 같은 번호가 나오면 남의 체결을
+# 우리 주문으로 기록하게 된다. 실제로 prod 파드 원장에 옛 계좌 주문 2건이 남아 있다.
+
+@pytest.mark.asyncio
+async def test_same_order_number_different_symbol_is_not_recorded():
+    t = FakeTracker(pending=[_order("53", "20260914", "NIO", "sell", 2)])
+    rep = await reconcile_workflow_fills(
+        t,
+        fetch_fills_by_date=_fills({"20260914": {"53": {"filled_qty": 10, "avg_price": 99.0,
+                                                        "symbol": "TSLA"}}}),
+        account_positions={},
+    )
+    assert t.recorded == [], "다른 종목의 체결을 우리 주문으로 기록하면 안 된다"
+    assert rep.mismatched_symbol == 1
+    assert rep.recorded_fills == 0
+
+
+@pytest.mark.asyncio
+async def test_symbol_match_is_case_and_space_insensitive():
+    t = FakeTracker(pending=[_order("53", "20260914", "NIO", "sell", 2)])
+    rep = await reconcile_workflow_fills(
+        t,
+        fetch_fills_by_date=_fills({"20260914": {"53": {"filled_qty": 2, "avg_price": 3.76,
+                                                        "symbol": " nio "}}}),
+        account_positions={},
+    )
+    assert rep.recorded_fills == 1, "표기 차이로 정상 체결을 놓치면 안 된다"
+    assert rep.mismatched_symbol == 0
+
+
+@pytest.mark.asyncio
+async def test_broker_without_symbol_still_records():
+    """응답이 종목을 안 실어 주면 대조할 수 없다 — 종전 동작(기록)을 유지한다."""
+    t = FakeTracker(pending=[_order("53", "20260914", "NIO", "sell", 2)])
+    rep = await reconcile_workflow_fills(
+        t,
+        fetch_fills_by_date=_fills({"20260914": {"53": {"filled_qty": 2, "avg_price": 3.76}}}),
+        account_positions={},
+    )
+    assert rep.recorded_fills == 1

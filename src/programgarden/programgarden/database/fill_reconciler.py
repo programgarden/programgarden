@@ -56,6 +56,7 @@ class ReconcileReport:
     checked_orders: int = 0
     recorded_fills: int = 0
     still_unfilled: int = 0
+    mismatched_symbol: int = 0
     phantom_positions: int = 0
     phantom_quantity: float = 0.0
     skipped_no_account: bool = False
@@ -66,11 +67,17 @@ class ReconcileReport:
             "checked_orders": self.checked_orders,
             "recorded_fills": self.recorded_fills,
             "still_unfilled": self.still_unfilled,
+            "mismatched_symbol": self.mismatched_symbol,
             "phantom_positions": self.phantom_positions,
             "phantom_quantity": self.phantom_quantity,
             "skipped_no_account": self.skipped_no_account,
             "errors": list(self.errors),
         }
+
+
+def _normalize(symbol: str) -> str:
+    """종목코드 비교용 정규화 — 표기 차이(공백·대소문자)로 오탐하지 않게."""
+    return str(symbol or "").strip().upper()
 
 
 def _account_avg_price(account_positions: Dict[str, Any], symbol: str) -> Optional[float]:
@@ -182,6 +189,20 @@ async def reconcile_workflow_fills(
             side = str(order.get("side") or "")
             if not symbol or side not in ("buy", "sell"):
                 report.errors.append(f"order_missing_symbol_or_side[{order_no}]")
+                continue
+
+            # 🔴 주문번호만 믿으면 안 된다. 주문번호는 계좌 안에서만 유일하고, 원장에는
+            #    **계좌를 바꾸기 전 주문이 그대로 남아 있다**(workflow_orders 에 계좌 컬럼이
+            #    없다). 새 계좌에서 같은 날 같은 번호가 나오면 남의 체결을 우리 주문으로
+            #    기록하게 된다. 브로커 응답이 종목을 실어 줄 때는 반드시 대조한다.
+            hit_symbol = str(hit.get("symbol") or "").strip()
+            if hit_symbol and _normalize(hit_symbol) != _normalize(symbol):
+                report.mismatched_symbol += 1
+                logger.warning(
+                    "fill_reconcile_symbol_mismatch | order=%s date=%s ledger=%s broker=%s "
+                    "— 같은 주문번호의 다른 종목이라 기록하지 않는다(계좌 교체 흔적일 수 있다)",
+                    order_no, order_date, symbol, hit_symbol,
+                )
                 continue
 
             # 🔴 매도 잔량 추정의 전제 — 계좌 평균매입가를 반드시 같이 넘긴다.
