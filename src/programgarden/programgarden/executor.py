@@ -27,6 +27,10 @@ from programgarden_core import (
     ValidationLimits,
     map_reject_code,
     diagnose_missing_order_no,
+    unsupported_market_reject,
+    looks_like_otc_ticker,
+    LS_OVERSEAS_DESK_PHONE,
+    OVERSEAS_STOCK_ORDER_MARKET_CODES,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.order_lifecycle import (
@@ -70,6 +74,55 @@ OVERSEAS_STOCK_MARKET_CODES = {
     "82": "82",
     "83": "81",     # 과거 우리가 쓰던 잘못된 AMEX 코드가 저장된 워크플로우 방어
 }
+
+# 🔴 2026-09-14 미해결 — 여기에 없는 거래소 코드는 `.get(exchange, "82")` 로 **조용히 NASDAQ 이
+#    된다**. prod 실계좌 관측: 보유 종목 ZOMDF(조메디카, 장외)의 잔고 응답 거래소가 `"85"` 로 오는데
+#    그 키가 없어 82 로 떨어졌고, 현재가 조회(g3101)가 82 로 나가 실패 → 매도 주문이 "현재가 조회 실패"
+#    로 끝났다(같은 주기의 NIO/NYSE 는 정상 접수). 종전엔 매도가 현재가 조회를 아예 안 타서 이 구멍이
+#    가려져 있었다(대신 시장가라 00891 로 거부).
+#    🔬 2026-09-14 라이브 실측으로 확정 — **두 값 모두 거부됐다**:
+#       OrdMktCode="82"(NASDAQ) → rsp_cd=03053 "해당 종목번호가 없습니다."
+#       OrdMktCode="81"(NYSE/AMEX) → rsp_cd=03053 "해당 종목번호가 없습니다."
+#       COSAT00301 이 받는 값은 Literal["81","82"] 뿐이므로, **시장 85 의 보유 종목은 이 TR 로는
+#       주문할 수 없다**. 매핑을 어떻게 고쳐도 해결되지 않는다 — 다른 TR 이거나 다른 경로가 필요하다.
+#    남은 일: ① LS 에서 시장 `85` 종목을 매도하는 경로가 무엇인지 확인 — 추측으로 TR/파라미터를
+#    만들지 말 것 ([[feedback_ask_before_inventing_broker_tr_requests]], [[feedback_no_inference_about_ls_broker]])
+#    ② 매핑에 없는 코드는 조용히 82 로 떨어뜨리지 말고, 코드값을 담은 사유와 함께 실패시킬 것
+#    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
+
+
+def resolve_overseas_stock_order_market(
+    exchange: Any, symbol: Any = ""
+) -> "tuple[Optional[str], Optional[str]]":
+    """해외주식 주문용 시장코드 판정. ``(ord_mkt_code, None)`` 또는 ``(None, 사유)``.
+
+    🔴 종전엔 호출부마다 ``STOCK_MARKET_CODES.get(exchange, "82")`` 로 **모르는 코드를
+    조용히 나스닥으로 바꿔** 보냈다. 그러면 브로커가 `03053 "해당 종목번호가 없습니다"` 로
+    답하고, 사용자에게는 **종목 코드를 잘못 쓴 것처럼** 보인다 — 실제로는 그 종목이 이
+    API 로 거래할 수 없는 시장(장외/OTC 등)에 있다는 뜻이다(2026-09-14 실계좌 관측 +
+    LS증권 유선 확인: OTC 종목은 API 주문 불가, 전화 주문만 가능).
+
+    그래서 매핑에 없으면 **요청을 보내지 않고** 실패시킨다. 보내 봐야 성공할 수 없고,
+    LS 주문 속도 제한(초당 1건)만 쓴다.
+    """
+    if exchange is None:
+        return (None, "거래소가 비어 있습니다.")
+    key = str(exchange).strip()
+    code = OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key) or OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key.upper())
+    if code:
+        return (code, None)
+    # LS 경험칙: 5자 티커가 F 로 끝나면 보통 OTC 로 넘어간 종목이다. LS 도 "항상 맞는
+    # 룰은 아니다" 라고 단서를 달았으므로 **차단 판단에는 쓰지 않고**(차단은 거래소 코드로
+    # 한다) 안내 문구를 구체적으로 만드는 데만 쓴다.
+    otc_hint = "티커가 5자이고 F 로 끝나 장외로 넘어간 종목으로 보입니다. " if looks_like_otc_ticker(symbol) else ""
+    return (
+        None,
+        f"이 종목이 속한 시장({key})은 자동매매가 주문할 수 없습니다. "
+        f"해외주식 주문은 뉴욕·아멕스·나스닥만 지원합니다. {otc_hint}"
+        "장외(OTC) 종목이 이 경우이며, 자동매매로는 매도할 수 없습니다. "
+        f"LS증권 해외주식 데스크({LS_OVERSEAS_DESK_PHONE})로 전화해 매도를 요청하세요 — "
+        "미국 정규장 시간에 현지 브로커를 찾아 매도해 줍니다.",
+    )
 
 
 def _qty_num(value: Any, default: int = 0):
@@ -16331,7 +16384,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("warning", "주문 타입 자동 변환: 해외주식 매수는 시장가 불가 → 현재가 기준 지정가 주문으로 전환", node_id)
             ordprc_ptn_code = "00"
 
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
+        # 🔴 브로커를 부르기 전에 시장을 판정한다 — 모르는 코드를 나스닥으로 바꿔 보내면
+        #    03053 "해당 종목번호가 없습니다" 로 돌아와 종목 탓처럼 보인다(2026-09-14).
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
+        if market_error:
+            reject = unsupported_market_reject(exchange, symbol)
+            logger.warning(
+                "order_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            await self._notify_order_reject(context, node_id, symbol, reject)
+            return self._order_result(
+                False, symbol, exchange, side, qty, price,
+                market_error, reject_info=reject,
+            )
 
         # 지정가 주문인데 가격이 없으면 현재가 조회.
         # 🔴 2026-09-14 — 종전엔 **매수만** 이 경로를 탔다. 그래서 매도를 지정가로 두고 가격을
@@ -16849,6 +16916,75 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("debug", f"COSAQ00102 fill query exception: {e}", node_id)
             return 0, 0.0
+
+    async def _query_overseas_stock_fills_by_date(
+        self,
+        ls,
+        order_date: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """그 날짜의 **모든** 체결을 주문번호별로 모아 돌려준다 (COSAQ00102).
+
+        ``_query_overseas_stock_fill`` 과 같은 TR 을 부르지만 주문 하나로 좁히지 않는다.
+        그 함수는 이미 ``IsuNo=""`` · ``SrtOrdNo=999999999`` 로 **그날 전체**를 받아 온 뒤
+        주문번호로 거르고 있어서, 미확정 주문이 N 건이면 같은 응답을 N 번 받게 된다.
+        LS 주문체결내역 조회는 앱키당 2초에 1회이고 같은 앱키를 SDK 계좌 추적기가 60초
+        주기로 이미 쓴다 — 재조정이 건당 호출하면 그 예산을 그대로 먹는다. 날짜당 1회로
+        묶으면 미확정이 몇 건이든 호출 수는 날짜 수만큼이다.
+
+        Returns:
+            ``{주문번호: {"filled_qty", "avg_price", "symbol", "fill_time"}}``.
+            조회 실패·응답 없음은 **빈 dict** 다 — "체결 0건" 과 구분되지 않으므로
+            호출자는 이 결과만으로 "체결 안 됐다" 고 단정하면 안 된다.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        try:
+            from programgarden_finance import COSAQ00102
+
+            response = ls.overseas_stock().accno().cosaq00102(
+                body=COSAQ00102.COSAQ00102InBlock1(
+                    RecCnt=1, QryTpCode="1", BkseqTpCode="1", OrdMktCode="00",
+                    BnsTpCode="0", IsuNo="", SrtOrdNo=999999999, OrdDt=order_date,
+                    ExecYn="1", CrcyCode="000", ThdayBnsAppYn="0", LoanBalHldYn="0",
+                ),
+            )
+            result = await response.req_async()
+            if not result or not getattr(result, "block3", None):
+                return out
+
+            for item in result.block3:
+                order_no = str(getattr(item, "OrdNo", "") or "").strip()
+                if not order_no:
+                    continue
+                q = _qty_num(getattr(item, "ExecQty", 0) or 0)
+                if q <= 0:
+                    continue
+                p = float(getattr(item, "OvrsExecPrc", 0) or getattr(item, "OvrsOrdPrc", 0) or 0)
+                row = out.setdefault(order_no, {
+                    "filled_qty": 0, "_amount": 0.0, "symbol": "", "fill_time": "",
+                })
+                row["filled_qty"] += q
+                row["_amount"] += q * p
+                # 🔴 LS 는 TR 마다 같은 뜻의 필드 이름이 다르고, 이 블록에는 `ShtnIsuNo`
+                #    (단축종목번호)와 `IsuNo`(종목번호)가 **둘 다** 있다. 이 저장소의 관행은
+                #    ShtnIsuNo 우선·IsuNo 폴백이다(잔고·체결 파싱이 전부 그렇게 한다).
+                #    이름을 틀리면 getattr 기본값 때문에 **예외 없이 빈 값**이 되고, 재조정의
+                #    종목 대조 가드가 조용히 무력화된다(계좌 교체 후 주문번호가 겹칠 때 남의
+                #    체결을 기록하게 됨). 필드명 계약은 test_cosaq00102_field_contract.py 가 잠근다.
+                #    거래소는 싣지 않는다 — 우리 주문 원장의 exchange 가 권위 있는 값이다.
+                row["symbol"] = row["symbol"] or str(
+                    getattr(item, "ShtnIsuNo", "") or getattr(item, "IsuNo", "") or ""
+                ).strip()
+                row["fill_time"] = row["fill_time"] or str(getattr(item, "ExecTime", "") or "").strip()
+
+            for row in out.values():
+                qty = row["filled_qty"]
+                row["avg_price"] = (row.pop("_amount") / qty) if qty > 0 else 0.0
+            return out
+        except Exception as e:
+            context.log("debug", f"COSAQ00102 batch fill query exception: {e}", node_id)
+            return {}
 
     async def _query_overseas_futures_fill(
         self,
@@ -17879,9 +18015,16 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"Modify order blocked: {resolve_error}", node_id)
             return self._error_result(resolve_error)
 
-        # 시장 코드 결정
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
-        
+        # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규주문과 같은 규칙).
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
+        if market_error:
+            logger.warning(
+                "modify_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            return self._error_result(market_error)
+
         # 호가유형코드 (지정가)
         ordprc_ptn_code = config.get("price_type_code", "00")
         
@@ -18453,8 +18596,27 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
 
 
-        # 시장 코드 결정
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
+        # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규·정정과 같은 규칙).
+        # 애초에 주문이 나갈 수 없는 시장이라 취소할 원주문도 없지만, 조용히 나스닥으로
+        # 바꿔 보내면 **다른 시장의 같은 번호** 를 취소하려 드는 셈이라 더 위험하다.
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange, symbol)
+        if market_error:
+            logger.warning(
+                "cancel_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            return {
+                "cancel_result": {
+                    "success": False,
+                    "error": market_error,
+                    "order_id": order_id,
+                    "product": "overseas_stock",
+                    "reject_info": unsupported_market_reject(exchange, symbol).model_dump(),
+                },
+                "cancelled_order_id": "",
+                "cancelled_order": None,
+            }
 
         try:
             order_api = ls.overseas_stock().주문().cosat00301(
@@ -21130,6 +21292,7 @@ class WorkflowJob:
         # Checkpoint support
         self._checkpoint_mgr = None  # CheckpointManager (lazy init)
         self._checkpoint_task: Optional[asyncio.Task] = None  # 실시간 주기 저장 태스크
+        self._reconcile_task: Optional[asyncio.Task] = None  # 체결 재조정 주기 태스크
         self._completed_node_ids: Set[str] = set()  # 완료된 노드 ID 집합
 
         # Per-node diagnostic cache for get_state() (in-memory only, not persisted to checkpoint)
@@ -21379,6 +21542,7 @@ class WorkflowJob:
                 )
                 # 실시간 checkpoint 주기 저장 시작
                 self._start_checkpoint_loop()
+                self._start_reconcile_loop()
                 await self._event_loop()
             elif has_event_sources and self.context.is_dry_run:
                 logger.info(
@@ -21406,6 +21570,7 @@ class WorkflowJob:
             # 정상 완료 → checkpoint 삭제
             self._delete_checkpoint()
             await self._stop_checkpoint_loop()
+            await self._stop_reconcile_loop()
 
             # 🆕 Job 완료 알림
             await self.context.notify_job_state(self.status, self.stats)
@@ -23781,6 +23946,7 @@ class WorkflowJob:
         # Checkpoint 저장 (cleanup 전에)
         await self._save_checkpoint()
         await self._stop_checkpoint_loop()
+        await self._stop_reconcile_loop()
 
         self.context.stop()
 
@@ -24294,6 +24460,111 @@ class WorkflowJob:
                 await self._save_checkpoint()
         except asyncio.CancelledError:
             pass
+
+    # ── 체결 재조정 주기 태스크 (2026-09-14) ────────────────────────────────
+    #: 재조정 주기. 계좌 추적기가 60초마다 같은 앱키를 쓰므로 그보다 넉넉히 둔다.
+    #: LS 주문체결내역 조회는 앱키당 2초 1회이고, 재조정은 **날짜당 1회**만 부른다.
+    RECONCILE_INTERVAL_SEC = 180.0
+    #: 접수 직후 인라인 확인 창(4회 x 2초)과 겹치지 않게 두는 유예.
+    RECONCILE_MIN_ORDER_AGE_SEC = 60.0
+
+    def _find_account_tracker_entry(self) -> Optional[Dict[str, Any]]:
+        """재조정에 쓸 해외주식 계좌 추적기 엔트리(있으면).
+
+        추적기는 이미 60초 주기로 잔고를 들고 있다 — 유령 포지션 대조에 쓸 보유수량과
+        매도 추정에 쓸 평균매입가를 **추가 브로커 호출 없이** 여기서 얻는다.
+        """
+        for entry in self._active_trackers.values():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") != "account_tracker":
+                continue
+            if entry.get("tracker") is not None and entry.get("ls") is not None:
+                return entry
+        return None
+
+    @staticmethod
+    def _account_positions_snapshot(acct_tracker: Any) -> Optional[Dict[str, Any]]:
+        """계좌 추적기 캐시 → ``{종목: {quantity, avg_price}}``.
+
+        🔴 캐시를 아직 못 채웠으면 **None** 을 돌려준다(빈 dict 아님). 빈 dict 는 "보유 0"
+        과 구분되지 않아, 실제로 들고 있는 포지션을 전부 "자동매매 밖에서 팔렸다" 로
+        기록하게 만든다.
+        """
+        positions = getattr(acct_tracker, "_positions", None)
+        if not isinstance(positions, dict) or not positions:
+            return None
+        out: Dict[str, Any] = {}
+        for symbol, pos in positions.items():
+            try:
+                qty = float(getattr(pos, "quantity", 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            avg = getattr(pos, "buy_price", None)
+            try:
+                avg = float(avg) if avg is not None else None
+            except (TypeError, ValueError):
+                avg = None
+            out[str(symbol)] = {"quantity": qty, "avg_price": avg}
+        return out
+
+    async def _reconcile_fills_once(self) -> Optional[Dict[str, Any]]:
+        """한 주기 재조정. 준비가 안 됐으면 조용히 건너뛴다(None)."""
+        from .database.fill_reconciler import reconcile_workflow_fills
+
+        tracker = getattr(self.context, "_workflow_position_tracker", None)
+        if tracker is None:
+            return None
+        entry = self._find_account_tracker_entry()
+        if entry is None:
+            return None
+
+        ls = entry["ls"]
+        node_id = "fill_reconciler"
+
+        async def _fetch(order_date: str) -> Dict[str, Dict[str, Any]]:
+            return await self._query_overseas_stock_fills_by_date(
+                ls, order_date, self.context, node_id
+            )
+
+        report = await reconcile_workflow_fills(
+            tracker,
+            fetch_fills_by_date=_fetch,
+            account_positions=self._account_positions_snapshot(entry["tracker"]),
+            min_age_seconds=self.RECONCILE_MIN_ORDER_AGE_SEC,
+        )
+        if report.recorded_fills or report.phantom_positions or report.errors:
+            logger.info("fill_reconcile | %s", report.as_dict())
+        return report.as_dict()
+
+    async def _reconcile_loop(self) -> None:
+        """주기 재조정. 한 주기의 실패가 루프를 죽이지 않는다."""
+        try:
+            while True:
+                await asyncio.sleep(self.RECONCILE_INTERVAL_SEC)
+                try:
+                    await self._reconcile_fills_once()
+                except Exception as e:
+                    logger.warning("fill_reconcile_cycle_failed: %s", e)
+        except asyncio.CancelledError:
+            pass
+
+    def _start_reconcile_loop(self) -> None:
+        """체결 재조정 주기 실행 시작."""
+        if self._reconcile_task is not None:
+            return
+        self._reconcile_task = asyncio.ensure_future(self._reconcile_loop())
+        logger.debug("Fill reconcile loop 시작 (%s초 주기)", self.RECONCILE_INTERVAL_SEC)
+
+    async def _stop_reconcile_loop(self) -> None:
+        """체결 재조정 중단."""
+        if self._reconcile_task and not self._reconcile_task.done():
+            self._reconcile_task.cancel()
+            try:
+                await self._reconcile_task
+            except asyncio.CancelledError:
+                pass
+        self._reconcile_task = None
 
     def _start_checkpoint_loop(self) -> None:
         """실시간 워크플로우에서 checkpoint 주기 저장 시작."""

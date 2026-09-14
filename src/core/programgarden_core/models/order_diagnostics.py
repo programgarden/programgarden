@@ -124,6 +124,12 @@ class EmptyOrderReason(str, Enum):
     (fractional balances measured on a real LS account, prod 2026-08-24)."""
 
 
+LS_OVERSEAS_DESK_PHONE = "02-3779-8888"
+"""LS Securities overseas-stock desk. An OTC holding can only be sold by calling this
+number: LS finds a local broker to take the shares during US regular hours
+(confirmed by LS support, relayed by the account owner 2026-09-14)."""
+
+
 # ---------------------------------------------------------------------------
 # Market-specific reject-code tables.
 #
@@ -160,10 +166,26 @@ OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
             "the number may be wrong or the order may already be gone."
         ),
     },
+    # Live-verified 2026-09-14 on a real LS overseas-stock account. A held OTC
+    # issue (ZOMDF) was sent as a limit sell under BOTH accepted market codes —
+    # "82" (NASDAQ) and "81" (NYSE/AMEX) — and each came back 03053. LS support
+    # confirmed the reason by phone: **OTC issues cannot be traded through the
+    # API at all; they must be ordered by calling LS Securities.** So this code
+    # is not only "typo in the ticker" — for a symbol the account actually holds,
+    # it means the symbol is not tradable on either supported market.
     "03053": {
         "retry": RetryAdvice.DO_NOT_RETRY.value,
-        "cause": "The broker does not recognize the symbol code.",
-        "tip": "Check the symbol spelling and that it is listed on the given exchange.",
+        "cause": (
+            "The broker does not recognize the symbol on the market the order was sent to. "
+            "For a symbol the account already holds, this means it is not listed on either "
+            "market the order API accepts (NYSE/AMEX or NASDAQ) — an OTC issue, for example."
+        ),
+        "tip": (
+            "If the account does not hold this symbol, check the ticker spelling and its exchange. "
+            "If the account does hold it, the symbol is most likely OTC and the API cannot trade it "
+            f"at all — call the LS Securities overseas desk at {LS_OVERSEAS_DESK_PHONE} and ask them "
+            "to sell it; LS finds a local broker during US regular hours."
+        ),
     },
     "03759": {
         "retry": RetryAdvice.DO_NOT_RETRY.value,
@@ -210,6 +232,66 @@ KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
         ),
     },
 }
+
+# Markets the LS overseas-stock order TRs accept. COSAT00301's ``OrdMktCode`` and
+# g3101's ``exchcd`` are both ``Literal["81", "82"]`` — there is no third value to
+# try, so a holding on any other market cannot be ordered through this API.
+OVERSEAS_STOCK_ORDER_MARKET_CODES: Dict[str, str] = {
+    "NYSE": "81", "AMEX": "81", "NASDAQ": "82", "81": "81", "82": "82",
+}
+
+UNSUPPORTED_MARKET_RSP_CD = "PG_UNSUPPORTED_MARKET"
+"""Sentinel used in place of a broker response code.
+
+This rejection is raised by us **before** any request reaches LS, so there is no
+``rsp_cd`` to report. The sentinel keeps the field populated (never a bare "")
+and is prefixed ``PG_`` so a consumer can tell at a glance that it did not come
+from the broker.
+"""
+
+
+def looks_like_otc_ticker(symbol: object) -> bool:
+    """Heuristic from LS support: a 5-letter ticker ending in ``F`` usually means the
+    issue has moved to OTC (e.g. ``ZOMDF``).
+
+    ⚠️ LS explicitly said this is **not always true**, so it must never gate an order.
+    Use it only to make a message more helpful — the authoritative signal is the market
+    code, which the order API rejects on its own.
+    """
+    s = str(symbol or "").strip().upper()
+    return len(s) == 5 and s.endswith("F") and s.isalpha()
+
+
+def unsupported_market_reject(exchange: object, symbol: str = "") -> OrderRejectInfo:
+    """Diagnostic for a symbol whose market the order API cannot address.
+
+    Live-verified 2026-09-14: a held OTC issue is reported by the balance TR with
+    a market code outside {81, 82}, and both accepted codes are rejected with
+    ``03053``. Blocking before the request keeps the real cause visible — sending
+    a substituted code instead makes the broker answer "해당 종목번호가 없습니다",
+    which reads like a mistyped ticker and hides that the symbol is untradable.
+    """
+    shown = str(exchange) if exchange not in (None, "") else "unknown"
+    otc_hint = (
+        " The ticker is 5 letters ending in F, which usually means the issue moved to OTC."
+        if looks_like_otc_ticker(symbol) else ""
+    )
+    return OrderRejectInfo(
+        rsp_cd=UNSUPPORTED_MARKET_RSP_CD,
+        cause=(
+            f"This symbol's market ({shown}) is not one the order API can address — "
+            f"it accepts NYSE/AMEX and NASDAQ only. OTC issues arrive this way.{otc_hint}"
+        ),
+        tip=(
+            "ProgramGarden cannot place this order. Call the LS Securities overseas desk at "
+            f"{LS_OVERSEAS_DESK_PHONE} and ask them to sell it — LS finds a local broker to "
+            "take the shares during US regular hours. Automation cannot reach this symbol."
+        ),
+        raw_msg="",
+        retry=RetryAdvice.DO_NOT_RETRY,
+        known=True,
+    )
+
 
 _MARKET_TABLES: Dict[str, Dict[str, Dict[str, str]]] = {
     "overseas_stock": OVERSEAS_STOCK_REJECT_CODES,
