@@ -16917,6 +16917,67 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("debug", f"COSAQ00102 fill query exception: {e}", node_id)
             return 0, 0.0
 
+    async def _query_overseas_stock_fills_by_date(
+        self,
+        ls,
+        order_date: str,
+        context: ExecutionContext,
+        node_id: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """그 날짜의 **모든** 체결을 주문번호별로 모아 돌려준다 (COSAQ00102).
+
+        ``_query_overseas_stock_fill`` 과 같은 TR 을 부르지만 주문 하나로 좁히지 않는다.
+        그 함수는 이미 ``IsuNo=""`` · ``SrtOrdNo=999999999`` 로 **그날 전체**를 받아 온 뒤
+        주문번호로 거르고 있어서, 미확정 주문이 N 건이면 같은 응답을 N 번 받게 된다.
+        LS 주문체결내역 조회는 앱키당 2초에 1회이고 같은 앱키를 SDK 계좌 추적기가 60초
+        주기로 이미 쓴다 — 재조정이 건당 호출하면 그 예산을 그대로 먹는다. 날짜당 1회로
+        묶으면 미확정이 몇 건이든 호출 수는 날짜 수만큼이다.
+
+        Returns:
+            ``{주문번호: {"filled_qty", "avg_price", "symbol", "exchange", "fill_time"}}``.
+            조회 실패·응답 없음은 **빈 dict** 다 — "체결 0건" 과 구분되지 않으므로
+            호출자는 이 결과만으로 "체결 안 됐다" 고 단정하면 안 된다.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        try:
+            from programgarden_finance import COSAQ00102
+
+            response = ls.overseas_stock().accno().cosaq00102(
+                body=COSAQ00102.COSAQ00102InBlock1(
+                    RecCnt=1, QryTpCode="1", BkseqTpCode="1", OrdMktCode="00",
+                    BnsTpCode="0", IsuNo="", SrtOrdNo=999999999, OrdDt=order_date,
+                    ExecYn="1", CrcyCode="000", ThdayBnsAppYn="0", LoanBalHldYn="0",
+                ),
+            )
+            result = await response.req_async()
+            if not result or not getattr(result, "block3", None):
+                return out
+
+            for item in result.block3:
+                order_no = str(getattr(item, "OrdNo", "") or "").strip()
+                if not order_no:
+                    continue
+                q = _qty_num(getattr(item, "ExecQty", 0) or 0)
+                if q <= 0:
+                    continue
+                p = float(getattr(item, "OvrsExecPrc", 0) or getattr(item, "OvrsOrdPrc", 0) or 0)
+                row = out.setdefault(order_no, {
+                    "filled_qty": 0, "_amount": 0.0, "symbol": "", "exchange": "", "fill_time": "",
+                })
+                row["filled_qty"] += q
+                row["_amount"] += q * p
+                row["symbol"] = row["symbol"] or str(getattr(item, "IsuNo", "") or "").strip()
+                row["exchange"] = row["exchange"] or str(getattr(item, "OrdMktCode", "") or "").strip()
+                row["fill_time"] = row["fill_time"] or str(getattr(item, "ExecTime", "") or "").strip()
+
+            for row in out.values():
+                qty = row["filled_qty"]
+                row["avg_price"] = (row.pop("_amount") / qty) if qty > 0 else 0.0
+            return out
+        except Exception as e:
+            context.log("debug", f"COSAQ00102 batch fill query exception: {e}", node_id)
+            return {}
+
     async def _query_overseas_futures_fill(
         self,
         ls,
