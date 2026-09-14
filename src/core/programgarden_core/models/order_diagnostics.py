@@ -160,10 +160,25 @@ OVERSEAS_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
             "the number may be wrong or the order may already be gone."
         ),
     },
+    # Live-verified 2026-09-14 on a real LS overseas-stock account. A held OTC
+    # issue (ZOMDF) was sent as a limit sell under BOTH accepted market codes —
+    # "82" (NASDAQ) and "81" (NYSE/AMEX) — and each came back 03053. LS support
+    # confirmed the reason by phone: **OTC issues cannot be traded through the
+    # API at all; they must be ordered by calling LS Securities.** So this code
+    # is not only "typo in the ticker" — for a symbol the account actually holds,
+    # it means the symbol is not tradable on either supported market.
     "03053": {
         "retry": RetryAdvice.DO_NOT_RETRY.value,
-        "cause": "The broker does not recognize the symbol code.",
-        "tip": "Check the symbol spelling and that it is listed on the given exchange.",
+        "cause": (
+            "The broker does not recognize the symbol on the market the order was sent to. "
+            "For a symbol the account already holds, this means it is not listed on either "
+            "market the order API accepts (NYSE/AMEX or NASDAQ) — an OTC issue, for example."
+        ),
+        "tip": (
+            "If the account does not hold this symbol, check the ticker spelling and its exchange. "
+            "If the account does hold it, the API cannot trade it — OTC issues have to be ordered "
+            "by contacting LS Securities directly."
+        ),
     },
     "03759": {
         "retry": RetryAdvice.DO_NOT_RETRY.value,
@@ -210,6 +225,49 @@ KOREA_STOCK_REJECT_CODES: Dict[str, Dict[str, str]] = {
         ),
     },
 }
+
+# Markets the LS overseas-stock order TRs accept. COSAT00301's ``OrdMktCode`` and
+# g3101's ``exchcd`` are both ``Literal["81", "82"]`` — there is no third value to
+# try, so a holding on any other market cannot be ordered through this API.
+OVERSEAS_STOCK_ORDER_MARKET_CODES: Dict[str, str] = {
+    "NYSE": "81", "AMEX": "81", "NASDAQ": "82", "81": "81", "82": "82",
+}
+
+UNSUPPORTED_MARKET_RSP_CD = "PG_UNSUPPORTED_MARKET"
+"""Sentinel used in place of a broker response code.
+
+This rejection is raised by us **before** any request reaches LS, so there is no
+``rsp_cd`` to report. The sentinel keeps the field populated (never a bare "")
+and is prefixed ``PG_`` so a consumer can tell at a glance that it did not come
+from the broker.
+"""
+
+
+def unsupported_market_reject(exchange: object, symbol: str = "") -> OrderRejectInfo:
+    """Diagnostic for a symbol whose market the order API cannot address.
+
+    Live-verified 2026-09-14: a held OTC issue is reported by the balance TR with
+    a market code outside {81, 82}, and both accepted codes are rejected with
+    ``03053``. Blocking before the request keeps the real cause visible — sending
+    a substituted code instead makes the broker answer "해당 종목번호가 없습니다",
+    which reads like a mistyped ticker and hides that the symbol is untradable.
+    """
+    shown = str(exchange) if exchange not in (None, "") else "unknown"
+    return OrderRejectInfo(
+        rsp_cd=UNSUPPORTED_MARKET_RSP_CD,
+        cause=(
+            f"This symbol's market ({shown}) is not one the order API can address — "
+            "it accepts NYSE/AMEX and NASDAQ only. OTC issues arrive this way."
+        ),
+        tip=(
+            "ProgramGarden cannot place this order. Contact LS Securities to trade "
+            "the symbol by phone; automation cannot reach it."
+        ),
+        raw_msg="",
+        retry=RetryAdvice.DO_NOT_RETRY,
+        known=True,
+    )
+
 
 _MARKET_TABLES: Dict[str, Dict[str, Dict[str, str]]] = {
     "overseas_stock": OVERSEAS_STOCK_REJECT_CODES,

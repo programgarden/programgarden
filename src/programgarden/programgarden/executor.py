@@ -27,6 +27,8 @@ from programgarden_core import (
     ValidationLimits,
     map_reject_code,
     diagnose_missing_order_no,
+    unsupported_market_reject,
+    OVERSEAS_STOCK_ORDER_MARKET_CODES,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
 from programgarden.order_lifecycle import (
@@ -85,6 +87,32 @@ OVERSEAS_STOCK_MARKET_CODES = {
 #    만들지 말 것 ([[feedback_ask_before_inventing_broker_tr_requests]], [[feedback_no_inference_about_ls_broker]])
 #    ② 매핑에 없는 코드는 조용히 82 로 떨어뜨리지 말고, 코드값을 담은 사유와 함께 실패시킬 것
 #    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
+
+
+def resolve_overseas_stock_order_market(exchange: Any) -> "tuple[Optional[str], Optional[str]]":
+    """해외주식 주문용 시장코드 판정. ``(ord_mkt_code, None)`` 또는 ``(None, 사유)``.
+
+    🔴 종전엔 호출부마다 ``STOCK_MARKET_CODES.get(exchange, "82")`` 로 **모르는 코드를
+    조용히 나스닥으로 바꿔** 보냈다. 그러면 브로커가 `03053 "해당 종목번호가 없습니다"` 로
+    답하고, 사용자에게는 **종목 코드를 잘못 쓴 것처럼** 보인다 — 실제로는 그 종목이 이
+    API 로 거래할 수 없는 시장(장외/OTC 등)에 있다는 뜻이다(2026-09-14 실계좌 관측 +
+    LS증권 유선 확인: OTC 종목은 API 주문 불가, 전화 주문만 가능).
+
+    그래서 매핑에 없으면 **요청을 보내지 않고** 실패시킨다. 보내 봐야 성공할 수 없고,
+    LS 주문 속도 제한(초당 1건)만 쓴다.
+    """
+    if exchange is None:
+        return (None, "거래소가 비어 있습니다.")
+    key = str(exchange).strip()
+    code = OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key) or OVERSEAS_STOCK_ORDER_MARKET_CODES.get(key.upper())
+    if code:
+        return (code, None)
+    return (
+        None,
+        f"이 종목이 속한 시장({key})은 자동매매가 주문할 수 없습니다. "
+        "해외주식 주문은 뉴욕·아멕스·나스닥만 지원합니다. 장외(OTC) 종목이 이 경우이며, "
+        "LS증권에 직접 문의해 주문하셔야 합니다.",
+    )
 
 
 def _qty_num(value: Any, default: int = 0):
@@ -16346,7 +16374,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             context.log("warning", "주문 타입 자동 변환: 해외주식 매수는 시장가 불가 → 현재가 기준 지정가 주문으로 전환", node_id)
             ordprc_ptn_code = "00"
 
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
+        # 🔴 브로커를 부르기 전에 시장을 판정한다 — 모르는 코드를 나스닥으로 바꿔 보내면
+        #    03053 "해당 종목번호가 없습니다" 로 돌아와 종목 탓처럼 보인다(2026-09-14).
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        if market_error:
+            reject = unsupported_market_reject(exchange, symbol)
+            logger.warning(
+                "order_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            await self._notify_order_reject(context, node_id, symbol, reject)
+            return self._order_result(
+                False, symbol, exchange, side, qty, price,
+                market_error, reject_info=reject,
+            )
 
         # 지정가 주문인데 가격이 없으면 현재가 조회.
         # 🔴 2026-09-14 — 종전엔 **매수만** 이 경로를 탔다. 그래서 매도를 지정가로 두고 가격을
@@ -17894,9 +17936,16 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"Modify order blocked: {resolve_error}", node_id)
             return self._error_result(resolve_error)
 
-        # 시장 코드 결정
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
-        
+        # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규주문과 같은 규칙).
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        if market_error:
+            logger.warning(
+                "modify_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            return self._error_result(market_error)
+
         # 호가유형코드 (지정가)
         ordprc_ptn_code = config.get("price_type_code", "00")
         
@@ -18468,8 +18517,27 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
         from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301InBlock1
 
 
-        # 시장 코드 결정
-        ord_mkt_code = self.STOCK_MARKET_CODES.get(exchange, "82")
+        # 시장 코드 결정 — 지원 밖이면 요청을 보내지 않는다(신규·정정과 같은 규칙).
+        # 애초에 주문이 나갈 수 없는 시장이라 취소할 원주문도 없지만, 조용히 나스닥으로
+        # 바꿔 보내면 **다른 시장의 같은 번호** 를 취소하려 드는 셈이라 더 위험하다.
+        ord_mkt_code, market_error = resolve_overseas_stock_order_market(exchange)
+        if market_error:
+            logger.warning(
+                "cancel_unsupported_market | node=%s symbol=%s exchange=%r — %s",
+                node_id, symbol, exchange, market_error,
+            )
+            context.log("error", f"{symbol}: {market_error}", node_id)
+            return {
+                "cancel_result": {
+                    "success": False,
+                    "error": market_error,
+                    "order_id": order_id,
+                    "product": "overseas_stock",
+                    "reject_info": unsupported_market_reject(exchange, symbol).model_dump(),
+                },
+                "cancelled_order_id": "",
+                "cancelled_order": None,
+            }
 
         try:
             order_api = ls.overseas_stock().주문().cosat00301(
