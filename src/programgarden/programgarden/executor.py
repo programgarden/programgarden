@@ -5491,6 +5491,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
         로그인이라, 더미 secret 으로 도는 기기(트레이앱 검증 잡·서버 발급 모드)의 실제 실행에서
         추적기만 403 으로 죽고 error 로그 뒤 추적 없이 진행됐다.
         """
+        tracker_key = f"{context.job_id}_{node_id}"
+        # Scheduled cycles revisit the broker. Keep its existing tracker (also
+        # while startup awaits connect) instead of orphaning polling/WS resources.
+        if context.is_shutdown or tracker_key in self._active_trackers:
+            return
         try:
             from programgarden_finance import LS
             
@@ -5527,6 +5532,18 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 
         except Exception as e:
             context.log("error", f"Failed to start account tracking: {e}", node_id)
+            # Failed startup must not leave an unusable entry that prevents a
+            # later scheduled cycle from trying again. No immediate retry.
+            info = self._active_trackers.get(tracker_key)
+            if info is not None:
+                for resource, method in ((info.get("tracker"), "stop"), (info.get("real"), "close")):
+                    if resource is not None:
+                        try:
+                            await getattr(resource, method)()
+                        except Exception as cleanup_error:
+                            logger.warning("Account tracker startup cleanup failed: %s", type(cleanup_error).__name__)
+                if self._active_trackers.get(tracker_key) is info:
+                    self._active_trackers.pop(tracker_key)
     
     async def _start_overseas_stock_tracker(
         self,
@@ -6541,14 +6558,39 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
 
         rows = response.block3 or []
         usable_rows = [item for item in rows if item.OrdNo and item.OrdNo > 0]
-        # The SDK defaults a missing detail block to []; it is not empty-result
-        # evidence. Unknown codes remain unclassified, even with echo blocks.
-        valid_empty = (
+        # Match StockAccountTracker's observed pending-query envelope. The SDK
+        # defaults missing details to []; only an explicit empty array is evidence.
+        complete_empty = (
             not rows
-            and diagnostics["rsp_cd"] == "00000"
-            and getattr(response, "block1", None) is not None
-            and getattr(response, "block2", None) is not None
+            and "block3" in response.model_fields_set
+            and response.block1 is not None
+            and response.block2 is not None
         )
+        echo = response.block1
+        header = response.header
+        # 02679 is not a generic success code. This exact terminal response was
+        # observed for market 00 (echoed as %) and this current-day pending query;
+        # see finance/docs/observed_broker_responses.md (2026-09-09).
+        observed_no_data = (
+            complete_empty and status == 200 and diagnostics["rsp_cd"] == "02679"
+            and echo.OrdDt == today and echo.OrdMktCode == "%"
+            and echo.ThdayBnsAppYn == "1" and echo.BnsTpCode == "0"
+            and echo.CrcyCode == "000"
+            and all(
+                str(getattr(echo, name)) == expected
+                for name, expected in (
+                    ("QryTpCode", "1"), ("BkseqTpCode", "1"),
+                    ("IsuNo", ""), ("SrtOrdNo", "999999999"),
+                    ("ExecYn", "2"), ("LoanBalHldYn", "0"),
+                )
+                if name in echo.model_fields_set
+            )
+            and header is not None and header.tr_cont == "N"
+            and not header.tr_cont_key
+        )
+        valid_empty = complete_empty and (diagnostics["rsp_cd"] == "00000" or observed_no_data)
+        if diagnostics["rsp_cd"] == "02679" and not observed_no_data:
+            return unavailable()
         if not usable_rows and not valid_empty:
             return unavailable()
 

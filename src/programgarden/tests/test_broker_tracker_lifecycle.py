@@ -45,6 +45,68 @@ def make_futures_fixture():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("product", ["overseas_stock", "overseas_futures", "korea_stock"])
+@pytest.mark.parametrize("stage", ["running", "connecting", "failed_connect", "failed_start"])
+async def test_scheduled_cycles_reuse_tracker_and_release_failed_startup(monkeypatch, product, stage):
+    """Exercise the broker startup wrapper with real registry ownership."""
+    job, broker = make_job(), BrokerNodeExecutor()
+    entered, release = asyncio.Event(), asyncio.Event()
+    real = SimpleNamespace(connect=AsyncMock(), close=AsyncMock())
+    tracker = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), on_account_pnl_change=MagicMock())
+    factory = MagicMock(return_value=tracker)
+    api = SimpleNamespace(real=lambda: real, market=MagicMock(),
+                          accno=lambda: SimpleNamespace(account_tracker=factory))
+    api_name = "overseas_futureoption" if product == "overseas_futures" else product
+    ls = SimpleNamespace(login=MagicMock(return_value=True), **{api_name: lambda: api})
+    ls_factory = MagicMock(return_value=ls)
+    monkeypatch.setattr("programgarden_finance.LS", ls_factory)
+    monkeypatch.setattr("programgarden.executor.attach_context_token_provider", lambda *a, **kw: None)
+
+    async def start():
+        await broker._start_account_tracking("broker", product, "ls", "synthetic-key",
+                                             "synthetic-secret", False, job.context)
+
+    if stage == "connecting":
+        async def connect():
+            entered.set()
+            await release.wait()
+        real.connect.side_effect = connect
+    elif stage == "failed_connect":
+        real.connect.side_effect = TimeoutError("Synthetic connection timeout")
+    elif stage == "failed_start":
+        tracker.start.side_effect = RuntimeError("Synthetic initial read failure")
+
+    first = asyncio.create_task(start())
+    try:
+        if stage == "connecting":
+            await asyncio.wait_for(entered.wait(), 1)
+        else:
+            await first
+        if stage.startswith("failed_"):
+            assert not broker._active_trackers
+            tracker.stop.assert_awaited_once()
+            real.close.assert_awaited_once()
+            real.connect.side_effect = tracker.start.side_effect = None
+        await asyncio.wait_for(start(), 1)
+        release.set()
+        await first
+        expected = 2 if stage.startswith("failed_") else 1
+        assert ls_factory.call_count == expected
+        assert factory.call_count == expected
+        assert broker._active_trackers[f"{job.job_id}_broker"]["tracker"] is tracker
+        tracker.on_account_pnl_change.assert_called()
+        await job.stop()
+        assert tracker.stop.await_count == expected
+        assert real.close.await_count == expected
+        await start()
+        assert ls_factory.call_count == expected  # Shutdown cannot revive tracking.
+    finally:
+        release.set()
+        await asyncio.gather(first, return_exceptions=True)
+        await job.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("termination", ["complete", "stop", "cancel", "force_stop"])
 async def test_sdk_periodic_polling_stops_after_job_termination(termination):
     """Use the SDK's actual start/periodic-refresh/stop loop, with read calls mocked."""
