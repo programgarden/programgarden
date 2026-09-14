@@ -24533,9 +24533,15 @@ class WorkflowJob:
 
         ls = entry["ls"]
         node_id = "fill_reconciler"
+        # 🔴 체결 조회는 `NewOrderNodeExecutor` 의 메서드다 — WorkflowJob 의 것이 아니다.
+        #    `self._query_...` 로 부르면 AttributeError 로 매 주기 죽는다(2026-09-14 실관측).
+        #    같은 부류로 `_active_trackers`(BrokerNodeExecutor) 도 한 번 틀렸다. 이 파일은
+        #    한 모듈에 여러 클래스가 있어 `self.` 이 어느 클래스인지 눈으로는 안 보인다 —
+        #    test_fill_reconcile_wiring.py 의 소유자 검증 테스트가 이걸 잠근다.
+        order_executor = NewOrderNodeExecutor()
 
         async def _fetch(order_date: str) -> Dict[str, Dict[str, Any]]:
-            return await self._query_overseas_stock_fills_by_date(
+            return await order_executor._query_overseas_stock_fills_by_date(
                 ls, order_date, self.context, node_id
             )
 
