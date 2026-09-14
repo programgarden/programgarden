@@ -67,11 +67,22 @@ Broker account trackers belong to the workflow job. Normal completion, `stop()`,
 account polling, and close each tracker's dedicated WebSocket. Late account PnL
 callbacks do not restart work after shutdown. This cleanup also covers partially
 initialized trackers and leaves other jobs running.
+Scheduled cycles reuse the same broker account tracker, including pending startup.
+A failed startup stops its tracker and closes its connection before a later cycle
+may try again; no immediate retry or extra workflow node is introduced.
 Already queued or in-flight PnL notifications have up to one second to finish
 after account trackers stop, before listeners close. On timeout, cleanup logs the
 pending count and cancels those tasks, allowing another 0.25 seconds for cancellation.
 A listener that suppresses cancellation is reported and remains tracked; it cannot
 hold job shutdown indefinitely. Delivery beyond this bounded grace is not guaranteed.
+
+Overseas-stock OpenOrdersNode treats the observed terminal COSAQ00102 `02679`
+empty envelope as `open_orders=[]` / `count=0` without an error. The echoed date,
+market and filters must match its current-day pending query, the empty detail
+array must be explicitly present, and continuation must be terminal. This follows
+the finance package's observed-response reference and StockAccountTracker;
+`02679` is not a generic success code. Missing, malformed, mismatched and failed
+reads retain `error` / `reason=fetch_failed` so workflows can block new entries.
 
 For one-shot workflows, an unhandled `order_result.success=False` returned directly
 by a main-flow node makes the final job status `failed` and emits `WORKFLOW_FAILED`.

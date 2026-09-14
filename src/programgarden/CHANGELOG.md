@@ -1,3 +1,18 @@
+## [1.37.7] - 2026-09-15
+
+### Fixed
+- Overseas-stock OpenOrdersNode returns zero orders without an error for the
+  observed terminal COSAQ00102 `02679` empty response. Matching query echoes,
+  explicit empty detail/aggregate blocks and continuation metadata are required,
+  following StockAccountTracker's existing classification. Missing, malformed,
+  mismatched and failed responses remain unavailable so pending-buy guards hold.
+- Scheduled broker cycles reuse their account tracker, including in-flight
+  startup, instead of overwriting and orphaning its polling/WebSocket resources.
+  Failed startup releases its resources before a later scheduled retry; shutdown
+  cannot recreate tracking. This does not guarantee broker network availability.
+
+Dependencies unchanged: core 1.28.1 / finance 1.9.7 / community 1.15.3.
+
 ## [1.37.6] - 2026-09-14
 
 1.37.5 와 **같은 부류의 두 번째 결함** 수정 + 그 부류를 통째로 막는 방어.
