@@ -367,7 +367,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         ],
         "typical_scenarios": [
             "ConditionNode.result → PositionSizingNode → OverseasStockNewOrderNode (signal-driven buy)",
-            "OverseasStockAccountNode.held_symbols → ConditionNode (stop-loss) → OverseasStockNewOrderNode (sell)",
+            "OverseasStockAccountNode.positions → ConditionNode (stop-loss) → SymbolFilterNode (intersection with positions) → OverseasStockNewOrderNode (sell, limit, price={{ item.current_price }})",
             "ScreenerNode.symbols → SplitNode → PositionSizingNode → OverseasStockNewOrderNode (basket order)",
         ],
     }
@@ -377,6 +377,8 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         "Supports extended price_type options: LOO, LOC, MOO, MOC for open/close auction orders",
         "is_tool_enabled=True — AI Agent can call this node as a tool to place orders autonomously",
         "retry is disabled by default (resilience.retry.enabled=False); only pure network-connection failures may be retried, never a submitted order",
+        "US daytime (Blue Ocean) session accepts LIMIT orders only — a market order is refused at intake with rsp_cd=00891 and no order number. A workflow scheduled across both the daytime and the regular overnight session must therefore use order_type='limit' for it to work in both.",
+        "A limit order needs a price. Buy orders fall back to a current-price lookup, and so do sell orders since engine 1.37.3, but that lookup (g3101) only accepts exchange codes 81/82 — it fails for a holding listed on any other market. Prefer feeding the price the account balance already carries: price='{{ item.current_price }}'.",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -393,6 +395,16 @@ class OverseasStockNewOrderNode(BaseOrderNode):
             "pattern": "Connecting a realtime node (e.g. OverseasStockRealMarketDataNode) directly to OverseasStockNewOrderNode without ThrottleNode",
             "reason": "Every tick would trigger an order attempt; rate-limit rules block this and raise a connection error at validation time.",
             "alternative": "Insert a ThrottleNode between the realtime source and the order node to control firing rate.",
+        },
+        {
+            "pattern": "order_type='market' on a stop-loss / take-profit sell that can run during US daytime (Blue Ocean) hours",
+            "reason": "That session refuses market orders at intake (rsp_cd=00891, empty order number), so the stop-loss silently never executes while the schedule covers daytime hours.",
+            "alternative": "Use order_type='limit' and supply the price from the account snapshot: price='{{ item.current_price }}'. Note a limit order is not guaranteed to fill.",
+        },
+        {
+            "pattern": "Wiring an order node to ConditionNode.symbols or AccountNode.held_symbols for a close/sell order",
+            "reason": "`symbols` lists every evaluated symbol, not the ones that passed, and neither port carries `quantity` or `current_price` — the order node cannot build an order and skips the item.",
+            "alternative": "Use `passed_symbols` for the pass list, and to recover quantity and price put a SymbolFilterNode (operation='intersection', input_a='{{ nodes.account.positions }}', input_b='{{ nodes.cond.passed_symbols }}') in between — intersection preserves input_a's full position dicts.",
         },
         {
             "pattern": "Using a dict-keyed positions object {symbol: {...}} from a RealAccountNode output as order input",
