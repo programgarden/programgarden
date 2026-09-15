@@ -71,7 +71,10 @@ ProgramGarden은 수익률을 **3가지로 구분**하여 보여줍니다.
 
 ### 상품별 수익률
 
-여러 상품(해외주식, 해외선물, 국내주식)을 동시에 거래할 경우, 상품별로 분리된 수익률도 제공됩니다.
+Each workflow now permits one account and one product. Use separate workflows
+for additional products. The following per-product fields remain available for
+current observations and historical compatibility; they do not permit multiple
+broker connections in one workflow.
 
 | 항목 | 설명 |
 |------|------|

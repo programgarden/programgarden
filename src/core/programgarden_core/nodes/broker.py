@@ -111,7 +111,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         {
             "pattern": "Wiring a single broker across overseas_stock and overseas_futures nodes",
             "reason": "Product scope is a hard separator — overseas_futures nodes ignore stock-broker connections and the executor's auto-inject picks the wrong credential.",
-            "alternative": "Add OverseasFuturesBrokerNode in parallel; each product scope's nodes pick up its matching broker automatically.",
+            "alternative": "Use a separate workflow for overseas futures. Each workflow allows only one account and one product; reuse its existing broker node.",
         },
         {
             "pattern": "Omitting OverseasStockBrokerNode when using overseas_stock nodes",
@@ -207,7 +207,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         ],
         "pitfalls": [
             "paper_trading must be false — overseas_stock has no LS-Sec paper trading channel",
-            "One workflow can have only one OverseasStockBrokerNode; duplicates compete for credential injection",
+            "A workflow allows at most one broker connection across all products and accounts, including unbound nodes; reuse that node for all consumers",
             "Credential type must be `broker_ls_overseas_stock` exactly; `broker_ls_overseas_futureoption` will not match",
         ],
     }
@@ -367,7 +367,7 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
         "pitfalls": [
             "Credential type must be `broker_ls_overseas_futureoption`",
             "paper_trading=True is not a full sandbox — some TRs still hit the real datafeed; always double-check order nodes before production",
-            "Each workflow holds exactly one futures broker; if you also trade stocks, add OverseasStockBrokerNode in parallel",
+            "Use one account and one product per workflow. Trade stocks in a separate workflow instead of adding a second broker",
         ],
     }
 
@@ -547,6 +547,7 @@ class KoreaStockBrokerNode(BaseBrokerNode):
         ],
         "pitfalls": [
             "Credential type must be `broker_ls_korea_stock` — overseas credentials will not match even though the fields are identical",
+            "Use one account and one product per workflow; reuse this broker for every domestic consumer instead of adding a second connection",
             "Every live order counts — always gate order nodes behind IfNode or ConditionNode when experimenting",
             "Use `dry_run=True` in ExecutionContext for sandbox runs (paper trading is not available at the LS-Sec level)",
         ],
