@@ -1,11 +1,13 @@
 """Contract and execution checks for observed futures orderable quantity."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 import socket
 
 import pytest
 from programgarden_core import NodeTypeRegistry
 from programgarden.executor import FuturesOrderableQuantityNodeExecutor
+from programgarden.context import ExecutionContext
 from programgarden.futures_orderable import (
     build_orderable_request,
     read_orderable_quantity,
@@ -27,11 +29,34 @@ def config():
         "order_type": "limit",
         "price": 24760,
         "connection": {
+            "broker_node_id": "broker",
+            "provider": "ls-sec.co.kr",
             "product": "overseas_futures",
             "credential_id": "selected",
             "paper_trading": True,
         },
     }
+
+
+def execution_context(source="workflow_list"):
+    credential = {"appkey": "selected-key", "appsecret": "selected-secret"}
+    references = []
+    if source.startswith("workflow"):
+        data = credential if source == "workflow_dict" else [
+            {"key": key, "value": value} for key, value in credential.items()
+        ]
+        references = [{"credential_id": "selected", "type": "broker_ls_overseas_futures", "data": data}]
+    context = ExecutionContext(job_id="capacity-test", workflow_id="capacity-test", workflow_credentials=references)
+    context._workflow_nodes_map = {
+        "broker": SimpleNamespace(node_type="OverseasFuturesBrokerNode", product_scope="overseas_futures", config={"credential_id": "selected"})
+    }
+    context.set_output("broker", "connection", config()["connection"])
+    if source == "scoped_secret":
+        context.set_secret("broker_credentials:broker:selected", {**credential, "paper_trading": True})
+    # A different broker's generic and direct slots must never win resolution.
+    for key in ("selected", "credential_id", "broker_credentials:overseas_futures"):
+        context.set_secret(key, {"appkey": "wrong-key", "appsecret": "wrong-secret"})
+    return context
 
 
 def response(quantity=43):
@@ -136,9 +161,9 @@ def test_unavailable_or_mismatched_evidence_is_rejected(case):
 
 
 @pytest.mark.asyncio
-async def test_executor_uses_exact_credential_and_read_only_query():
-    context = MagicMock(is_deep_validate=False)
-    context.get_credential.return_value = {"appkey": "offline", "appsecret": "offline"}
+@pytest.mark.parametrize("source", ["workflow_list", "workflow_dict", "scoped_secret"])
+async def test_executor_uses_exact_credential_and_read_only_query(source):
+    context = execution_context(source)
     api = MagicMock()
     call = api.overseas_futureoption.return_value.accno.return_value.CIDBQ01400.return_value
     call.req_async = AsyncMock(return_value=response(0))
@@ -146,7 +171,7 @@ async def test_executor_uses_exact_credential_and_read_only_query():
         patch(
             "programgarden.executor.evaluate_all_bindings", side_effect=lambda c, *_: c
         ),
-        patch("programgarden.executor.ensure_ls_login", return_value=(api, True, None)),
+        patch("programgarden.executor.ensure_ls_login", return_value=(api, True, None)) as login,
         patch.object(
             socket.socket, "connect", side_effect=AssertionError("Network forbidden")
         ),
@@ -154,7 +179,7 @@ async def test_executor_uses_exact_credential_and_read_only_query():
         result = await FuturesOrderableQuantityNodeExecutor().execute(
             "capacity", "OverseasFuturesOrderableQuantityNode", config(), context
         )
-    context.get_credential.assert_called_once_with("selected")
+    assert login.call_args.args[:3] == ("selected-key", "selected-secret", True)
     call.req_async.assert_awaited_once()
     assert result == {"quantity": 0, "verified": True, "error": None}
     api.overseas_futureoption.return_value.order.assert_not_called()
@@ -163,8 +188,7 @@ async def test_executor_uses_exact_credential_and_read_only_query():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exception", [RuntimeError, ValueError])
 async def test_failed_query_does_not_fabricate_zero_or_retry(exception):
-    context = MagicMock(is_deep_validate=False)
-    context.get_credential.return_value = {"appkey": "offline", "appsecret": "offline"}
+    context = execution_context()
     api = MagicMock()
     call = api.overseas_futureoption.return_value.accno.return_value.CIDBQ01400.return_value
     call.req_async = AsyncMock(side_effect=exception("PRIVATE TOKEN"))
@@ -180,6 +204,31 @@ async def test_failed_query_does_not_fabricate_zero_or_retry(exception):
     assert result["quantity"] is None and result["verified"] is False
     assert "PRIVATE" not in result["error"]
     call.req_async.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["missing", "duplicate", "wrong_type", "wrong_mode", "wrong_broker", "wrong_alias", "wrong_output"])
+async def test_incompatible_credential_evidence_never_logs_in(case):
+    context = execution_context("missing" if case == "missing" else "workflow_dict")
+    value = config()
+    if case == "duplicate":
+        context._workflow_credentials *= 2
+    if case == "wrong_type":
+        context._workflow_credentials[0]["type"] = "broker_ls_overseas_stock"
+    if case == "wrong_mode":
+        context._workflow_credentials[0]["data"]["paper_trading"] = False
+    if case == "wrong_broker":
+        value["connection"]["broker_node_id"] = "other"
+    if case == "wrong_alias":
+        value["connection"]["credential_id"] = "other"
+    if case == "wrong_output":
+        context.set_output("broker", "connection", {**value["connection"], "paper_trading": False})
+    with patch("programgarden.executor.ensure_ls_login") as login:
+        result = await FuturesOrderableQuantityNodeExecutor().execute(
+            "capacity", "OverseasFuturesOrderableQuantityNode", value, context
+        )
+    login.assert_not_called()
+    assert result["verified"] is False and result["quantity"] is None
 
 
 @pytest.mark.asyncio

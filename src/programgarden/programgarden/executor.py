@@ -6300,7 +6300,10 @@ class FuturesOrderableQuantityNodeExecutor(NodeExecutorBase):
             connection = config.get("connection")
             if not isinstance(connection, dict) or connection.get("product") != "overseas_futures" or not connection.get("credential_id"):
                 raise FuturesCapacityEvidenceError("A matching futures broker connection is required")
-            credential = context.get_credential(connection["credential_id"])
+            try:
+                credential = exact_futures_credential(connection, context)
+            except ValueError as exc:
+                raise FuturesCapacityEvidenceError(str(exc)) from exc
             if not credential or not credential.get("appkey") or not credential.get("appsecret"):
                 raise FuturesCapacityEvidenceError("The selected futures credential is unavailable")
             ls, success, _ = ensure_ls_login(
