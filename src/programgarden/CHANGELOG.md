@@ -1,3 +1,10 @@
+## [1.38.2] - 2026-09-15
+
+### Fixed
+- Deep validation now supplies the actual held_symbols output and an explicit complete-read status for REST account fixtures. Domestic fixtures use six-digit KRX identities and KRW instead of foreign-stock defaults.
+- Complete empty pending-order fixtures explicitly carry no error. Incomplete fixture overrides still fail entry validation; live broker execution and trade guards are unchanged.
+- Verified a generated draft and a selected-draft repair against the corrected offline account contract, avoiding repeated false CodeNode errors caused by missing virtual holdings.
+
 ## [1.38.1] - 2026-09-15
 
 ### Fixed
