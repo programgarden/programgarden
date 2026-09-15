@@ -1,5 +1,12 @@
 ## [1.28.3] - 2026-09-15
 
+## [1.29.0] - 2026-09-15
+
+### Changed
+- A workflow now allows at most one broker account/product connection, including registered custom broker schemas, repeated credentials and unbound broker nodes. Account-free workflows and one broker with multiple consumers remain valid.
+- Structural validation reports actionable DUPLICATE_BROKER_NODE errors before execution. Existing multi-broker definitions must be split explicitly; no connection is selected automatically.
+
+
 ### Added
 - Optional account_snapshot and account_daily_snapshots envelopes at the end of WorkflowPnLEvent. Existing positional arguments and legacy return meanings remain unchanged.
 

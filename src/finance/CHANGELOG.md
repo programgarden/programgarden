@@ -1,5 +1,13 @@
 ## [1.10.0] - 2026-09-15
 
+## [1.10.1] - 2026-09-15
+
+### Fixed
+- Collect complete CSPAQ12300 trade-basis positions and commission-excluded average-cost valuation in KRW, preserving unsettled holdings and missing fields.
+- Read all t0424 trading-cache pages separately from monetary evidence. Invalidate unavailable observations without overwriting retained trading positions.
+- Preserve detached REST evidence across tick updates and concurrent refreshes. Document the actual t0425 Korean buy label.
+
+
 ### Added
 - Add NS3 NXT trade-tick models, shared-socket subscriptions and a read-only example, preserving absent fields and numeric/time strings from the owner-supplied source.
 - Add a preview-only NXT CSPAT00601 limit-order example and sync/async transport tests. The existing MbrNo route is retained; order acknowledgement is explicitly separate from SC1/account fill evidence.
