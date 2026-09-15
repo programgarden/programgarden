@@ -1,3 +1,7 @@
+## [1.10.3] - 2026-09-16
+### Fixed
+- Preserve whether CIDBQ01500/02400/05300 detail arrays were actually provided. Parser defaults no longer count as observed empty lists in model_fields_set.
+
 ## [1.10.2] - 2026-09-15
 
 ### Fixed

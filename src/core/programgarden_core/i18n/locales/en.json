@@ -1329,5 +1329,20 @@
   "fieldNames.FuturesContractNode.futures_exchange": "Exchange",
   "enums.contract_selection.front": "Front month (nearest expiry)",
   "enums.contract_selection.next": "Next month (roll target)",
-  "enums.contract_selection.quarterly": "Quarterly (Mar/Jun/Sep/Dec)"
+  "enums.contract_selection.quarterly": "Quarterly (Mar/Jun/Sep/Dec)",
+  "nodes.OverseasFuturesOrderableQuantityNode.name": "Futures Orderable Quantity",
+  "nodes.OverseasFuturesOrderableQuantityNode.description": "Reads contract-specific orderable quantity from the connected futures account. No order is submitted. Require verified=true and sufficient quantity before entry.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.symbol": "Contract",
+  "fields.OverseasFuturesOrderableQuantityNode.symbol": "Current contract identity: symbol and exchange.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.side": "Side",
+  "fields.OverseasFuturesOrderableQuantityNode.side": "Direction of the intended order.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.order_type": "Order Type",
+  "fields.OverseasFuturesOrderableQuantityNode.order_type": "Limit or market order capacity.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.price": "Order Price",
+  "fields.OverseasFuturesOrderableQuantityNode.price": "Observed proposed limit price; market queries use zero.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.query_type": "Query Type",
+  "fields.OverseasFuturesOrderableQuantityNode.query_type": "New positions, liquidation or total capacity.",
+  "enums.query_type.new": "New",
+  "enums.query_type.close": "Liquidation",
+  "enums.query_type.total": "Total"
 }

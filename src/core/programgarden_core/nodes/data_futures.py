@@ -26,6 +26,11 @@ from programgarden_core.nodes.base import (
 )
 
 
+FUTURES_REST_PRICE_FIELDS = OVERSEAS_FUTURES_PRICE_DATA_FIELDS + [
+    {"name": "tick_size", "type": "number", "description": "Observed o3105 UntPrc quotation increment; null if unavailable."},
+]
+
+
 class OverseasFuturesMarketDataNode(BaseNode):
     """
     해외선물 REST API 시세 조회 노드 (단일 종목)
@@ -80,7 +85,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Returns a single futures contract's snapshot: symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close",
+        "Returns a futures contract snapshot including tick_size from observed o3105 UntPrc; missing tick size remains null",
         "Item-based execution: pair with SplitNode to query multiple contracts in sequence",
         "is_tool_enabled=True — AI Agent can call this node to look up live futures prices autonomously",
         "Supported exchanges: CME, EUREX, SGX, HKEX — symbol format includes contract month code (e.g., ESH26)",
@@ -168,6 +173,7 @@ class OverseasFuturesMarketDataNode(BaseNode):
         ),
         "output_consumption": (
             "Consume the `values` port ONLY — an array of {symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close}. "
+            "Each REST quote also includes tick_size from o3105 UntPrc; require a finite positive value before tick-dependent orders. "
             "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
             "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
             "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}`."
@@ -191,12 +197,12 @@ class OverseasFuturesMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value",
-                   fields=OVERSEAS_FUTURES_PRICE_DATA_FIELDS),
+                   fields=FUTURES_REST_PRICE_FIELDS),
         OutputPort(
             name="values",
             type="array",
             description="Array of per-contract market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
-            fields=OVERSEAS_FUTURES_PRICE_DATA_FIELDS,
+            fields=FUTURES_REST_PRICE_FIELDS,
         ),
     ]
 
