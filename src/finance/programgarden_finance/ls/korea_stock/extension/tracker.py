@@ -10,6 +10,7 @@
 """
 
 import logging
+from copy import deepcopy
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Callable, Any, Set
 from datetime import datetime
@@ -22,6 +23,7 @@ from .models import (
     KrCommissionConfig,
     KrAccountPnLInfo,
 )
+from .valuation import collect_domestic_position_evidence, collect_domestic_trading_positions
 from .calculator import KrStockPnLCalculator
 from .subscription_manager import SubscriptionManager
 
@@ -115,6 +117,8 @@ class KrStockAccountTracker:
 
         # t0424 OutBlock 합산 정보 캐시
         self._account_summary: Dict[str, int] = {}
+        self._position_evidence = None
+        self._refresh_lock = asyncio.Lock()
 
         # 콜백
         self._on_position_change_callbacks: List[Callable] = []
@@ -175,44 +179,27 @@ class KrStockAccountTracker:
 
     async def _fetch_all_data(self):
         """모든 데이터 조회 (보유종목, 예수금, 미체결)"""
-        await self._fetch_positions()
-        await asyncio.sleep(2)  # rate limit
-        await self._fetch_balance()
-        await asyncio.sleep(2)  # rate limit
-        await self._fetch_open_orders()
+        if self._refresh_lock.locked():
+            return
+        async with self._refresh_lock:
+            self._position_evidence = None
+            await self._fetch_positions()
+            await asyncio.sleep(2)
+            try:
+                self._position_evidence = await collect_domestic_position_evidence(self._accno_client)
+                self._last_errors.pop("position_evidence", None)
+            except Exception as error:
+                self._last_errors["position_evidence"] = type(error).__name__
+            self._calculate_and_notify_account_pnl()
+            await asyncio.sleep(2)
+            await self._fetch_balance()
+            await asyncio.sleep(2)
+            await self._fetch_open_orders()
 
     async def _fetch_positions(self):
         """보유종목 조회 (t0424 주식잔고2)"""
         try:
-            from ..accno.t0424.blocks import T0424InBlock
-
-            tr = self._accno_client.t0424(
-                body=T0424InBlock(
-                    prcgb="2",    # BEP단가
-                    chegb="2",    # 체결기준잔고
-                    dangb="0",    # 정규장
-                    charge="1",   # 제비용포함
-                ),
-            )
-            resp = await tr.req_async()
-
-            rsp_cd = getattr(resp, 'rsp_cd', '')
-            rsp_msg = getattr(resp, 'rsp_msg', '')
-
-            if _is_no_data_response(rsp_cd, rsp_msg):
-                logger.info(f"[_fetch_positions] 보유종목 없음 (rsp_cd={rsp_cd}, msg={rsp_msg})")
-                self._positions.clear()
-                self._account_summary.clear()
-                self._notify_position_change()
-                self._calculate_and_notify_account_pnl()
-                self._last_errors.pop("positions", None)
-                return
-
-            if not _is_success_response(rsp_cd, rsp_msg):
-                error_msg = f"[포지션 조회 실패] rsp_cd={rsp_cd}, msg={rsp_msg}"
-                self._last_errors["positions"] = error_msg
-                logger.error(f"[_fetch_positions] {error_msg}")
-                return
+            resp, rows = await collect_domestic_trading_positions(self._accno_client)
 
             now = datetime.now()
             old_symbols = set(self._positions.keys())
@@ -228,10 +215,11 @@ class KrStockAccountTracker:
                 }
 
             # 종목별 잔고 (OutBlock1)
-            self._positions.clear()
+            new_positions = {}
+            new_prices = {}
 
-            if resp.block:
-                for item in resp.block:
+            if rows:
+                for item in rows:
                     symbol = item.expcode
                     position = KrStockPositionItem(
                         symbol=symbol,
@@ -247,10 +235,13 @@ class KrStockAccountTracker:
                         market=item.marketgb,
                         last_updated=now,
                     )
-                    self._positions[symbol] = position
-                    self._current_prices[symbol] = item.price
+                    new_positions[symbol] = position
+                    new_prices[symbol] = item.price
             else:
                 logger.info("[_fetch_positions] 보유종목 없음")
+
+            self._positions = new_positions
+            self._current_prices = new_prices
 
             # 구독 동기화
             new_symbols = set(self._positions.keys())
@@ -628,6 +619,14 @@ class KrStockAccountTracker:
                 pass
 
     # ===== 데이터 접근 API =====
+
+    def get_position_evidence(self):
+        """Return detached current average-cost evidence, or None after failure."""
+        return deepcopy(self._position_evidence)
+
+    def get_valuation_snapshot(self):
+        """Broker position PnL remains independent of mutable BEP/tick estimates."""
+        return deepcopy(self._position_evidence["account_valuation"]) if self._position_evidence else None
 
     def get_positions(self) -> Dict[str, KrStockPositionItem]:
         """현재 보유종목 조회"""

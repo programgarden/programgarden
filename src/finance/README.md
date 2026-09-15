@@ -464,3 +464,7 @@ rules. Workflow-node integration, live fills and SC1 venue evidence remain pendi
 `python example/korea_stock/run_t9945.py --nxt-only` performs read-only master
 queries and displays observed NXT eligibility. Missing flags remain unknown;
 current session, halt state and executable prices require separate checks.
+
+## Domestic valuation evidence
+
+See the [domestic observation contract](../../docs/domestic_valuation_evidence.md) for trade-basis quantities, average cost, commission basis, missing values and complete pagination.

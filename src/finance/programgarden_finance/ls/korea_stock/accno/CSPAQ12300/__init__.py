@@ -99,6 +99,10 @@ class TrCSPAQ12300(TRAccnoAbstract):
             status_code=status,
             error_msg=error_msg,
         )
+        result._positions_blocks_present = (
+            isinstance(resp_json.get("CSPAQ12300OutBlock1"), dict)
+            and isinstance(resp_json.get("CSPAQ12300OutBlock3"), list)
+        )
         if resp is not None:
             result.raw_data = resp
         return result

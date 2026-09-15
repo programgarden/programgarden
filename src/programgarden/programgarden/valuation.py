@@ -6,9 +6,11 @@ import re
 
 
 def workflow_valuation_snapshot(result, account_positions, observed_at, product):
-    if product != "overseas_stock" or not isinstance(account_positions, dict):
+    if product not in {"overseas_stock", "korea_stock"} or not isinstance(account_positions, dict):
         return None
     positions = result.get("workflow_positions")
+    if result.get("workflow_rate_unavailable_reason") not in {None, "no_workflow_positions"}:
+        return None
     if not isinstance(positions, list):
         return None
     if positions and result.get("workflow_pnl_rate") is None:
@@ -26,6 +28,8 @@ def workflow_valuation_snapshot(result, account_positions, observed_at, product)
         seen.add(symbol)
         currency = account.get("currency")
         if not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency):
+            return None
+        if product == "korea_stock" and currency != "KRW":
             return None
         values = {}
         for key in ("quantity", "avg_price", "current_price", "pnl_amount"):

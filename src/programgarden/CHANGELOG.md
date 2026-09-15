@@ -1,5 +1,21 @@
 ## [1.37.11] - 2026-09-15
 
+## [1.38.0] - 2026-09-15
+
+### Added
+- Domestic stock reporting now carries complete, immutable account and workflow valuation on distinct monetary bases, including observed average cost and unsettled positions.
+
+### Changed
+- Enforce the approved one-account/one-product workflow boundary through shared core validation before broker login. Account-free workflows remain valid.
+- Require core >=1.29.0 and finance >=1.10.1; community remains >=1.15.3.
+
+### Fixed
+- Missing domestic prices/costs remain unavailable and no longer interrupt reporting events or become measured-zero valuation. Preserve explicitly observed zero account PnL.
+
+### Verification limits
+- Domestic account amounts exclude commission; CSPAQ12300 summary fields are not provided. FOCCQ33600 methodology and full workflow NXT modify/cancel routing remain unverified.
+
+
 ### Changed
 - Require programgarden-finance >=1.10.0 for source-correct domestic account fields, NS3 quote subscriptions and the NXT limit-order reference. Core remains >=1.28.3 and community >=1.15.3.
 - Distinguish broker order acceptance from separate account/SC1 execution evidence in the finance schema and examples. This package release does not enable NXT routing in workflow nodes or complete domestic performance collection.

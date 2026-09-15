@@ -95,6 +95,10 @@ class TrT0424(TRRequestAbstract, OccursReqAbstract):
             status_code=status,
             error_msg=error_msg,
         )
+        result._positions_blocks_present = (
+            isinstance(resp_json.get("t0424OutBlock"), dict)
+            and isinstance(resp_json.get("t0424OutBlock1"), list)
+        )
         if resp is not None:
             result.raw_data = resp
         return result

@@ -53,6 +53,13 @@ def _make_mock_ls(tracker=None, positions=None):
     mock_tracker.start = AsyncMock()
     mock_tracker.refresh_now = AsyncMock()
     mock_tracker.get_positions = MagicMock(return_value=positions or {})
+    mock_tracker.get_position_evidence = MagicMock(return_value={
+        "positions": {symbol: {"symbol": symbol, "quantity": item.quantity,
+                               "buy_price": item.buy_price, "current_price": item.current_price,
+                               "currency": "KRW", "product": "korea_stock"}
+                      for symbol, item in (positions or {}).items()},
+        "account_valuation": None,
+    })
     # on_account_pnl_change 는 callback을 캡처하기 위해 side_effect로 처리
     mock_tracker.on_account_pnl_change = MagicMock()
 
@@ -107,6 +114,34 @@ def _get_executor():
 
 class TestStartKoreaStockTracker:
     """_start_korea_stock_tracker 메서드 테스트"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("available", [True, False])
+    async def test_buffered_callback_retains_observed_money_and_missing_evidence(self, available):
+        from copy import deepcopy
+        from decimal import Decimal
+        executor, context = _get_executor(), _make_mock_context()
+        mock_ls, tracker, _, _ = _make_mock_ls()
+        observation = {"positions": {"001500": {
+            "quantity": 1, "product": "korea_stock", "currency": "KRW",
+            "buy_price": Decimal("7980"), "average_price": Decimal("7980"),
+            "current_price": None, "pnl_amount": None}}, "account_valuation": None}
+        tracker.get_position_evidence.side_effect = lambda: deepcopy(observation) if available else None
+        await executor._start_korea_stock_tracker(mock_ls, "broker-1", "korea_stock", "ls-sec.co.kr", context)
+        callback = tracker.on_account_pnl_change.call_args.args[0]
+        captured = []
+        with patch("asyncio.create_task", side_effect=lambda coro: captured.append(coro) or MagicMock()):
+            callback(MagicMock())
+            observation["positions"]["001500"]["quantity"] = 99
+            await captured[0]
+        payload = context.notify_workflow_pnl.call_args.kwargs
+        assert payload["current_prices"] == {} and payload["account_valuation"] is None
+        if available:
+            assert payload["account_positions"]["001500"]["quantity"] == 1
+            assert payload["account_positions"]["001500"]["buy_price"] == 7980.0
+            assert payload["account_positions"]["001500"]["pnl_amount"] is None
+        else:
+            assert payload["account_positions"] is None
 
     @pytest.mark.asyncio
     async def test_tracker_start_called(self):
@@ -326,8 +361,8 @@ class TestStartKoreaStockTracker:
         assert current_prices["035720"] == 77000.0
 
     @pytest.mark.asyncio
-    async def test_empty_positions_passes_none_to_account_positions(self):
-        """포지션이 없을 때 account_positions=None으로 호출되는지 확인"""
+    async def test_complete_empty_positions_preserve_empty_account(self):
+        """A complete empty account is distinct from unavailable observations."""
         executor = _get_executor()
         context = _make_mock_context()
         mock_ls, mock_tracker, _, _ = _make_mock_ls(positions={})
@@ -349,7 +384,7 @@ class TestStartKoreaStockTracker:
             await captured_coros[0]
 
         call_kwargs = context.notify_workflow_pnl.call_args.kwargs
-        assert call_kwargs.get("account_positions") is None
+        assert call_kwargs.get("account_positions") == {}
 
     @pytest.mark.asyncio
     async def test_tracker_key_format(self):

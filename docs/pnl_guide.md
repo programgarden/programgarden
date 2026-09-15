@@ -376,3 +376,7 @@ broker connections in one workflow.
 > **참고**: 국내주식은 모의투자를 지원하지 않으며, `paper_trading`은 항상 `false`입니다. 통화는 `KRW`(원화)이며, 거래소는 `KRX` 고정입니다.
 
 > **팁**: `workflow_pnl_rate`(워크플로우 수익률)가 전략의 실제 성과를 나타냅니다. `total_pnl_rate`(전체 수익률)에는 수동 매매 결과도 포함되어 있으므로, 전략 평가에는 `workflow_pnl_rate`를 기준으로 삼으세요.
+
+## Domestic valuation evidence
+
+See the [domestic observation contract](domestic_valuation_evidence.md) for trade-basis quantities, average cost, commission basis, missing values and complete pagination.

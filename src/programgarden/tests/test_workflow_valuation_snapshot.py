@@ -74,3 +74,51 @@ async def test_actual_context_event_preserves_both_valuation_scopes():
     assert wire['account_valuation']['groups'][0]['net'] == 16
     assert wire['workflow_valuation']['groups'][1]['net'] == 6
     assert wire['personal_metrics'] is None
+
+
+def test_domestic_workflow_money_requires_krw_and_its_own_cost():
+    accounts = {symbol: {'currency': 'KRW'} for symbol in ACCOUNTS}
+    value = workflow_valuation_snapshot(sample(), accounts, NOW, 'korea_stock')
+    assert value['groups'] == [{'currency': 'KRW', 'earned': 11, 'lost': 4, 'net': 7}]
+    accounts['ONE']['currency'] = 'USD'
+    assert workflow_valuation_snapshot(sample(), accounts, NOW, 'korea_stock') is None
+
+
+def test_domestic_unknown_average_does_not_become_a_zero_cost_return():
+    from programgarden.context import ExecutionContext
+    context = ExecutionContext(job_id='domestic-evidence', workflow_id='domestic-evidence')
+    assert context._calculate_account_pnl({'001500': {'product': 'korea_stock',
+        'quantity': 1, 'buy_price': None, 'current_price': 7980}}) == {}
+
+
+def test_domestic_observed_zero_pnl_is_not_replaced_by_price_arithmetic():
+    from programgarden.context import ExecutionContext
+    context = ExecutionContext(job_id='domestic-evidence', workflow_id='domestic-evidence')
+    row = {'product': 'korea_stock', 'quantity': 1, 'buy_price': 7980,
+           'current_price': 7981, 'pnl_amount': 0}
+    assert context._calculate_account_pnl({'001500': row})['account_total_pnl_amount'] == 0
+    row['pnl_amount'] = None
+    assert context._calculate_account_pnl({'001500': row}) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("positions", [None, {'001500': {'product': 'korea_stock',
+    'quantity': 1, 'buy_price': None, 'current_price': None, 'pnl_amount': None}}])
+async def test_real_context_reports_missing_domestic_observation_without_losing_event(positions):
+    from programgarden.context import ExecutionContext
+    from programgarden_core.bases.listener import BaseExecutionListener
+
+    class Capture(BaseExecutionListener):
+        def __init__(self): self.events = []
+        async def on_workflow_pnl_update(self, event): self.events.append(event)
+
+    context = ExecutionContext(job_id='domestic-evidence', workflow_id='domestic-evidence')
+    listener = Capture()
+    context.add_listener(listener)
+    await context.notify_workflow_pnl(broker_node_id='broker', product='korea_stock',
+        provider='ls-sec.co.kr', current_prices={}, account_positions=positions,
+        currency='KRW', account_valuation=None)
+    assert len(listener.events) == 1
+    event = listener.events[0]
+    assert event.workflow_pnl_rate is None and event.account_total_pnl_rate is None
+    assert event.workflow_valuation is None and event.account_valuation is None
