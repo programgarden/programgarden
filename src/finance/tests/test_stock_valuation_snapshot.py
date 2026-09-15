@@ -49,6 +49,17 @@ def test_gains_losses_and_net_stay_separate_per_currency():
     assert "TEST" not in str(value)
 
 
+def test_observed_family_header_still_requires_exact_valuation_blocks():
+    value = response()
+    value.header.tr_cd = 'COSOQ'
+    assert stock_valuation_snapshot(value, REQUEST, NOW) is not None
+    value._valuation_blocks_present = False
+    assert stock_valuation_snapshot(value, REQUEST, NOW) is None
+    value._valuation_blocks_present = True
+    value.header.tr_cd = 'COSOQ02701'
+    assert stock_valuation_snapshot(value, REQUEST, NOW) is None
+
+
 @pytest.mark.parametrize("case", ["default_pnl", "missing_unit", "partial", "failed", "http", "echo", "continued", "duplicate", "missing_row", "missing_block", "nonfinite", "negative_quantity"])
 def test_incomplete_or_defaulted_evidence_never_becomes_zero(case):
     value = response()
@@ -85,7 +96,7 @@ def test_real_parser_preserves_missing_blocks_even_when_net_is_zero():
     metadata = response().header.model_dump(by_alias=True)
     from types import SimpleNamespace
     http = SimpleNamespace(status_code=200, headers=metadata)
-    parsed = TrCOSOQ00201._build_response(None, http, data, None, None)
+    parsed = TrCOSOQ00201._build_response(None, http, data, metadata, None)
     assert not parsed._valuation_blocks_present
     assert stock_valuation_snapshot(parsed, REQUEST, NOW) is None
     data['COSOQ00201OutBlock4'] = []

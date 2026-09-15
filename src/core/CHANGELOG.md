@@ -1,3 +1,8 @@
+## [1.28.3] - 2026-09-15
+
+### Added
+- Optional account_snapshot and account_daily_snapshots envelopes at the end of WorkflowPnLEvent. Existing positional arguments and legacy return meanings remain unchanged.
+
 ## [1.28.2] - 2026-09-15
 
 ### Added

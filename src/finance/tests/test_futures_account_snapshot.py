@@ -23,6 +23,56 @@ HEADER = blocks.CIDBQ03000ResponseHeader(
 ).model_dump(by_alias=True)
 
 
+@pytest.mark.asyncio
+async def test_dated_collector_is_spaced_throttled_immutable_and_clears_failures(monkeypatch):
+    import programgarden_finance.ls.overseas_futureoption.extension.tracker as tracker_module
+    sleep = AsyncMock()
+    monkeypatch.setattr(tracker_module.asyncio, 'sleep', sleep)
+    clock = [1000]
+    monkeypatch.setattr(tracker_module.time, 'monotonic', lambda: clock[0])
+    requests = []
+
+    def request(*, body):
+        requests.append(body)
+        data = payload()
+        data['CIDBQ03000OutBlock1']['TrdDt'] = body.TrdDt
+        for row in data['CIDBQ03000OutBlock2']:
+            row['TrdDt'] = body.TrdDt
+        return SimpleNamespace(req_async=AsyncMock(return_value=parse(data)))
+
+    client = SimpleNamespace(CIDBQ03000=request)
+    tracker = FuturesAccountTracker(client, market_client=None, capture_daily_snapshots=True)
+    notifications = []
+    tracker.on_balance_change(notifications.append)
+    await tracker._fetch_daily_account_snapshots()
+    value = tracker.get_daily_account_snapshots()
+    assert len(requests) == len(value['entries']) == sleep.await_count == 2
+    assert all(body.RecCnt == 1 and body.AcntTpCode == '1' for body in requests)
+    assert requests[0].TrdDt < requests[1].TrdDt
+    assert all(entry['requested_date'] == entry['snapshot']['trading_date'] for entry in value['entries'])
+    value['entries'][0]['snapshot']['rows'].clear()
+    assert tracker.get_daily_account_snapshots()['entries'][0]['snapshot']['rows']
+    assert len(notifications) == 1
+    await tracker._fetch_daily_account_snapshots()
+    assert len(requests) == 2
+    clock[0] += 301
+    client.CIDBQ03000 = lambda **kwargs: SimpleNamespace(req_async=AsyncMock(side_effect=TimeoutError))
+    await tracker._fetch_daily_account_snapshots()
+    assert all(entry['snapshot'] is None for entry in tracker.get_daily_account_snapshots()['entries'])
+    assert len(notifications) == 2
+
+
+@pytest.mark.asyncio
+async def test_daily_capture_is_opt_in_for_existing_sdk_consumers():
+    tracker = FuturesAccountTracker(MagicMock(), market_client=None)
+    tracker._fetch_positions = AsyncMock()
+    tracker._fetch_balance = AsyncMock()
+    tracker._fetch_open_orders = AsyncMock()
+    tracker._fetch_daily_account_snapshots = AsyncMock()
+    await tracker._fetch_all_data()
+    tracker._fetch_daily_account_snapshots.assert_not_awaited()
+
+
 def payload():
     return {
         "rsp_cd": "00136", "rsp_msg": "completed",

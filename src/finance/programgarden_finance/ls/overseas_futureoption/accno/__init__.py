@@ -263,6 +263,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
         refresh_interval: int = 60,
         spec_refresh_hours: int = 6,
         commission_rate: float = 7.5,
+        capture_daily_snapshots: bool = False,
     ):
         """
         계좌 추적기 생성 (보유포지션, 예수금, 미체결 실시간 추적)
@@ -314,6 +315,7 @@ class Accno(metaclass=EnforceKoreanAliasMeta):
             refresh_interval=refresh_interval,
             spec_refresh_hours=spec_refresh_hours,
             commission_rate=Decimal(str(commission_rate)),
+            capture_daily_snapshots=capture_daily_snapshots,
         )
 
     계좌추적기 = account_tracker

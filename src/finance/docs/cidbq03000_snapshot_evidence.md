@@ -76,7 +76,24 @@ precision before the legacy float models; no account number/password is copied.
 `EvalAssetAmt` already includes its valuation components; do not add unrealized
 PnL or fees again. This collector does not reconstruct gross gains/losses,
 workflow ownership, historical flows, adjusted return percentages or MDD.
-Event forwarding, persistence and consumer integration remain pending.
+The engine forwards observations through optional account event envelopes.
+Application persistence and estimated returns are separate consumers; this
+SDK does not calculate account returns.
+
+With `capture_daily_snapshots=True`, the tracker additionally requests the
+current KST calendar date and previous date at most once every 300 seconds,
+spacing the two requests and limiting each to 30 seconds. The default is false
+for existing SDK callers. `get_daily_account_snapshots()` returns an isolated
+version1 batch with `source`, UTC `observed_at` and two
+`entries:[{requested_date,snapshot}]`. Failed/unsupported queries retain null
+snapshots. This opt-in collector adds two queries; the ordinary getter does not.
+Explicit date echo and row validation are mandatory; KST is only a way to choose
+query dates, not proof of broker business-day boundaries.
+
+Read-only paper queries on2026-09-15 for20260914 and20260915 each returned their
+requested date with CAD/CHF/HKD/JPY/USD rows, all with zero net flows. No orders
+were placed. These observations establish date query support, not actual
+nonzero deposit/withdrawal behavior.
 
 A read-only paper query on2026-09-15 returned HTTP200, rsp_cd00136 and five
 currency rows. Its response header uses the family code `tr_cd="CIDBQ"`,

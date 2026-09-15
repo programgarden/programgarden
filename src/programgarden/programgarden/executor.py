@@ -5647,6 +5647,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         tracker = accno.account_tracker(
             market_client=market,
             real_client=real,
+            capture_daily_snapshots=True,
         )
         self._active_trackers[f"{context.job_id}_{node_id}"] = {
             "type": "account_tracker", "tracker": tracker, "ls": ls,
@@ -5698,13 +5699,16 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     current_prices=current_prices,
                     account_positions=account_positions if account_positions else None,
                     currency=getattr(pnl_info, "currency", None),
+                    account_snapshot=tracker.get_account_snapshot(),
+                    account_daily_snapshots=tracker.get_daily_account_snapshots(),
                 ),
                 notification=True,
             )
 
         tracker.on_account_pnl_change(on_pnl_change)
+        tracker.on_balance_change(lambda _: on_pnl_change(tracker.get_account_pnl()))
         await tracker.start()
-        
+
         context.log("info", f"FuturesAccountTracker started for {node_id}", node_id)
 
     async def _start_korea_stock_tracker(
