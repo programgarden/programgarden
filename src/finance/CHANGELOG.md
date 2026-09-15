@@ -1,3 +1,11 @@
+## [Unreleased]
+
+### Added
+- Retain supported CIDBQ03000 account equity and business-day net cash-flow snapshots from the existing futures balance refresh. Keep native/aggregate targets separate, preserve missing fields and invalidate failed evidence. Return calculation and application forwarding remain separate follow-up work.
+
+### Changed
+- Record the owner's daily, non-cumulative CustmMnyioAmt definition and the observed paper CIDBQ family response header. Do not infer individual transaction times or apply these facts to other TRs.
+
 ## [1.9.8] - 2026-09-15
 
 ### Added

@@ -9,9 +9,10 @@
 """
 
 import logging
+from copy import deepcopy
 from decimal import Decimal
 from typing import Dict, List, Optional, Callable, Any, Set
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,7 @@ class FuturesAccountTracker:
         self._positions: Dict[str, FuturesPositionItem] = {}
         self._position_evidence_errors: Dict[str, str] = {}
         self._balance: Optional[FuturesBalanceInfo] = None
+        self._account_snapshot: Optional[Dict[str, Any]] = None
         self._open_orders: Dict[str, FuturesOpenOrder] = {}
         self._current_prices: Dict[str, Decimal] = {}
         
@@ -347,18 +349,22 @@ class FuturesAccountTracker:
     async def _fetch_balance(self):
         """예수금/증거금 조회 (CIDBQ03000)"""
         logger.debug("[_fetch_balance] 조회 시작")
+        self._account_snapshot = None
         
         try:
             from ..accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+            from .account_snapshot import futures_account_snapshot
             
-            tr = self._accno_client.CIDBQ03000(
-                body=CIDBQ03000InBlock1(
-                    RecCnt=1,
-                    AcntTpCode="1",
-                    TrdDt=""
-                ),
+            body = CIDBQ03000InBlock1(
+                RecCnt=1,
+                AcntTpCode="1",
+                TrdDt=""
             )
+            tr = self._accno_client.CIDBQ03000(body=body)
             resp = await tr.req_async()
+            self._account_snapshot = futures_account_snapshot(
+                resp, body, datetime.now(timezone.utc)
+            )
             
             # 응답 코드 확인
             rsp_cd = getattr(resp, 'rsp_cd', '')
@@ -413,11 +419,7 @@ class FuturesAccountTracker:
                         last_updated=now
                     )
                     
-                    logger.info(
-                        f"[_fetch_balance] 예수금=${self._balance.deposit:.2f}, "
-                        f"주문가능=${self._balance.orderable_amount:.2f}, "
-                        f"증거금=${self._balance.total_margin:.2f}"
-                    )
+                    logger.debug("Balance refresh completed")
                     
                     self._notify_balance_change()
             else:
@@ -429,6 +431,7 @@ class FuturesAccountTracker:
             self._last_errors.pop("balance", None)
                 
         except Exception as e:
+            self._account_snapshot = None
             error_msg = f"[예수금 조회 실패] {str(e)}"
             self._last_errors["balance"] = error_msg
             logger.error(f"[_fetch_balance] 조회 실패: {e}", exc_info=True)
@@ -810,6 +813,10 @@ class FuturesAccountTracker:
     def get_balance(self) -> Optional[FuturesBalanceInfo]:
         """예수금/증거금 조회"""
         return self._balance
+
+    def get_account_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Return an isolated copy of the latest supported account observation."""
+        return deepcopy(self._account_snapshot)
     
     def get_open_orders(self) -> Dict[str, FuturesOpenOrder]:
         """미체결 주문 조회"""

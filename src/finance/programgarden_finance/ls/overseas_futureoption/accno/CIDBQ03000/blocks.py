@@ -10,8 +10,11 @@ Metadata sources:
     - The supplied response example contains ``TOT(USD)`` and ``rsp_cd="00136"``.
     - The repository example uses a blank ``TrdDt``. The supplied table does not
       define that convention or the available historical query period.
-    - Date-specific responses do not establish intraday reset boundaries or
-      arithmetic relationships between the P&L and commission fields.
+    - The owner clarified on 2026-09-15 that CustmMnyioAmt is the current
+      business day's net deposits/withdrawals, not a cumulative balance.
+      Individual transaction timing and the exact reset clock remain unknown.
+    - Date-specific responses do not establish arithmetic relationships
+      between the P&L and commission fields.
 
 Keep the returned currency target and snapshot fields separate. Do not treat
 snapshot components as independent additions to reported equity without a
@@ -152,7 +155,8 @@ class CIDBQ03000OutBlock2(BaseModel):
     The supplied example returns a list containing a ``TOT(USD)`` aggregate row.
     Keep aggregate and individual currency rows separate; summing them can double
     count the same balance. Numeric lengths/scales describe the wire format,
-    not conversion rates, arithmetic identities or accumulation/reset periods.
+    not conversion rates or arithmetic identities. The separately confirmed
+    daily scope of CustmMnyioAmt does not establish an exact reset clock.
     """
 
     AcntNo: str = Field(
@@ -194,7 +198,9 @@ class CIDBQ03000OutBlock2(BaseModel):
         default=0.0,
         title="Customer deposit/withdrawal amount (고객입출금금액)",
         description=(
-            "Net customer deposit/withdrawal amount. "
+            "Net customer deposits/withdrawals for the current business day, "
+            "as confirmed by the owner on 2026-09-15; not cumulative cash or balance. "
+            "This daily snapshot does not identify individual transaction times. "
             "LS numeric length/scale 19.2 (two decimal places). Currency target: CrcyObjCode."
         ),
         examples=[5000.0, -2000.0, 0.0],
@@ -360,6 +366,9 @@ class CIDBQ03000Response(BaseModel):
         description="Error message when an exception or HTTP error occurred. None on success.",
     )
     _raw_data: Optional[Response] = PrivateAttr(default=None)
+    # Only whitelisted, non-identity fields used by account snapshot accounting.
+    # Preserve wire numeric precision and distinguish absent values from defaults.
+    _account_snapshot_rows: Optional[List[dict]] = PrivateAttr(default=None)
 
     @property
     def raw_data(self) -> Optional[Response]:

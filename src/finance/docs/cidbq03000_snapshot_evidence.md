@@ -40,6 +40,50 @@ formula, historical retention, intraday reset boundary, or the inclusion of
 commission/final settlement in liquidation P&L: both liquidation and final
 settlement values were zero. It is not a verified contest return or MDD.
 
+## Owner-confirmed daily cash-flow scope, 2026-09-15
+
+The owner confirmed that `CustmMnyioAmt` is the net customer deposit/withdrawal
+amount for the current business day, not a cumulative account balance. Preserve
+this fact for this TR; generic fields named `ioAmt` in other TRs are not evidence
+of identical semantics. Other suggested cash fields must be checked against
+their own actual models before use.
+
+Repeated intraday observations of500 describe the same daily net flow; they
+must not be summed into1000. A following business day's0 is a daily reset,
+not evidence of a500 withdrawal. Snapshot observation timestamps are not
+individual flow timestamps, and calendar midnight does not establish the
+broker's business-day boundary. A blank returned `TrdDt` remains unknown.
+The existing dated paper responses contain zero flows and do not independently
+verify how nonzero historical cash flows are represented.
+
+## Unreleased account snapshot collector
+
+`FuturesAccountTracker.get_account_snapshot()` returns an isolated copy of the
+latest supported observation from its existing CIDBQ03000 refresh. No extra
+request is added. It clears supported evidence on a failed/partial refresh;
+the legacy balance/position caches retain their existing behavior.
+
+The additive envelope carries source, observation time, requested/returned
+dates and `cash_flow_basis="business_day_net"`. Each row retains its
+`currency_target`, separate native/aggregate classification and explicit
+`equity`, `daily_net_cash_flow`, `unrealized_pnl`, and `margin` amounts.
+Missing optional amounts remain null. Missing equity, malformed numeric data,
+contradictory dates, duplicate currency targets, errors and continuation pages
+do not produce a supported snapshot. Raw whitelisted fields preserve decimal
+precision before the legacy float models; no account number/password is copied.
+
+`TOT(USD)` and native currency rows must not be added together. Reported
+`EvalAssetAmt` already includes its valuation components; do not add unrealized
+PnL or fees again. This collector does not reconstruct gross gains/losses,
+workflow ownership, historical flows, adjusted return percentages or MDD.
+Event forwarding, persistence and consumer integration remain pending.
+
+A read-only paper query on2026-09-15 returned HTTP200, rsp_cd00136 and five
+currency rows. Its response header uses the family code `tr_cd="CIDBQ"`,
+although the request and payload blocks are explicitly CIDBQ03000. Accept
+that observed header as well as the full code only with the exact typed
+CIDBQ03000 payload/echo checks. Unrelated payload block names still fail.
+
 ## Field metadata corrections
 
 The supplied table specifies `OvrsFutsDps` as23.2 and the other monetary fields

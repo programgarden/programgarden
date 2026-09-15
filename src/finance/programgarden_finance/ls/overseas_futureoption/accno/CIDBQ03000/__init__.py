@@ -69,6 +69,15 @@ class TrCIDBQ03000(TRAccnoAbstract):
             error_msg=error_msg,
         )
         result.raw_data = resp
+        if isinstance(resp_json.get("CIDBQ03000OutBlock2"), list) and all(
+            isinstance(item, dict) for item in block2
+        ):
+            from ...extension.account_snapshot import SNAPSHOT_FIELDS
+
+            result._account_snapshot_rows = [
+                {name: item[name] for name in SNAPSHOT_FIELDS if name in item}
+                for item in block2
+            ]
         return result
 
     def req(self) -> CIDBQ03000Response:
