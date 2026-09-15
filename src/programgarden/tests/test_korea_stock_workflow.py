@@ -39,61 +39,9 @@ class _WorkflowTracker:
 
 
 def _mock_ls_korea_stock():
-    """국내주식 API mock 체인 생성"""
-    ls = MagicMock()
-
-    # CSPAQ12300 (잔고)
-    pos_item = MagicMock()
-    pos_item.IsuNo = "A005930"
-    pos_item.IsuNm = "삼성전자"
-    pos_item.BalQty = 100
-    pos_item.NowPrc = 65000
-    pos_item.AvrUprc = 60000
-    pos_item.EvalPnl = 500000
-    pos_item.PnlRat = 8.3
-    pos_item.SellAbleQty = 100
-    pos_item.BalEvalAmt = 6500000
-
-    b2 = MagicMock()
-    b2.MnyOrdAbleAmt = 5000000
-    b2.BalEvalAmt = 20000000
-    b2.PchsAmt = 18000000
-    b2.EvalPnl = 2000000
-    b2.PnlRat = 11.1
-    b2.Dps = 6000000
-
-    resp_12300 = MagicMock()
-    resp_12300.error_msg = None
-    resp_12300.block2 = b2
-    resp_12300.block3 = [pos_item]
-
-    mock_12300 = MagicMock()
-    mock_12300.req_async = AsyncMock(return_value=resp_12300)
-
-    # CSPAQ22200 (예수금)
-    b2_cash = MagicMock()
-    b2_cash.MnyOrdAbleAmt = 5500000
-    b2_cash.Dps = 6100000
-    b2_cash.D2Dps = 5800000
-    b2_cash.MgnMny = 100000
-
-    resp_22200 = MagicMock()
-    resp_22200.error_msg = None
-    resp_22200.block2 = b2_cash
-
-    mock_22200 = MagicMock()
-    mock_22200.req_async = AsyncMock(return_value=resp_22200)
-
-    # 체인 구성
-    mock_accno = MagicMock()
-    mock_accno.cspaq12300 = MagicMock(return_value=mock_12300)
-    mock_accno.cspaq22200 = MagicMock(return_value=mock_22200)
-
-    mock_korea_stock = MagicMock()
-    mock_korea_stock.accno = MagicMock(return_value=mock_accno)
-    ls.korea_stock = MagicMock(return_value=mock_korea_stock)
-
-    return ls
+    """Use real response models so missing broker fields cannot be invented."""
+    from test_domestic_node_evidence import ls_for, position_response, cash_response
+    return ls_for(position_response(), cash_response())
 
 
 # ── 1. Broker → Account 워크플로우 ──
@@ -146,8 +94,10 @@ class TestKoreaStockBrokerAccountWorkflow:
 
         # account 출력 확인
         acct_out = tracker.outputs.get("account", {})
-        assert "positions" in acct_out
-        assert "balance" in acct_out
+        assert acct_out["positions"][0]["quantity"] == 1
+        assert acct_out["held_symbols"][0]["symbol"] == "001500"
+        assert acct_out["balance"]["orderable_amount"] == 10000
+        assert not acct_out["balance"].get("_partial_failure")
 
 
 # ── 2. Broker → Account → Display 워크플로우 ──
@@ -298,33 +248,9 @@ class TestKoreaStockOpenOrdersWorkflow:
         """국내주식 미체결 조회 워크플로우"""
         from programgarden.executor import WorkflowExecutor
 
-        mock_ls = MagicMock()
+        from test_domestic_node_evidence import ls_for, order_response
+        mock_ls = ls_for(orders=order_response())
         mock_login.return_value = (mock_ls, True, None)
-
-        # t0425 mock
-        item = MagicMock()
-        item.ordno = 12345
-        item.ordrem = 50
-        item.expcode = "005930"
-        item.medosu = "매수"
-        item.hogagb = "지정가"
-        item.qty = 100
-        item.cheqty = 50
-        item.price = 65000
-        item.ordtime = "093000"
-
-        resp = MagicMock()
-        resp.error_msg = None
-        resp.block1 = [item]
-
-        mock_t0425 = MagicMock()
-        mock_t0425.req_async = AsyncMock(return_value=resp)
-
-        mock_accno = MagicMock()
-        mock_accno.t0425 = MagicMock(return_value=mock_t0425)
-        mock_ks = MagicMock()
-        mock_ks.accno = MagicMock(return_value=mock_accno)
-        mock_ls.korea_stock = MagicMock(return_value=mock_ks)
 
         workflow = {
             "id": "test-kr-oo",

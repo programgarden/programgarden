@@ -54,12 +54,22 @@ def position_evidence(rows, observed_at):
         purchase = purchase if purchase is not None and purchase > 0 else None
         price = price if price is not None and price > 0 else None
         evaluation = evaluation if evaluation is not None and evaluation >= 0 else None
+        sellable = observed_amount(row, "SellAbleQty")
+        sellable = int(sellable) if (sellable is not None and sellable >= 0
+                                     and sellable == sellable.to_integral_value()) else None
+        ratio = observed_amount(row, "PnlRat")
+        # The average-cost request returned a fraction in both the owner example
+        # and a nonzero live observation. Require matching amount evidence too.
+        rate = ratio * 100 if (ratio is not None and pnl is not None and purchase is not None
+                              and abs(ratio - pnl / purchase) <= Decimal("0.000001")) else None
         positions[symbol] = {
-            "symbol": symbol, "quantity": int(quantity), "product": "korea_stock",
+            "symbol": symbol, "quantity": int(quantity), "sellable_qty": sellable, "product": "korea_stock",
             "symbol_name": row.IsuNm if "IsuNm" in row.model_fields_set else "",
             "currency": "KRW", "buy_price": average, "average_price": average,
             "acquisition_amount": purchase, "current_price": price,
-            "eval_amount": evaluation, "pnl_amount": pnl,
+            "eval_amount": evaluation, "pnl_amount": pnl, "pnl_rate": rate,
+            "pnl_rate_basis": "broker_average_commission_excluded",
+            "pnl_rate_status": "available" if rate is not None else "unavailable",
             "pnl_status": "available" if pnl is not None else "unavailable",
             "pnl_unavailable_reason": None if pnl is not None else "broker_field_not_observed",
             "cost_basis": "broker_average_commission_excluded",

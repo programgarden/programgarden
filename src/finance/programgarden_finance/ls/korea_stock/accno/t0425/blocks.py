@@ -415,6 +415,7 @@ class T0425Response(BaseModel):
     error_msg: Optional[str] = Field(default=None, title="Error message")
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
+    _orders_block_present: bool = PrivateAttr(default=False)
 
     @property
     def raw_data(self) -> Optional[Response]:

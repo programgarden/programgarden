@@ -1,4 +1,12 @@
-## [1.37.11] - 2026-09-15
+## [1.38.1] - 2026-09-15
+
+### Fixed
+- Domestic AccountNode uses complete trade-basis holdings, retaining same-day purchases instead of relying on settled BalQty or unavailable CSPAQ12300 summary fields.
+- Preserve independent cash/holdings failure signals and nullable monetary evidence. Domestic OpenOrdersNode reads all pages and rejects unknown sides instead of treating them as sells.
+- Normalize proven position-level percentage units; account-level return methodology remains unavailable.
+
+### Dependencies
+- Require finance >=1.10.2; core remains >=1.29.0 and community >=1.15.3.
 
 ## [1.38.0] - 2026-09-15
 
@@ -15,6 +23,8 @@
 ### Verification limits
 - Domestic account amounts exclude commission; CSPAQ12300 summary fields are not provided. FOCCQ33600 methodology and full workflow NXT modify/cancel routing remain unverified.
 
+
+## [1.37.11] - 2026-09-15
 
 ### Changed
 - Require programgarden-finance >=1.10.0 for source-correct domestic account fields, NS3 quote subscriptions and the NXT limit-order reference. Core remains >=1.28.3 and community >=1.15.3.

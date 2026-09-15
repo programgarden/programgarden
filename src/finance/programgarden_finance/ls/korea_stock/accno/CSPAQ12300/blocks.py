@@ -366,9 +366,12 @@ class CSPAQ12300OutBlock3(BaseModel):
         default=0.0,
         title="손익율 (Return rate)",
         description=(
-            "Broker-reported PnL ratio, retained without rescaling. The supplied "
-            "example uses 0.378333; the table does not specify the display scale. "
-            "Do not add a percent sign or multiply without confirming that basis."
+            "Raw broker PnL fraction, retained without rescaling in this model. "
+            "For the average-cost, commission-excluded request (UprcTpCode=0, "
+            "CmsnAppTpCode=0), the owner example 0.378333 matches 22700/60000. "
+            "A 2026-09-15 live observation -0.003759 matches -30/7980. "
+            "The evidence collector multiplies by 100 only when explicit "
+            "EvalPnl/PchsAmt confirms this fraction within six-decimal rounding."
         ),
         examples=[0.0, 0.378333],
     )

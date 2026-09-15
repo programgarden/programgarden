@@ -6049,133 +6049,49 @@ class AccountNodeExecutor(NodeExecutorBase):
         }
 
     async def _ls_korea_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
-        """
-        LS증권 국내주식 잔고 조회
+        """Complete trade-basis holdings and independently observed non-credit cash."""
+        from decimal import Decimal
+        from programgarden_finance.ls.korea_stock.extension.valuation import collect_domestic_position_evidence
+        from programgarden_finance.ls.korea_stock.extension.account_queries import collect_domestic_cash_evidence
 
-        - CSPAQ12300: 종목별 잔고내역 (보유종목, 평가손익)
-        - CSPAQ22200: 예수금/주문가능금액
-        """
+        def numbers(row):
+            return {key: float(value) if isinstance(value, Decimal) else value for key, value in row.items()}
+
+        positions = []
+        balance = {key: None for key in ("orderable_amount", "deposit", "d2_deposit",
+                                         "margin_cash", "total_eval", "purchase_amount", "eval_pnl", "pnl_rate")}
+        failures, reasons = [], []
+        accno = ls.korea_stock().accno()
         try:
-            from programgarden_finance.ls.korea_stock.accno.CSPAQ12300.blocks import CSPAQ12300InBlock1
-            from programgarden_finance.ls.korea_stock.accno.CSPAQ22200.blocks import CSPAQ22200InBlock1
-
-            # 1. CSPAQ12300: 종목별 잔고내역
-            response = await ls.korea_stock().accno().cspaq12300(
-                body=CSPAQ12300InBlock1()
-            ).req_async()
-
-            positions = []
-            # Pre-seed orderable_amount as None so a partial failure is
-            # observable downstream. The two TR fetches below clear the
-            # flag when they succeed; if either fails we set
-            # _partial_failure=True with the offending code.
-            balance_info: Dict[str, Any] = {
-                "orderable_amount": None,
-                "deposit": 0.0,
-                "total_eval": 0.0,
-                "purchase_amount": 0.0,
-                "eval_pnl": 0.0,
-                "pnl_rate": 0.0,
-            }
-            failure_codes: List[str] = []
-            failure_reasons: List[str] = []
-
-            if response.error_msg:
-                context.log("warning", f"CSPAQ12300 조회 실패: {response.error_msg}", node_id)
-                failure_codes.append("CSPAQ12300")
-                failure_reasons.append(f"CSPAQ12300 error: {response.error_msg}")
-            else:
-                # block2: 잔고 요약
-                if response.block2:
-                    b2 = response.block2
-                    balance_info["orderable_amount"] = float(b2.MnyOrdAbleAmt) if b2.MnyOrdAbleAmt else 0.0
-                    balance_info["total_eval"] = float(b2.BalEvalAmt) if b2.BalEvalAmt else 0.0
-                    balance_info["purchase_amount"] = float(b2.PchsAmt) if b2.PchsAmt else 0.0
-                    balance_info["eval_pnl"] = float(b2.EvalPnl) if b2.EvalPnl else 0.0
-                    balance_info["pnl_rate"] = float(b2.PnlRat) if b2.PnlRat else 0.0
-                    balance_info["deposit"] = float(b2.Dps) if b2.Dps else 0.0
-
-                # block3: 종목별 잔고 리스트
-                for item in (response.block3 or []):
-                    symbol = (item.IsuNo or "").strip()
-                    # IsuNo가 A로 시작하면 앞자리 제거 (A005930 → 005930)
-                    if symbol.startswith("A"):
-                        symbol = symbol[1:]
-                    if not symbol:
-                        continue
-
-                    qty = int(item.BalQty) if item.BalQty else 0
-                    if qty <= 0:
-                        continue
-
-                    current_price = float(item.NowPrc) if item.NowPrc else 0.0
-                    positions.append({
-                        "symbol": symbol,
-                        "exchange": "KRX",
-                        "name": (item.IsuNm or "").strip(),
-                        "quantity": qty,
-                        "price": current_price,
-                        "avg_price": float(item.AvrUprc) if item.AvrUprc else 0.0,
-                        "current_price": current_price,
-                        "pnl_amount": float(item.EvalPnl) if item.EvalPnl else 0.0,
-                        "pnl_rate": float(item.PnlRat) if item.PnlRat else 0.0,
-                        "sellable_qty": int(item.SellAbleQty) if item.SellAbleQty else 0,
-                        "eval_amount": float(item.BalEvalAmt) if item.BalEvalAmt else 0.0,
-                        "product": "korea_stock",
-                    })
-
-            # 2. CSPAQ22200: 예수금/주문가능금액
-            cspaq22200_ok = False
-            try:
-                cash_response = await ls.korea_stock().accno().cspaq22200(
-                    body=CSPAQ22200InBlock1()
-                ).req_async()
-
-                if not cash_response.error_msg and cash_response.block2:
-                    b2 = cash_response.block2
-                    balance_info["orderable_amount"] = (
-                        float(b2.MnyOrdAbleAmt)
-                        if b2.MnyOrdAbleAmt
-                        else balance_info["orderable_amount"]
-                    )
-                    balance_info["deposit"] = float(b2.Dps) if b2.Dps else balance_info["deposit"]
-                    balance_info["d2_deposit"] = float(b2.D2Dps) if b2.D2Dps else 0.0
-                    balance_info["margin_cash"] = float(b2.MgnMny) if b2.MgnMny else 0.0
-                    cspaq22200_ok = True
-                elif cash_response.error_msg:
-                    context.log("warning", f"CSPAQ22200 조회 실패: {cash_response.error_msg}", node_id)
-                    failure_reasons.append(f"CSPAQ22200 error: {cash_response.error_msg}")
-            except Exception as e:
-                context.log("warning", f"CSPAQ22200 조회 실패: {e}", node_id)
-                failure_reasons.append(f"CSPAQ22200 exception: {e}")
-
-            if not cspaq22200_ok:
-                failure_codes.append("CSPAQ22200")
-                # CSPAQ22200 owns the authoritative orderable_amount; without it
-                # any value inherited from CSPAQ12300 is stale-acceptable but
-                # must not be treated as fresh.
-                if balance_info["orderable_amount"] is None:
-                    pass  # already None
-                # leave the inherited value but mark partial failure below
-
-            if failure_codes:
-                balance_info["_partial_failure"] = True
-                balance_info["_failure_codes"] = failure_codes
-                balance_info["_failure_reason"] = "; ".join(failure_reasons) or "Balance fetch partial failure"
-
-            context.log("info", f"AccountNode (korea_stock): {len(positions)} positions fetched", node_id)
-            return {
-                "held_symbols": [
-                    {"exchange": p.get("exchange", "KRX"), "symbol": p["symbol"]}
-                    for p in positions
-                ],
-                "positions": positions,
-                "balance": balance_info,
-            }
-
-        except Exception as e:
-            context.log("error", f"Failed to fetch korea_stock positions: {e}", node_id)
-            return self._empty_result(str(e))
+            evidence = await collect_domestic_position_evidence(accno)
+            for row in evidence["positions"].values():
+                position = numbers(row)
+                position.update({"exchange": "KRX", "name": row["symbol_name"],
+                                 "price": position["current_price"], "avg_price": position["average_price"],
+                                 "purchase_amount": position["acquisition_amount"]})
+                positions.append(position)
+            for target, source in (("total_eval", "eval_amount"), ("purchase_amount", "purchase_amount"),
+                                   ("eval_pnl", "pnl_amount")):
+                values = [row[source] for row in positions]
+                balance[target] = sum(values) if all(value is not None for value in values) else None
+            if evidence["account_valuation"] is None:
+                balance["eval_pnl"] = None
+        except Exception as exc:
+            failures.append("CSPAQ12300")
+            reasons.append(f"CSPAQ12300: {exc}")
+            context.log("warning", "Domestic holding evidence unavailable", node_id)
+        try:
+            balance.update(numbers(await collect_domestic_cash_evidence(accno)))
+        except Exception as exc:
+            failures.append("CSPAQ22200")
+            reasons.append(f"CSPAQ22200: {exc}")
+            context.log("warning", "Domestic non-credit cash evidence unavailable", node_id)
+        if failures:
+            balance.update({"_partial_failure": True, "_failure_codes": failures,
+                            "_failure_reason": "; ".join(reasons)})
+        context.log("info", f"AccountNode (korea_stock): {len(positions)} observed positions", node_id)
+        return {"held_symbols": [{"exchange": "KRX", "symbol": row["symbol"]} for row in positions],
+                "positions": positions, "balance": balance}
 
     async def _ls_overseas_futureoption(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """
@@ -6469,61 +6385,19 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
             return self._empty_result(str(e))
 
     async def _ls_korea_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
-        """국내주식 미체결 조회 (t0425)"""
+        """Complete pending orders; an unknown side or partial page blocks entry."""
+        from decimal import Decimal
+        from programgarden_finance.ls.korea_stock.extension.account_queries import collect_domestic_open_orders
+
         try:
-            from programgarden_finance.ls.korea_stock.accno.t0425.blocks import T0425InBlock
-
-            response = await ls.korea_stock().accno().t0425(
-                body=T0425InBlock(
-                    expcode="",      # 빈값: 전체 종목
-                    chegb="2",       # 2: 미체결
-                    medosu="0",      # 0: 전체
-                    sortgb="1",      # 1: 주문번호 역순
-                    cts_ordno="",
-                )
-            ).req_async()
-
-            if response.error_msg:
-                context.log("error", f"t0425 error: {response.error_msg}", node_id)
-                return self._empty_result(response.error_msg)
-
-            open_orders = []
-            # T0425Response.block (T0425OutBlock1 리스트)
-            for item in response.block or []:
-                order_id = str(item.ordno) if item.ordno else ""
-                if not order_id:
-                    continue
-
-                # 미체결잔량이 0이면 완료된 주문
-                remaining = int(item.ordrem) if item.ordrem else 0
-                if remaining <= 0:
-                    continue
-
-                side = "buy" if "매수" in (item.medosu or "") else "sell"
-
-                open_orders.append({
-                    "order_id": order_id,
-                    "exchange": "KRX",
-                    "symbol": (item.expcode or "").strip(),
-                    "name": "",
-                    "side": side,
-                    "order_type": (item.hogagb or "").strip(),
-                    "quantity": int(item.qty) if item.qty else 0,
-                    "filled_quantity": int(item.cheqty) if item.cheqty else 0,
-                    "remaining_quantity": remaining,
-                    "price": float(item.price) if item.price else 0.0,
-                    "order_time": (item.ordtime or "").strip(),
-                })
-
-            context.log("info", f"OpenOrdersNode (korea_stock): {len(open_orders)} open orders", node_id)
-            return {
-                "open_orders": open_orders,
-                "count": len(open_orders),
-            }
-
-        except Exception as e:
-            context.log("error", f"Korea stock open orders error: {e}", node_id)
-            return self._empty_result(str(e))
+            rows = await collect_domestic_open_orders(ls.korea_stock().accno())
+            orders = [{key: float(value) if isinstance(value, Decimal) else value
+                       for key, value in row.items()} for row in rows]
+            context.log("info", f"OpenOrdersNode (korea_stock): {len(orders)} observed open orders", node_id)
+            return {"open_orders": orders, "count": len(orders)}
+        except Exception as exc:
+            context.log("error", "Domestic open-order evidence unavailable", node_id)
+            return self._empty_result(str(exc))
 
     async def _ls_overseas_stock(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """해외주식 미체결 조회 (COSAQ00102)"""
