@@ -18,7 +18,7 @@ KO:
 from __future__ import annotations
 
 from typing import Callable, List
-from .blocks import NH1RealResponse
+from .blocks import NH1RealRequestBody, NH1RealResponse
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -50,6 +50,11 @@ class RealNH1():
     def __init__(self, parent: Real):
         self._parent = parent
 
+    @staticmethod
+    def _keys(symbols: List[str]) -> List[str]:
+        # Validate the complete batch and retain the same keys for reconnect/removal.
+        return list(dict.fromkeys(NH1RealRequestBody(tr_key=s).tr_key for s in symbols))
+
     def add_nh1_symbols(self, symbols: List[str]):
         """NXT 종목코드를 실시간 호가잔량 구독에 등록합니다.
 
@@ -68,7 +73,7 @@ class RealNH1():
         Parameters:
             symbols: 구독할 NXT 종목코드 리스트 (예: ['N000880', 'N005930'])
         """
-        return self._parent._add_message_symbols(symbols=symbols, tr_cd="NH1")
+        return self._parent._add_message_symbols(symbols=self._keys(symbols), tr_cd="NH1")
 
     def remove_nh1_symbols(self, symbols: List[str]):
         """NXT 종목코드를 실시간 호가잔량 구독에서 해제합니다.
@@ -82,7 +87,7 @@ class RealNH1():
         Parameters:
             symbols: 해제할 NXT 종목코드 리스트 (예: ['N000880'])
         """
-        return self._parent._remove_message_symbols(symbols=symbols, tr_cd="NH1")
+        return self._parent._remove_message_symbols(symbols=self._keys(symbols), tr_cd="NH1")
 
     def on_nh1_message(self, listener: Callable[[NH1RealResponse], None]):
         """호가잔량 데이터 수신 시 호출될 콜백을 등록합니다.

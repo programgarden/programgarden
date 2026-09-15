@@ -460,3 +460,7 @@ The [NXT limit-order preview](example/korea_stock/run_CSPAT00601_nxt.py) copies
 the supplied LS request and performs no login or submission when run. See the
 [source contract](docs/cspat00601_nxt_contract.md) for scope and response-presence
 rules. Workflow-node integration, live fills and SC1 venue evidence remain pending.
+
+`python example/korea_stock/run_t9945.py --nxt-only` performs read-only master
+queries and displays observed NXT eligibility. Missing flags remain unknown;
+current session, halt state and executable prices require separate checks.

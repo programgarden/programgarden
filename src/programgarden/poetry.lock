@@ -2625,14 +2625,14 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.9.9"
+version = "1.10.0"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.9.9-py3-none-any.whl", hash = "sha256:c3dfe5b51334e4d10f839d78edc3f63560092eab12b707bbe621844176fe09f1"},
-    {file = "programgarden_finance-1.9.9.tar.gz", hash = "sha256:658c8c1a619227ca6cc46798c44237d0a033ce65f7ce1549a5555980e3826d88"},
+    {file = "programgarden_finance-1.10.0-py3-none-any.whl", hash = "sha256:1ce21071a834622420e14d36e9b20027513fa19084ff7e51326b6dcf853fb1ab"},
+    {file = "programgarden_finance-1.10.0.tar.gz", hash = "sha256:c51c37899496f70d5de2a4f0b9c70d43016d13f57085d8919604d216a4ba2b55"},
 ]
 
 [package.dependencies]
@@ -4179,4 +4179,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "3de40c9d9a3c5d3ccaef733ab4a0ebc20d9b56c16197671c5e89a0699745f52b"
+content-hash = "e518aa01d48fefdf782c3bcd8eb55f43d7e40a7ee31d906d160fd2af51d3e3aa"

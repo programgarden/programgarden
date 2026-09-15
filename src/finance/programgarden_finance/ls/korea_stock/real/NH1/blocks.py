@@ -31,6 +31,7 @@ the 2026-05-06 finance TR field metadata plan):
 """
 
 from typing import Optional
+import re
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from websockets import Response
 
@@ -72,9 +73,11 @@ class NH1RealRequestBody(BaseModel):
         if v is None:
             return None
         s = str(v)
-        if len(s) < 10:
-            return s.ljust(10)
-        return s
+        if re.fullmatch(r"[0-9]{6}", s):
+            s = "N" + s
+        if not re.fullmatch(r"N[0-9]{6}(?: {3})?", s):
+            raise ValueError("NH1 requires six digits or N plus six digits and optional three trailing spaces")
+        return s.ljust(10)
 
     model_config = ConfigDict(validate_assignment=True)
 
@@ -87,7 +90,7 @@ class NH1RealRequest(BaseModel):
         description="NH1 실시간 시세 등록/해제를 위한 헤더 블록"
     )
     body: NH1RealRequestBody = Field(
-        NH1RealRequestBody(tr_cd="NH1", tr_key=""),
+        ...,
         title="요청 바디 (Request body)",
         description="NXT 호가잔량 실시간 등록에 필요한 종목코드 정보"
     )
