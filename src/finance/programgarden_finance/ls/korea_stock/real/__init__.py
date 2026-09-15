@@ -1,16 +1,7 @@
-"""국내주식 실시간(Real) WebSocket 통합 클래스
+"""Domestic realtime quotes and account events on one shared socket.
 
-EN:
-    Unified real-time WebSocket class for Korean domestic stocks.
-    Manages 13 TR real-time streams: 8 market data (S3_, K3_, H1_, HA_, NH1, IJ_, DVI, NVI)
-    and 5 order events (SC0, SC1, SC2, SC3, SC4).
-    Uses singleton pattern per token_manager instance.
-
-KO:
-    국내주식 실시간 WebSocket 통합 클래스입니다.
-    시세 8개(S3_, K3_, H1_, HA_, NH1, IJ_, DVI, NVI)와
-    주문 5개(SC0, SC1, SC2, SC3, SC4) 총 13개 TR을 관리합니다.
-    token_manager 인스턴스 단위 싱글톤 패턴을 사용합니다.
+Supports fourteen TR clients: nine market feeds (S3_, K3_, H1_, HA_, NH1,
+NS3, IJ_, DVI, NVI) and five account order feeds (SC0 through SC4).
 """
 
 from programgarden_core.bases import BaseReal
@@ -37,6 +28,11 @@ from .HA_ import RealHA_
 from .HA_.blocks import (
     HA_RealRequest, HA_RealRequestHeader, HA_RealRequestBody,
     HA_RealResponseHeader, HA_RealResponseBody, HA_RealResponse,
+)
+from .NS3 import RealNS3
+from .NS3.blocks import (
+    NS3RealRequest, NS3RealRequestHeader, NS3RealRequestBody,
+    NS3RealResponseHeader, NS3RealResponseBody, NS3RealResponse,
 )
 from .NH1 import RealNH1
 from .NH1.blocks import (
@@ -90,24 +86,9 @@ from programgarden_core.korea_alias import require_korean_alias
 
 
 class Real(RealRequestAbstract, BaseReal):
-    """국내주식 실시간(Real) WebSocket 통합 클래스
+    """Domestic quotes and account events, shared per token-manager instance.
 
-    EN:
-        Manages WebSocket connections for Korean domestic stock real-time data.
-        Provides access to 13 TR clients via property methods:
-        - Market data: S3_(KOSPI체결), K3_(KOSDAQ체결), H1_(KOSPI호가),
-          HA_(KOSDAQ호가), NH1(NXT호가), IJ_(업종지수), DVI(VI발동해제), NVI(NXT VI)
-        - Order events: SC0(주문접수), SC1(주문체결), SC2(주문정정),
-          SC3(주문취소), SC4(주문거부)
-
-    KO:
-        국내주식 실시간 데이터를 위한 WebSocket 연결을 관리합니다.
-        13개 TR 클라이언트에 메서드로 접근합니다:
-        - 시세: S3_(KOSPI체결), K3_(KOSDAQ체결), H1_(KOSPI호가잔량),
-          HA_(KOSDAQ호가잔량), NH1(NXT호가잔량), IJ_(업종지수),
-          DVI(시간외단일가VI발동해제), NVI(NXT VI발동해제)
-        - 주문: SC0(주문접수), SC1(주문체결), SC2(주문정정),
-          SC3(주문취소), SC4(주문거부)
+    NS3 is an NXT quote stream. It does not identify an SC1 execution venue.
     """
 
     def __init__(
@@ -133,7 +114,7 @@ class Real(RealRequestAbstract, BaseReal):
             raise ValueError("token_manager is required")
         self.token_manager = token_manager
 
-    # ─── 시세 TR 메서드 (8개) ───
+    # Market quote clients (nine TRs).
 
     @require_korean_alias
     def S3_(self) -> RealS3_:
@@ -204,6 +185,15 @@ class Real(RealRequestAbstract, BaseReal):
 
     KOSDAQ호가잔량 = HA_
     KOSDAQ호가잔량.__doc__ = "KOSDAQ 종목의 실시간 호가잔량 데이터를 구독합니다."
+
+    @require_korean_alias
+    def NS3(self) -> RealNS3:
+        """Return the NXT trade-tick client after connecting the shared socket."""
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+        return RealNS3(parent=self)
+
+    NXT체결 = NS3
 
     @require_korean_alias
     def NH1(self) -> RealNH1:
@@ -386,6 +376,8 @@ __all__ = [
     H1_RealResponseBody, H1_RealResponseHeader, H1_RealResponse,
     HA_RealRequest, HA_RealRequestBody, HA_RealRequestHeader,
     HA_RealResponseBody, HA_RealResponseHeader, HA_RealResponse,
+    NS3RealRequest, NS3RealRequestBody, NS3RealRequestHeader,
+    NS3RealResponseBody, NS3RealResponseHeader, NS3RealResponse,
     NH1RealRequest, NH1RealRequestBody, NH1RealRequestHeader,
     NH1RealResponseBody, NH1RealResponseHeader, NH1RealResponse,
     IJ_RealRequest, IJ_RealRequestBody, IJ_RealRequestHeader,
@@ -409,6 +401,6 @@ __all__ = [
 
     # ─── 클라이언트 ───
     RealS3_, RealK3_, RealH1_, RealHA_,
-    RealNH1, RealIJ_, RealDVI, RealNVI,
+    RealNS3, RealNH1, RealIJ_, RealDVI, RealNVI,
     RealSC0, RealSC1, RealSC2, RealSC3, RealSC4,
 ]

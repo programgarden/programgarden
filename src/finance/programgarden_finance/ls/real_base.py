@@ -703,6 +703,9 @@ class RealRequestAbstract(ABC):
                     )
                 )
                 req.header.tr_type = "3"
+            elif tr_cd == "NS3":
+                from programgarden_finance.ls.korea_stock.real.NS3.blocks import NS3RealRequest, NS3RealRequestBody
+                req = NS3RealRequest(body=NS3RealRequestBody(tr_key=symbol))
             elif tr_cd == "NH1":
                 from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody
                 req = NH1RealRequest(
@@ -867,6 +870,10 @@ class RealRequestAbstract(ABC):
                         tr_key=symbol
                     )
                 )
+                req.header.tr_type = "4"
+            elif tr_cd == "NS3":
+                from programgarden_finance.ls.korea_stock.real.NS3.blocks import NS3RealRequest, NS3RealRequestBody
+                req = NS3RealRequest(body=NS3RealRequestBody(tr_key=symbol))
                 req.header.tr_type = "4"
             elif tr_cd == "NH1":
                 from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody

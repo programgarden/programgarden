@@ -1,0 +1,36 @@
+{
+  "header": {
+    "tr_cd": "NS3",
+    "tr_key": "N010950   "
+  },
+  "body": {
+    "mdchecnt": "662",
+    "sign": "2",
+    "mschecnt": "608",
+    "mdvolume": "16648",
+    "w_avrg": "61188",
+    "cpower": "62.53",
+    "offerho": "60600",
+    "cvolume": "1",
+    "high": "62700",
+    "bidho": "60500",
+    "low": "60300",
+    "price": "60600",
+    "cgubun": "+",
+    "value": "1656",
+    "change": "400",
+    "shcode": "010950",
+    "chetime": "143216",
+    "ex_shcode": "N010950",
+    "opentime": "080035",
+    "lowtime": "094023",
+    "volume": "27058",
+    "drate": "0.66",
+    "hightime": "080908",
+    "jnilvolume": "44972",
+    "msvolume": "10410",
+    "exchname": "NXT",
+    "open": "60400",
+    "status": "00"
+  }
+}
