@@ -141,6 +141,11 @@ class TrCOSOQ00201(TRAccnoAbstract):
         )
         if resp is not None:
             result.raw_data = resp
+        # Typed empty-list defaults must not stand in for omitted broker blocks.
+        result._valuation_blocks_present = all(
+            isinstance(resp_json.get(name), list)
+            for name in ("COSOQ00201OutBlock3", "COSOQ00201OutBlock4")
+        )
         return result
 
     async def req_async(self) -> COSOQ00201Response:

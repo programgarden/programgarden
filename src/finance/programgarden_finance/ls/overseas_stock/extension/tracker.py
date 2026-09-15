@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Callable, Any, Set
 from datetime import datetime
 import asyncio
+from copy import deepcopy
 
 from .models import (
     StockPositionItem,
@@ -96,6 +97,7 @@ class StockAccountTracker:
         
         # 계좌 수익률 캐시
         self._account_pnl: Optional[AccountPnLInfo] = None
+        self._valuation_snapshot: Optional[dict] = None
         
         # 콜백
         self._on_position_change_callbacks: List[Callable] = []
@@ -168,19 +170,24 @@ class StockAccountTracker:
     
     async def _fetch_positions(self):
         """보유종목 조회 (COSOQ00201)"""
+        self._valuation_snapshot = None
         try:
             from ..accno.COSOQ00201.blocks import COSOQ00201InBlock1
             from datetime import datetime as dt
             
-            tr = self._accno_client.cosoq00201(
-                body=COSOQ00201InBlock1(
+            request = COSOQ00201InBlock1(
                     RecCnt=1,
                     BaseDt=dt.now().strftime("%Y%m%d"),
                     CrcyCode="ALL",
                     AstkBalTpCode="00"
-                ),
-            )
+                )
+            tr = self._accno_client.cosoq00201(body=request)
             resp = await tr.req_async()
+            from .valuation import stock_valuation_snapshot
+            from datetime import timezone
+
+            self._valuation_snapshot = stock_valuation_snapshot(
+                resp, request, datetime.now(timezone.utc))
             
             # 응답 코드 확인
             rsp_cd = getattr(resp, 'rsp_cd', '')
@@ -291,9 +298,14 @@ class StockAccountTracker:
                 
         except Exception as e:
             error_msg = f"[포지션 조회 실패] {str(e)}"
+            self._valuation_snapshot = None
             self._last_errors["positions"] = error_msg
             logger.error(f"[_fetch_positions] 조회 실패: {e}", exc_info=True)
     
+    def get_valuation_snapshot(self) -> Optional[dict]:
+        """Return only the last complete broker valuation, with its own timestamp."""
+        return deepcopy(self._valuation_snapshot)
+
     async def _fetch_open_orders(self):
         """미체결 주문 조회 (COSAQ00102)"""
         try:

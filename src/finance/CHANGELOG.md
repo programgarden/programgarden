@@ -1,3 +1,8 @@
+## [1.9.8] - 2026-09-15
+
+### Added
+- Retain complete COSOQ00201 valuation gains, losses and net amounts by currency during the existing account refresh. Preserve field/block presence and source timestamps; invalidate failed or incomplete observations without clearing trading positions.
+
 ## [1.9.7] - 2026-09-12
 
 ### Fixed

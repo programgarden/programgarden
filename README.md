@@ -42,6 +42,9 @@
 
 ## 패키지 구조
 
+The [stock valuation outcomes contract](docs/stock-valuation-outcomes.md) explains
+separate account/workflow open-position gains, losses and net amounts by currency.
+
 ```
 src/
 ├── programgarden/          # 워크플로우 실행 엔진 (메인 패키지)

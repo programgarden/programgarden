@@ -1968,6 +1968,7 @@ class ExecutionContext:
         current_prices: Dict[str, float],
         account_positions: Optional[Dict[str, Any]],
         currency: Optional[str] = "USD",
+        account_valuation: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Notify all listeners about workflow P&L update (확장 버전).
         
@@ -2015,6 +2016,12 @@ class ExecutionContext:
             product=product,
             start_date=None,  # 전체 기간
         )
+        from .valuation import workflow_valuation_snapshot
+
+        workflow_valuation = workflow_valuation_snapshot(
+            base_workflow_result,
+            account_positions if account_positions is not None else ({} if account_valuation else None),
+            now, product)
         
         # 2. 계좌 전체 수익률 계산
         account_result = self._calculate_account_pnl(
@@ -2098,6 +2105,8 @@ class ExecutionContext:
                     "anomaly_count": base_workflow_result.get("anomaly_count", 0),
                     "currency": currency,
                     "personal_metrics": personal_metrics,
+                    "account_valuation": account_valuation,
+                    "workflow_valuation": workflow_valuation,
                     
                     # 신규 필드: 워크플로우 상품별
                     "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),

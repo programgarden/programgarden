@@ -5610,6 +5610,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
                         "current_price": float(pos_item.current_price) if hasattr(pos_item, 'current_price') else 0,
                         "pnl_rate": float(pos_item.pnl_rate) if hasattr(pos_item, 'pnl_rate') else 0,
                         "product": product,  # 상품 유형 (overseas_stock)
+                        "currency": pos_item.currency_code.strip().upper()
+                            if "currency_code" in pos_item.model_fields_set else None,
                     }
 
             self._start_background_task(context,
@@ -5620,6 +5622,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     current_prices=current_prices,
                     account_positions=account_positions if account_positions else None,
                     currency=pnl_info.currency if hasattr(pnl_info, 'currency') else "USD",
+                    account_valuation=tracker.get_valuation_snapshot(),
                 ),
                 notification=True,
             )
