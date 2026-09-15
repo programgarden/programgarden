@@ -113,7 +113,7 @@ from .ls.korea_stock.order import (
     CSPAT00601, CSPAT00701, CSPAT00801
 )
 from .ls.korea_stock.real import (
-    S3_, K3_, H1_, HA_, NH1, IJ_, DVI, NVI,
+    S3_, K3_, H1_, HA_, NH1, NS3, IJ_, DVI, NVI,
     SC0, SC1, SC2, SC3, SC4
 )
 
@@ -303,6 +303,7 @@ __all__ = [
     H1_,
     HA_,
     NH1,
+    NS3,
     IJ_,
     DVI,
     NVI,

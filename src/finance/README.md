@@ -37,10 +37,19 @@ the supplied field metadata and two actual paper balance reads, including their
 date and accounting limits. Reported equity and its P&L/fee components must not
 be added twice.
 
-Unreleased: futures tracking also retains a whitelisted per-currency account
+Futures tracking also retains a whitelisted per-currency account
 snapshot from that same query, including owner-confirmed daily net cash flows.
 Missing evidence and broker dates stay unknown; aggregate targets remain
 separate. This is a collection contract, not a published adjusted-return series.
+
+Domestic source-contract update: every `CSPAQ12300OutBlock2` field is **not
+provided**, including explicit zero/empty broker placeholders. Its schema and
+`response.block2_status` expose that restriction. Use separately observed
+position evidence, preserve average-versus-BEP request basis and field presence,
+and consult the [CSPAQ12300 contract](docs/cspaq12300_contract.md). The
+[FOCCQ33600 reference](docs/foccq33600_contract.md) retains official example
+discrepancies and actual dated observations without assuming product coverage,
+current-day availability or an undocumented return formula.
 
 ```bash
 # PyPI에 게시된 경우
@@ -439,3 +448,19 @@ from programgarden_finance import (
     exceptions,
 )
 ```
+
+## NXT trade ticks
+
+`ls.korea_stock().real().NS3()` exposes NXT quotes on the shared socket.
+[NS3 source and availability contract](docs/ns3_contract.md) and
+[read-only example](example/korea_stock/real_NS3.py). This is quote support.
+
+The existing `CSPAT00601InBlock1.MbrNo="NXT"` routes a direct SDK order to NXT.
+The [NXT limit-order preview](example/korea_stock/run_CSPAT00601_nxt.py) copies
+the supplied LS request and performs no login or submission when run. See the
+[source contract](docs/cspat00601_nxt_contract.md) for scope and response-presence
+rules. Workflow-node integration, live fills and SC1 venue evidence remain pending.
+
+`python example/korea_stock/run_t9945.py --nxt-only` performs read-only master
+queries and displays observed NXT eligibility. Missing flags remain unknown;
+current session, halt state and executable prices require separate checks.

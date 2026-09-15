@@ -1,3 +1,9 @@
+## [1.37.11] - 2026-09-15
+
+### Changed
+- Require programgarden-finance >=1.10.0 for source-correct domestic account fields, NS3 quote subscriptions and the NXT limit-order reference. Core remains >=1.28.3 and community >=1.15.3.
+- Distinguish broker order acceptance from separate account/SC1 execution evidence in the finance schema and examples. This package release does not enable NXT routing in workflow nodes or complete domestic performance collection.
+
 ## [1.37.10] - 2026-09-15
 
 ### Added

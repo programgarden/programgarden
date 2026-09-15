@@ -49,7 +49,9 @@ def test_req_CSPAQ22200():
         logger.info(f"현금주문가능: {b.MnyOrdAbleAmt:,}원")
         logger.info(f"대용주문가능: {b.SubstOrdAbleAmt:,}원")
         logger.info(f"거래소: {b.SeOrdAbleAmt:,}원 | 코스닥: {b.KdqOrdAbleAmt:,}원")
-        logger.info(f"증거금100%: {b.MgnRat100pctOrdAbleAmt:,}원")
+        logger.info(f"Credit-eligible orderable amount: {b.MgnRat100pctOrdAbleAmt:,} KRW")
+        if "RcvblUablOrdAbleAmt" in b.model_fields_set:
+            logger.info(f"Non-credit orderable amount: {b.RcvblUablOrdAbleAmt:,} KRW")
         logger.info(f"증거금50%: {b.MgnRat50ordAbleAmt:,}원")
         logger.info(f"증거금35%: {b.MgnRat35ordAbleAmt:,}원")
 
