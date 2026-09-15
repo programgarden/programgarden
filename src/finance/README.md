@@ -448,3 +448,10 @@ from programgarden_finance import (
     exceptions,
 )
 ```
+
+## NXT trade ticks
+
+`ls.korea_stock().real().NS3()` exposes NXT quotes on the shared socket.
+[NS3 source and availability contract](docs/ns3_contract.md) and
+[read-only example](example/korea_stock/real_NS3.py). This is quote support; NXT
+order routing and SC1 execution-venue evidence are separate pending work.
