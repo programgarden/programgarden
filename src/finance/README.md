@@ -453,5 +453,10 @@ from programgarden_finance import (
 
 `ls.korea_stock().real().NS3()` exposes NXT quotes on the shared socket.
 [NS3 source and availability contract](docs/ns3_contract.md) and
-[read-only example](example/korea_stock/real_NS3.py). This is quote support; NXT
-order routing and SC1 execution-venue evidence are separate pending work.
+[read-only example](example/korea_stock/real_NS3.py). This is quote support.
+
+The existing `CSPAT00601InBlock1.MbrNo="NXT"` routes a direct SDK order to NXT.
+The [NXT limit-order preview](example/korea_stock/run_CSPAT00601_nxt.py) copies
+the supplied LS request and performs no login or submission when run. See the
+[source contract](docs/cspat00601_nxt_contract.md) for scope and response-presence
+rules. Workflow-node integration, live fills and SC1 venue evidence remain pending.
