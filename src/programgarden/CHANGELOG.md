@@ -1,3 +1,8 @@
+## [1.39.1] - 2026-09-16
+### Fixed
+- Futures orderable quantity resolves credentials from the selected workflow broker, using the same exact-account contract as order submission. Valid inline credentials and broker-scoped secrets now work; unrelated direct/product secret slots cannot substitute another account.
+- Cover the real execution context and ambiguous, incompatible, missing or mode-mismatched credentials. A bounded paper-account preflight reaches the intercepted order boundary with verified capacity; it does not establish order acceptance or fills.
+
 ## [1.39.0] - 2026-09-16
 ### Added
 - Read-only OverseasFuturesOrderableQuantityNode using observed CIDBQ01400 quantity and matching request echo; zero capacity is normal and missing capacity remains unavailable.

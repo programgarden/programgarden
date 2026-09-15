@@ -1,5 +1,17 @@
 # Futures entry evidence
 
+Engine 1.39.1 fixes the capacity node's credential lookup. A real paper-account
+preflight found that 1.39.0 read only a direct secret alias, although production
+hydrates the workflow credential list and the broker also stores an exact
+broker-scoped secret. Capacity now uses the shared exact-futures resolver:
+workflow list/dict credentials and the selected broker's secret work; unrelated
+direct/product slots, wrong modes/types and ambiguous references do not. Tests
+use actual ExecutionContext instances instead of a permissive credential mock.
+The unchanged generated draft then reads capacity 43 and reaches a single
+intercepted one-contract order. No paper or live order was submitted in that
+preflight. The owner selected paper-futures verification and deferred live
+futures trading; matching paper acceptance/fills remain a separate checkpoint.
+
 Engine1.39.0, core1.30.0 and finance1.10.3 address failures observed in a real
 chatbot-generated HKEX paper draft. The original graph passed a skipped-branch
 dry run but could not reach a valid entry: a bare market symbol, the unavailable
