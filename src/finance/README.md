@@ -37,10 +37,19 @@ the supplied field metadata and two actual paper balance reads, including their
 date and accounting limits. Reported equity and its P&L/fee components must not
 be added twice.
 
-Unreleased: futures tracking also retains a whitelisted per-currency account
+Futures tracking also retains a whitelisted per-currency account
 snapshot from that same query, including owner-confirmed daily net cash flows.
 Missing evidence and broker dates stay unknown; aggregate targets remain
 separate. This is a collection contract, not a published adjusted-return series.
+
+Domestic source-contract update: every `CSPAQ12300OutBlock2` field is **not
+provided**, including explicit zero/empty broker placeholders. Its schema and
+`response.block2_status` expose that restriction. Use separately observed
+position evidence, preserve average-versus-BEP request basis and field presence,
+and consult the [CSPAQ12300 contract](docs/cspaq12300_contract.md). The
+[FOCCQ33600 reference](docs/foccq33600_contract.md) retains official example
+discrepancies and actual dated observations without assuming product coverage,
+current-day availability or an undocumented return formula.
 
 ```bash
 # PyPI에 게시된 경우
