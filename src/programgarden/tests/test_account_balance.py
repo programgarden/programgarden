@@ -9,6 +9,23 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def _complete_futures_fixtures(ls):
+    """Supply actual SDK envelopes around these historical monetary fixtures."""
+    from futures_response_fixtures import parsed_response, position_request
+    from programgarden_finance import CIDBQ05300
+    accno = ls.overseas_futureoption().accno()
+    requests = {"CIDBQ01500": position_request(), "CIDBQ05300": CIDBQ05300.CIDBQ05300InBlock1(RecCnt=1, OvrsAcntTpCode="1", CrcyCode="ALL")}
+    for tr, request in requests.items():
+        call = getattr(accno, tr).return_value
+        old = call.req_async.return_value
+        rows = [{key: value for key, value in vars(row).items() if not key.startswith("_")} for row in old.block2]
+        result = parsed_response(tr, request, rows, code="00707" if tr == "CIDBQ01500" and not rows else "00136")
+        if tr == "CIDBQ05300":
+            fields = {key: value for key, value in vars(old.block3).items() if not key.startswith("_")}
+            result.block3 = CIDBQ05300.CIDBQ05300OutBlock3(**fields)
+        call.req_async.return_value = result
+
+
 def _make_mock_context():
     """간이 ExecutionContext mock"""
     ctx = MagicMock()
@@ -202,6 +219,7 @@ async def test_futures_balance_includes_margin():
     mock_futures.accno = MagicMock(return_value=mock_accno)
     ls.overseas_futureoption = MagicMock(return_value=mock_futures)
 
+    _complete_futures_fixtures(ls)
     result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
 
     balance = result["balance"]
@@ -272,6 +290,7 @@ async def test_futures_balance_by_currency_compat():
     mock_futures.accno = MagicMock(return_value=mock_accno)
     ls.overseas_futureoption = MagicMock(return_value=mock_futures)
 
+    _complete_futures_fixtures(ls)
     result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
 
     balance = result["balance"]
@@ -349,6 +368,7 @@ async def test_futures_cidbq05300_replaces_cidbq03000():
     mock_futures.accno = MagicMock(return_value=mock_accno)
     ls.overseas_futureoption = MagicMock(return_value=mock_futures)
 
+    _complete_futures_fixtures(ls)
     result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
 
     # CIDBQ03000 미호출 검증
@@ -599,6 +619,7 @@ async def _run_futures_serialization(position_item):
     mock_futures.accno = MagicMock(return_value=mock_accno)
     ls.overseas_futureoption = MagicMock(return_value=mock_futures)
 
+    _complete_futures_fixtures(ls)
     result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
     return result["positions"][0]
 

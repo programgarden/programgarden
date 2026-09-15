@@ -32,6 +32,9 @@ class _Ctx:
 
 
 class _NoData:
+    status_code = 200
+    rsp_cd = "00000"
+    error_msg = None
     block = None
     block1 = None
 

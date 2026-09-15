@@ -2610,14 +2610,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.29.0"
+version = "1.30.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.29.0-py3-none-any.whl", hash = "sha256:1774f83dde6b3dc65c33f09e66501c585438d5bc578bcb5f12889a94d385555b"},
-    {file = "programgarden_core-1.29.0.tar.gz", hash = "sha256:8e089cef67f0a86dc82c2b90d69204e89043d98e2c2cbb4de7840dec0e0c6ca8"},
+    {file = "programgarden_core-1.30.0-py3-none-any.whl", hash = "sha256:2b22025e6a27a41ef9eeb87eeae1008249b379a51433aac700a18ff29c813cff"},
+    {file = "programgarden_core-1.30.0.tar.gz", hash = "sha256:08b77b0c53db58b416d2b13490566d83fb3f4adcab793ae5b29dc1178f0548ec"},
 ]
 
 [package.dependencies]
@@ -2625,14 +2625,14 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.10.2"
+version = "1.10.3"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.10.2-py3-none-any.whl", hash = "sha256:58545332b08b39a5e90ee9855117493bc1082e3eac7002b423892de56180016a"},
-    {file = "programgarden_finance-1.10.2.tar.gz", hash = "sha256:889598fe41e8811f2307d3735e9092963ce3e798794717084be382ad75a433b2"},
+    {file = "programgarden_finance-1.10.3-py3-none-any.whl", hash = "sha256:b72ba9fd377788c03f2ed0672e215503a35a5cac9e02b7919e7c89724886922e"},
+    {file = "programgarden_finance-1.10.3.tar.gz", hash = "sha256:b331e6469b0be59388803096689012ebed2628f87d70e3b0a01fe10d73e3f7fc"},
 ]
 
 [package.dependencies]
@@ -4179,4 +4179,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "d77a8c313eb5abc0fa91237ce4234467eb16ba38423d02aab64ed92b5b85784c"
+content-hash = "ec912a81439226a8b4a1601c70cccfc7e67716739220b022849fca30ec1b2126"

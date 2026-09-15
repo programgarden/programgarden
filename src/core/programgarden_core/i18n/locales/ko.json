@@ -1329,5 +1329,20 @@
   "fieldNames.FuturesContractNode.futures_exchange": "거래소",
   "enums.contract_selection.front": "근월물 (만기 가장 가까움)",
   "enums.contract_selection.next": "차월물 (롤오버 대상)",
-  "enums.contract_selection.quarterly": "분기월물 (3·6·9·12월)"
+  "enums.contract_selection.quarterly": "분기월물 (3·6·9·12월)",
+  "nodes.OverseasFuturesOrderableQuantityNode.name": "해외선물 주문가능수량",
+  "nodes.OverseasFuturesOrderableQuantityNode.description": "연결된 해외선물 계좌에서 해당 종목의 주문가능수량을 조회합니다. 주문은 제출하지 않으며, 확인 성공 여부와 가능 수량을 확인한 뒤 진입합니다.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.symbol": "선물 종목",
+  "fields.OverseasFuturesOrderableQuantityNode.symbol": "현재 거래할 선물 종목과 거래소입니다.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.side": "매매 방향",
+  "fields.OverseasFuturesOrderableQuantityNode.side": "주문할 매수·매도 방향입니다.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.order_type": "주문 유형",
+  "fields.OverseasFuturesOrderableQuantityNode.order_type": "지정가 또는 시장가 주문가능수량을 확인합니다.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.price": "주문 가격",
+  "fields.OverseasFuturesOrderableQuantityNode.price": "현재 시세로 확인한 지정가입니다. 시장가는 0으로 조회합니다.",
+  "fieldNames.OverseasFuturesOrderableQuantityNode.query_type": "조회 구분",
+  "fields.OverseasFuturesOrderableQuantityNode.query_type": "신규 진입·청산·총 주문가능수량 중 조회할 항목입니다.",
+  "enums.query_type.new": "신규",
+  "enums.query_type.close": "청산",
+  "enums.query_type.total": "총가능"
 }

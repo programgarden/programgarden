@@ -164,7 +164,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
-            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasFuturesOrderableQuantityNode,
             # Korea Stock (국내주식)
             KoreaStockBrokerNode,
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,
@@ -212,7 +212,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
-            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasFuturesOrderableQuantityNode,
             # Korea Stock (국내주식)
             KoreaStockBrokerNode,
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,

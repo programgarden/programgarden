@@ -1,3 +1,8 @@
+## [1.30.0] - 2026-09-16
+### Added
+- OverseasFuturesOrderableQuantityNode reads contract/side/price-specific capacity without placing an order.
+- Futures REST quote schema exposes nullable observed tick_size, with matching English/Korean node labels.
+
 ## [1.28.3] - 2026-09-15
 
 ## [1.29.0] - 2026-09-15

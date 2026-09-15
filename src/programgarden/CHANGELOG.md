@@ -1,3 +1,13 @@
+## [1.39.0] - 2026-09-16
+### Added
+- Read-only OverseasFuturesOrderableQuantityNode using observed CIDBQ01400 quantity and matching request echo; zero capacity is normal and missing capacity remains unavailable.
+- Expose o3105 UntPrc as nullable futures quote tick_size; reject mismatched/missing quote identity or price.
+### Fixed
+- Futures position, asset and pending reads reject failed, missing and continuation responses instead of allowing an empty-account entry. Current-day pending queries use the example's same-day mode and Korea time.
+- Unsupported IfNode operators, including generated is_true, now fail validation/execution instead of silently selecting the false branch.
+### Dependencies
+- Requires programgarden-core ^1.30.0 and programgarden-finance ^1.10.3; community remains ^1.15.3.
+
 ## [1.38.2] - 2026-09-15
 
 ### Fixed

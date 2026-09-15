@@ -11,6 +11,7 @@ Workflow execution engine
 from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple, Mapping
 from datetime import datetime
 import asyncio
+import math
 import ast
 import copy
 import re
@@ -6103,33 +6104,30 @@ class AccountNodeExecutor(NodeExecutorBase):
         - CIDBQ05300: 예탁자산 조회 (통화별, CIDBQ03000 상위호환)
         """
         from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from programgarden.futures_read_evidence import require_complete_rows, require_position_identity
 
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ05300.blocks import CIDBQ05300InBlock1
             from programgarden_finance.ls.overseas_futureoption.extension.calculator import compute_futures_pnl_rate
 
-            today = datetime.now().strftime("%Y%m%d")
+            today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
 
             # 1. CIDBQ01500: 보유 포지션 조회
+            position_request = CIDBQ01500InBlock1(
+                RecCnt=1, AcntTpCode="1", QryDt=today, BalTpCode="2", FcmAcntNo="",
+            )
             response = await ls.overseas_futureoption().accno().CIDBQ01500(
-                body=CIDBQ01500InBlock1(
-                    RecCnt=1,
-                    AcntTpCode="1",      # 1: 위탁
-                    QryDt=today,         # 조회일자
-                    BalTpCode="2",       # 1: 합산, 2: 건별 (건별이 더 안정적)
-                    FcmAcntNo=""
-                )
+                body=position_request,
             ).req_async()
-
-            # 응답 코드 확인 (00707: 조회할 내역 없음 - 정상)
-            if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
-                context.log("warning", f"CIDBQ01500 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+            position_rows = require_complete_rows(response, position_request, "CIDBQ01500")
 
             # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
             positions = []
             held_symbols = []
-            for item in (response.block2 or []):
+            for item in position_rows:
+                require_position_identity(item)
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
                 if not symbol:
                     continue
@@ -6186,21 +6184,16 @@ class AccountNodeExecutor(NodeExecutorBase):
             cidbq05300_failure_reason: Optional[str] = None
             balance_response = None
             try:
+                balance_request = CIDBQ05300InBlock1(RecCnt=1, OvrsAcntTpCode="1", CrcyCode="ALL")
                 balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
-                    body=CIDBQ05300InBlock1(
-                        RecCnt=1,
-                        OvrsAcntTpCode="1",
-                        CrcyCode="ALL"
-                    )
+                    body=balance_request,
                 ).req_async()
-
-                # Note: we deliberately do not gate on `error_msg` here.
-                # The LS finance client returns a real str for that field
-                # only on actual errors; checking it would also trip on
-                # MagicMock attribute auto-vivification in unit tests,
-                # which masks legitimate balance fetches.
-                # block2: 통화별 예수금 정보
-                for item in (balance_response.block2 or []):
+                balance_rows = require_complete_rows(balance_response, balance_request, "CIDBQ05300")
+                for item in balance_rows:
+                    required = {"CrcyCode", "AbrdFutsOrdAbleAmt", "OvrsFutsDps"}
+                    if (not required <= item.model_fields_set or not item.CrcyCode.strip()
+                            or not math.isfinite(item.AbrdFutsOrdAbleAmt) or not math.isfinite(item.OvrsFutsDps)):
+                        raise ValueError("CIDBQ05300 currency balance fields are unavailable")
                     currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
                     orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
                     deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
@@ -6287,6 +6280,47 @@ class AccountNodeExecutor(NodeExecutorBase):
         if error:
             result["error"] = error
         return result
+
+
+class FuturesOrderableQuantityNodeExecutor(NodeExecutorBase):
+    """Read per-contract capacity; never place an order or replace failed evidence."""
+
+    async def execute(self, node_id, node_type, config, context, **kwargs):
+        from programgarden.futures_orderable import FuturesCapacityEvidenceError, build_orderable_request, read_orderable_quantity
+        config = evaluate_all_bindings(config, context, node_id)
+        unavailable = {"quantity": None, "verified": False, "error": None}
+        try:
+            request = build_orderable_request(config)
+            if context.is_deep_validate:
+                from programgarden import deep_fixtures as fixtures
+                return fixtures.apply_override(
+                    {"quantity": 1, "verified": True, "error": None},
+                    context.get_deep_fixture(node_id, node_type),
+                )
+            connection = config.get("connection")
+            if not isinstance(connection, dict) or connection.get("product") != "overseas_futures" or not connection.get("credential_id"):
+                raise FuturesCapacityEvidenceError("A matching futures broker connection is required")
+            credential = context.get_credential(connection["credential_id"])
+            if not credential or not credential.get("appkey") or not credential.get("appsecret"):
+                raise FuturesCapacityEvidenceError("The selected futures credential is unavailable")
+            ls, success, _ = ensure_ls_login(
+                credential["appkey"], credential["appsecret"], connection.get("paper_trading", False),
+                context, node_id, product="overseas_futures", caller_name="FuturesOrderableQuantityNode",
+            )
+            if not success:
+                raise FuturesCapacityEvidenceError("The selected futures broker login failed")
+            response = await asyncio.wait_for(
+                ls.overseas_futureoption().accno().CIDBQ01400(body=request).req_async(), timeout=20,
+            )
+            quantity = read_orderable_quantity(response, request)
+            return {"quantity": quantity, "verified": True, "error": None}
+        except (FuturesCapacityEvidenceError, asyncio.TimeoutError) as exc:
+            unavailable["error"] = str(exc) or "Futures capacity query timed out"
+        except Exception as exc:
+            # Broker exceptions can contain credentials/URLs. Return the class only.
+            unavailable["error"] = f"Futures capacity query failed ({type(exc).__name__})"
+        context.log("warning", unavailable["error"], node_id)
+        return unavailable
 
 
 class OpenOrdersNodeExecutor(NodeExecutorBase):
@@ -6530,32 +6564,27 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
     async def _ls_overseas_futures(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from programgarden.futures_read_evidence import require_complete_rows, require_pending_identity
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
 
 
-        today = datetime.now().strftime("%Y%m%d")
-
-        response = await ls.overseas_futureoption().accno().CIDBQ02400(
-            body=CIDBQ02400InBlock1(
-                RecCnt=1,
-                IsuCodeVal="",          # 빈값: 전체 종목
-                QrySrtDt=today,
-                QryEndDt=today,
-                ThdayTpCode="0",        # 0: 전체
-                OrdStatCode="2",        # 2: 미체결
-                BnsTpCode="0",          # 0: 전체
-                QryTpCode="2",          # 2: 역순
-                OrdPtnCode="00",        # 00: 전체
-                OvrsDrvtFnoTpCode="A"   # A: 전체
-            )
-        ).req_async()
-
-        # 응답 코드 확인
-        if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
-            context.log("warning", f"CIDBQ02400 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+        today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+        request = CIDBQ02400InBlock1(
+            RecCnt=1, IsuCodeVal="", QrySrtDt=today, QryEndDt=today,
+            ThdayTpCode="1", OrdStatCode="2", BnsTpCode="0", QryTpCode="2",
+            OrdPtnCode="00", OvrsDrvtFnoTpCode="A",
+        )
+        response = await ls.overseas_futureoption().accno().CIDBQ02400(body=request).req_async()
+        try:
+            rows = require_complete_rows(response, request, "CIDBQ02400")
+            for row in rows:
+                require_pending_identity(row)
+        except ValueError as exc:
+            return self._empty_result(str(exc))
 
         open_orders = []
-        for item in response.block2 or []:
+        for item in rows:
             # 해외선물 주문번호는 OvrsFutsOrdNo
             order_id = str(item.OvrsFutsOrdNo) if hasattr(item, 'OvrsFutsOrdNo') and item.OvrsFutsOrdNo else ""
             if not order_id:
@@ -11572,6 +11601,12 @@ class IfNodeExecutor(NodeExecutorBase):
         their original lenient behavior because None is a meaningful
         operand there.
         """
+        from typing import get_args
+        from programgarden_core.nodes.infra import IfNode
+        if operator not in get_args(IfNode.model_fields["operator"].annotation):
+            # A generated `is_true` once passed a skipped-path dry run while
+            # silently disabling every valid entry. Reject unsupported syntax.
+            raise ValueError(f"Unsupported IfNode operator: {operator!r}")
         if operator in cls._NUMERIC_OPS and (left is None or right is None):
             raise ConditionEvaluationError(
                 f"IfNode received None operand on numeric comparison "
@@ -11715,7 +11750,10 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             from programgarden import deep_fixtures as _df
             # 실경로와 **같은** symbols 를 쓴다. 예전엔 여기만 단수 symbol 폴백을 갖고 있어
             # deep_validate 는 초록인데 라이브만 다르게 도는 상태였다(게이트가 거짓말함).
-            fixture = _df.market_data_fixture(config, symbols)
+            fixture = _df.market_data_fixture(
+                config, symbols,
+                product="overseas_futures" if node_type == "OverseasFuturesMarketDataNode" else "overseas_stock",
+            )
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
@@ -11980,7 +12018,11 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     response = api.market().o3105(body=body).req()
                     context.log("debug", f"o3105 response: {response}", node_id)
                     
-                    if response and response.block:
+                    if (response and response.status_code == 200 and not response.error_msg
+                            and response.rsp_cd == "00000" and response.block
+                            and {"Symbol", "TrdP"} <= response.block.model_fields_set
+                            and response.block.Symbol.strip() == symbol
+                            and math.isfinite(response.block.TrdP) and response.block.TrdP > 0):
                         out_block = response.block
                         from datetime import datetime
                         
@@ -11990,6 +12032,12 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "exchange": exchange,
                             "symbol_name": out_block.SymbolNm or symbol,
                             "price": float(out_block.TrdP or 0),
+                            "tick_size": (
+                                float(out_block.UntPrc)
+                                if "UntPrc" in out_block.model_fields_set
+                                and math.isfinite(float(out_block.UntPrc)) and out_block.UntPrc > 0
+                                else None
+                            ),
                             # o3105 `YdiffP` 는 이미 부호를 포함한다(실측). 헬퍼는 멱등이라 값이 안 바뀌며,
                             # LS 가 언젠가 절댓값으로 바꿔 보내도 `YdiffSign` 으로 방어된다.
                             "change": _ls_signed_change(out_block.YdiffP, getattr(out_block, "YdiffSign", "")),
@@ -20444,6 +20492,7 @@ class WorkflowExecutor:
             "OverseasFuturesAccountNode": AccountNodeExecutor(),
             "OverseasStockOpenOrdersNode": OpenOrdersNodeExecutor(),  # 미체결 조회
             "OverseasFuturesOpenOrdersNode": OpenOrdersNodeExecutor(),
+            "OverseasFuturesOrderableQuantityNode": FuturesOrderableQuantityNodeExecutor(),
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
             "OverseasStockRealAccountNode": RealAccountNodeExecutor(),
             "OverseasFuturesRealAccountNode": RealAccountNodeExecutor(),
