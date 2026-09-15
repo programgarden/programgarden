@@ -2610,14 +2610,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.28.1"
+version = "1.28.2"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.28.1-py3-none-any.whl", hash = "sha256:c633939a21d52e3d26a383b91d301f2e62166a573ae571b3c9a644053fc70770"},
-    {file = "programgarden_core-1.28.1.tar.gz", hash = "sha256:0c46078bff4aaa6038e086b6ec847af3ad66e5d1c6b51b1f6e9ec336241dbe3d"},
+    {file = "programgarden_core-1.28.2-py3-none-any.whl", hash = "sha256:9f7051801874e3af57489bcd923dec91442a5c93a3eea998cc160b6753a5f238"},
+    {file = "programgarden_core-1.28.2.tar.gz", hash = "sha256:c15dc831a7015851ad2febada09e809ca3a8326e1206b8021f4eae67a6a75077"},
 ]
 
 [package.dependencies]
@@ -2625,14 +2625,14 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.9.7"
+version = "1.9.8"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.9.7-py3-none-any.whl", hash = "sha256:1512b1c155f4e4575c61620c4e2288b70c310ca1d25bd37b3a626965bb787828"},
-    {file = "programgarden_finance-1.9.7.tar.gz", hash = "sha256:ca853c0ff12371412526a400f46203fa840bb5b98e41a6b86bfbc947081be07e"},
+    {file = "programgarden_finance-1.9.8-py3-none-any.whl", hash = "sha256:fd1c1f0e4c98921de3c0f07d280426e6f3833d0f2f0ab9c543c27e8e0a52d93d"},
+    {file = "programgarden_finance-1.9.8.tar.gz", hash = "sha256:89b90a3c27320249f7f1101d8f51b522606a423f786c8bcbf6e3e67fb84d3386"},
 ]
 
 [package.dependencies]
@@ -4179,4 +4179,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "6a9a50100ad5250c6face643a6208ba986b49978d98fb7bd105a010945513dec"
+content-hash = "efef45efb718e3f5e8ffcb60ca59c82b68d951a6bcdc63dd08b1a2cdf422a8d1"

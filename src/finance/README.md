@@ -22,6 +22,10 @@ Programgarden Finance는 AI 시대에 맞춰 파이썬을 모르는 투자자도
 
 ## 설치
 
+Stock account tracking retains a separate, complete COSOQ00201 valuation snapshot
+with gains, losses and net PnL by currency. This uses the existing balance refresh;
+broker amounts remain separate from mutable tick estimates and realized trades.
+
 Futures account PnL now carries explicit currency, gross-estimate basis and
 availability. Broker-reported amounts are retained separately; mixed or
 unsupported scalar totals are nullable. See the

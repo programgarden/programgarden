@@ -409,6 +409,9 @@ class WorkflowPnLEvent:
     competition_account_overseas_futures_pnl_amount: Optional[Union[Decimal, float]] = None
     competition_account_korea_stock_pnl_rate: Optional[Union[Decimal, float]] = None
     competition_account_korea_stock_pnl_amount: Optional[Union[Decimal, float]] = None
+    # Open-position money, independent of closed-trade personal metrics.
+    account_valuation: Optional[Dict[str, Any]] = None
+    workflow_valuation: Optional[Dict[str, Any]] = None
 
 
 # ============================================================

@@ -212,6 +212,7 @@ async def test_late_pnl_callback_cannot_restart_job_work(product):
     real = SimpleNamespace(connect=AsyncMock(), close=AsyncMock())
     tracker = SimpleNamespace(
         start=AsyncMock(), stop=AsyncMock(), get_positions=lambda: {},
+        get_valuation_snapshot=lambda: None,
         on_account_pnl_change=MagicMock(),
     )
     api = SimpleNamespace(

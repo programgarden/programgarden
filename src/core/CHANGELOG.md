@@ -1,3 +1,8 @@
+## [1.28.2] - 2026-09-15
+
+### Added
+- Optional account/workflow open-position valuation envelopes, appended to WorkflowPnLEvent without changing existing positional arguments or realized metrics.
+
 ## [1.28.1] - 2026-09-14
 
 주문할 수 없는 종목을 **브로커에 보내기 전에** 판정하고, 사용자가 실제로 취할 수 있는 조치를

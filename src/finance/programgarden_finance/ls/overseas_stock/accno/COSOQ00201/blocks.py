@@ -587,6 +587,7 @@ class COSOQ00201Response(BaseModel):
         ),
     )
     _raw_data: Optional[Response] = PrivateAttr(default=None)
+    _valuation_blocks_present: bool = PrivateAttr(default=False)
 
     @property
     def raw_data(self) -> Optional[Response]:

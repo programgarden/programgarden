@@ -1,3 +1,11 @@
+## [1.37.9] - 2026-09-15
+
+### Added
+- Separate open-position account and workflow valuation gains, losses and net amounts by explicit currency. Account values retain broker observations; workflow estimates retain their own cost basis. No new broker requests or trading actions.
+
+### Changed
+- Require core 1.28.2 and finance 1.9.8 for the additive valuation envelopes. Preserve realized metrics, historical unknowns and existing return semantics.
+
 ## [1.37.8] - 2026-09-15
 
 ### Fixed
