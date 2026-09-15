@@ -107,3 +107,11 @@ Stock realized amounts are stored long-only FIFO gross values excluding fees;
 unknown currency stays null. Futures monetary values and portfolio MDD require
 accounting evidence absent from this ledger and remain null. Consumers must
 preserve null/status and use the latest cumulative observation, not sum dates.
+
+## Workflow account boundary
+
+Each workflow allows one account and one product through at most one broker
+connection. Additional connections produce `DUPLICATE_BROKER_NODE`, including
+unbound or cross-product nodes. Reuse one broker for all consumers. Account-free
+workflows and unrelated credentials remain supported. See
+[the shared contract](../../docs/workflow_account_policy.md).
