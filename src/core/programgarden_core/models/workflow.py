@@ -13,6 +13,44 @@ from programgarden_core.models.edge import Edge
 from programgarden_core.models.resource import ResourceLimits
 
 
+def validate_broker_connections(nodes: List[Dict[str, Any]]) -> List["ErrorInfo"]:
+    """Allow at most one account/product connection, including unbound brokers.
+
+    Inspect registered connection ports so aliases and custom broker node types
+    use the same rule. Reusing one connection through multiple edges is allowed;
+    account-free workflows and unrelated credential types remain unaffected.
+    """
+    from programgarden_core.registry import NodeTypeRegistry
+    from programgarden_core.models.validation import ErrorCode, ErrorLocation, build_error
+
+    registry = NodeTypeRegistry()
+    brokers = []
+    for node in nodes:
+        schema = registry.get_schema(node.get("type"))
+        if schema and any(port.get("type") == "broker_connection" for port in schema.outputs):
+            brokers.append(node)
+    if len(brokers) <= 1:
+        return []
+
+    broker_ids = [node.get("id") for node in brokers]
+    return [
+        build_error(
+            ErrorCode.DUPLICATE_BROKER_NODE,
+            "Duplicate broker connection: a workflow allows only one account and one product",
+            location=ErrorLocation(node_id=node.get("id"), node_type=node.get("type")),
+            suggestion=(
+                "Reuse the existing broker node for every consumer. Create a separate "
+                "workflow for another account or product; do not add another broker."
+            ),
+            details={
+                "existing": broker_ids[0], "duplicate": node.get("id"),
+                "broker_node_ids": broker_ids, "max_broker_connections": 1,
+            },
+        )
+        for node in brokers[1:]
+    ]
+
+
 class InputType(str, Enum):
     """워크플로우 입력 타입"""
 
@@ -220,7 +258,7 @@ class WorkflowDefinition(BaseModel):
             build_error,
         )
 
-        errors: List[ErrorInfo] = []
+        errors: List[ErrorInfo] = validate_broker_connections(self.nodes)
 
         # 1. Duplicate node IDs
         node_ids = self.get_node_ids()

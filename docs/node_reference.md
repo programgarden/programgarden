@@ -2075,3 +2075,10 @@ AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활�
 - [조건 조합](logic_guide.md) - 여러 조건을 논리 연산으로 조합
 - [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 86개 전략 플러그인
 - [AI 에이전트](ai_agent_guide.md) - LLM으로 시장 분석
+
+## Account connection policy
+
+Reuse one broker connection per workflow. Another account or product requires
+a separate workflow. This is a blocking library validation rule, including for
+unbound brokers and repeated credential references. See
+[the account policy](workflow_account_policy.md).

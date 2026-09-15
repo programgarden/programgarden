@@ -305,8 +305,7 @@ class WorkflowResolver:
         # 6. 노드-브로커 호환성 검증 (product_scope + broker_provider 자동 매칭)
         self._validate_node_broker_compatibility(workflow, registry, result)
 
-        # 7. BrokerNode 중복 검증 (같은 product_scope는 1개만 허용)
-        self._validate_broker_nodes(workflow, registry, result)
+        # Broker connection count is enforced by the shared structural validator.
 
         # 8. 엣지 참조 검증 (존재하지 않는 노드 참조 차단)
         self._validate_edge_references(workflow, result)
@@ -1554,58 +1553,6 @@ class WorkflowResolver:
                         suggestion="Add a matching credential entry under definition.credentials[] or fix the credential_id.",
                     )
                 )
-
-    def _validate_broker_nodes(
-        self,
-        workflow,
-        registry,
-        result: ValidationResult,
-    ) -> None:
-        """
-        같은 product_scope의 BrokerNode가 중복되지 않는지 검증.
-
-        - OverseasStockBrokerNode는 1개만 허용
-        - OverseasFuturesBrokerNode는 1개만 허용
-        - 다른 product_scope끼리는 공존 가능 (overseas_stock + overseas_futures)
-        """
-        from programgarden_core.nodes.base import ProductScope
-
-        broker_scopes: Dict[str, str] = {}  # {product_scope.value: node_id}
-
-        for node in workflow.nodes:
-            node_type = node.get("type")
-            node_class = registry.get(node_type)
-            if not node_class:
-                continue
-
-            # BrokerNode 계열인지 스키마로 확인
-            if not self._is_broker_node(registry, node_type):
-                continue
-
-            node_id = node.get("id")
-            scope = getattr(node_class, '_product_scope', ProductScope.ALL)
-
-            if scope == ProductScope.ALL:
-                continue
-
-            scope_value = scope.value
-            if scope_value in broker_scopes:
-                product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
-                result.add(
-                    build_error(
-                        ErrorCode.DUPLICATE_BROKER_NODE,
-                        f"Duplicate {product_label} broker node: '{broker_scopes[scope_value]}' and '{node_id}'",
-                        location=ErrorLocation(node_id=node_id, node_type=node_type),
-                        suggestion="Keep only one broker node per product scope.",
-                        details={
-                            "product_scope": scope_value,
-                            "existing": broker_scopes[scope_value],
-                            "duplicate": node_id,
-                        },
-                    )
-                )
-            else:
-                broker_scopes[scope_value] = node_id
 
     def _validate_node_broker_compatibility(
         self,

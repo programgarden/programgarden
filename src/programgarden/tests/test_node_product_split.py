@@ -122,8 +122,8 @@ class TestResolverBrokerMatching:
         assert not result.is_valid
         assert any("Duplicate" in e.message for e in result.errors)
 
-    def test_mixed_brokers_valid(self):
-        """해외주식 + 해외선물 broker 공존 → 검증 통과"""
+    def test_mixed_brokers_rejected(self):
+        """Different products must use separate workflows under the account policy."""
         resolver = WorkflowResolver()
         workflow = {
             "id": "test-mixed-valid",
@@ -149,7 +149,8 @@ class TestResolverBrokerMatching:
             ],
         }
         result = resolver.validate(workflow)
-        assert result.is_valid, f"검증 실패: {result.errors}"
+        assert not result.is_valid
+        assert any(error.code == "DUPLICATE_BROKER_NODE" for error in result.errors)
 
 
 class TestExecutorNodeTypeMapping:
