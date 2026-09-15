@@ -15,7 +15,9 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
       use "consume as returned by LS."
     - ``examples`` come from ``src/finance/example/korea_stock/run_CSPAT00601.py``
       (Samsung 005930 1-share limit-buy at intentionally unfillable price)
-      plus safe placeholder values. Account number placeholder ``"12345678901"``
+      plus the owner-supplied NXT example (2026-09-15) and placeholder values.
+      Example prices are historical illustrations, not executable trade choices.
+      Account number placeholder ``"12345678901"``
       is always used -- never real accounts.
 
 SAFETY: This is a live order-placement TR. Examples are illustrative only and
@@ -70,8 +72,8 @@ class CSPAT00601InBlock1(BaseModel):
         title="주문가 (Order price)",
         description=(
             "Order price in KRW. Use 0 for market orders ('03') and other non-limit "
-            "price types. Decimal scale not declared in available source -- consume "
-            "as returned by LS."
+            "price types. LS declares length 13.2; permitted tick sizes must be "
+            "checked for the actual instrument and session."
         ),
         examples=[0, 100, 70000],
     )
@@ -131,9 +133,12 @@ class CSPAT00601InBlock1(BaseModel):
         title="회원사번호 (Member firm code)",
         description=(
             "Routing-venue code. 'KRX' = KRX, 'NXT' = NXT. Empty string and any "
-            "other value are treated as KRX."
+            "other value are treated as KRX. The LS example supplied on 2026-09-15 "
+            "uses NXT with OrdprcPtnCode='00', OrdCndiTpCode='0' and MgntrnCode='000'. "
+            "This does not establish every venue/session/order-type combination."
         ),
         examples=["", "KRX", "NXT"],
+        json_schema_extra={"ls_required": True, "ls_length": "3", "ls_source_date": "2026-09-15"},
     )
 
 
@@ -282,8 +287,13 @@ class CSPAT00601OutBlock1(BaseModel):
     MbrNo: str = Field(
         default="",
         title="회원번호 (Member firm code)",
-        description="Echoed routing-venue code (KRX / NXT / other).",
-        examples=["", "KRX"],
+        description=(
+            "Echoed routing-venue code (KRX / NXT / other). Inspect model_fields_set "
+            "before using the echo; an absent field defaults to an empty string. "
+            "An NXT order acknowledgement is not execution-venue or fill evidence."
+        ),
+        examples=["", "KRX", "NXT"],
+        json_schema_extra={"ls_required": True, "ls_length": "3", "ls_source_date": "2026-09-15"},
     )
     OrdCndiTpCode: str = Field(
         default="",
@@ -498,6 +508,9 @@ class CSPAT00601Response(BaseModel):
     ``rsp_cd`` source notes: '00040' = buy-order accepted (매수주문완료),
     '00039' = sell-order accepted (매도주문완료). Other codes are not declared
     in available source -- inspect ``rsp_msg`` for failure reasons.
+    Acceptance is not execution. Confirm fills separately through SC1 account
+    notifications or matching CSPAQ13700/t0425 account order rows. S3_/NS3 market
+    trade ticks do not confirm that this account's order filled.
     """
 
     header: Optional[CSPAT00601ResponseHeader] = Field(
@@ -513,7 +526,10 @@ class CSPAT00601Response(BaseModel):
     block2: Optional[CSPAT00601OutBlock2] = Field(
         None,
         title="두번째 출력 블록 (Second output block -- order acknowledgment)",
-        description="Order acknowledgment block. Contains LS-assigned order number on success.",
+        description=(
+            "Order acknowledgment block. Contains LS-assigned order number on success; "
+            "does not confirm a fill. Match separate SC1 or account order/fill records."
+        ),
     )
     status_code: Optional[int] = Field(
         None,
@@ -525,7 +541,7 @@ class CSPAT00601Response(BaseModel):
         title="응답 코드 (LS response code)",
         description=(
             "LS response code. '00040' = buy-order accepted, '00039' = sell-order accepted. "
-            "Other codes are not declared in available source."
+            "Acceptance is not fill confirmation. Other codes are not declared in available source."
         ),
     )
     rsp_msg: str = Field(
