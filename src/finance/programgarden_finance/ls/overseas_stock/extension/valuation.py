@@ -22,7 +22,9 @@ def stock_valuation_snapshot(response, request, observed_at):
         return None
     if (response.status_code != 200 or response.error_msg or response.parse_warnings
             or response.rsp_cd not in {"00000", "00001"} or response.header is None
-            or response.header.tr_cd != "COSOQ00201" or not response._valuation_blocks_present
+            # The observed LS response uses the COSOQ family header. Exact
+            # COSOQ00201 blocks and the matching request echo still prove scope.
+            or response.header.tr_cd not in {"COSOQ00201", "COSOQ"} or not response._valuation_blocks_present
             or response.header.tr_cont != "N" or response.header.tr_cont_key.strip()):
         return None
     echo = response.block1

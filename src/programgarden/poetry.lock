@@ -2610,14 +2610,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.28.2"
+version = "1.28.3"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.28.2-py3-none-any.whl", hash = "sha256:9f7051801874e3af57489bcd923dec91442a5c93a3eea998cc160b6753a5f238"},
-    {file = "programgarden_core-1.28.2.tar.gz", hash = "sha256:c15dc831a7015851ad2febada09e809ca3a8326e1206b8021f4eae67a6a75077"},
+    {file = "programgarden_core-1.28.3-py3-none-any.whl", hash = "sha256:cc2303965d8680b5a9c3a29e4c1c13ac19bb886ffea5fa4a51290f3cc400c4a5"},
+    {file = "programgarden_core-1.28.3.tar.gz", hash = "sha256:85d5621c46fbede7d91ad9c4cc4fd88b94ad5cf63a820a7b96ee1b198b6b4c50"},
 ]
 
 [package.dependencies]
@@ -2625,14 +2625,14 @@ pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.9.8"
+version = "1.9.9"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.9.8-py3-none-any.whl", hash = "sha256:fd1c1f0e4c98921de3c0f07d280426e6f3833d0f2f0ab9c543c27e8e0a52d93d"},
-    {file = "programgarden_finance-1.9.8.tar.gz", hash = "sha256:89b90a3c27320249f7f1101d8f51b522606a423f786c8bcbf6e3e67fb84d3386"},
+    {file = "programgarden_finance-1.9.9-py3-none-any.whl", hash = "sha256:c3dfe5b51334e4d10f839d78edc3f63560092eab12b707bbe621844176fe09f1"},
+    {file = "programgarden_finance-1.9.9.tar.gz", hash = "sha256:658c8c1a619227ca6cc46798c44237d0a033ce65f7ce1549a5555980e3826d88"},
 ]
 
 [package.dependencies]
@@ -4179,4 +4179,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "efef45efb718e3f5e8ffcb60ca59c82b68d951a6bcdc63dd08b1a2cdf422a8d1"
+content-hash = "3de40c9d9a3c5d3ccaef733ab4a0ebc20d9b56c16197671c5e89a0699745f52b"

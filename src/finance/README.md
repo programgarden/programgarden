@@ -37,6 +37,11 @@ the supplied field metadata and two actual paper balance reads, including their
 date and accounting limits. Reported equity and its P&L/fee components must not
 be added twice.
 
+Unreleased: futures tracking also retains a whitelisted per-currency account
+snapshot from that same query, including owner-confirmed daily net cash flows.
+Missing evidence and broker dates stay unknown; aggregate targets remain
+separate. This is a collection contract, not a published adjusted-return series.
+
 ```bash
 # PyPI에 게시된 경우
 pip install programgarden-finance

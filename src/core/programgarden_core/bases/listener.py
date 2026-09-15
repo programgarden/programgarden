@@ -412,6 +412,9 @@ class WorkflowPnLEvent:
     # Open-position money, independent of closed-trade personal metrics.
     account_valuation: Optional[Dict[str, Any]] = None
     workflow_valuation: Optional[Dict[str, Any]] = None
+    # Dated account assets/flows, separate from workflow holdings or official scoring.
+    account_snapshot: Optional[Dict[str, Any]] = None
+    account_daily_snapshots: Optional[Dict[str, Any]] = None
 
 
 # ============================================================

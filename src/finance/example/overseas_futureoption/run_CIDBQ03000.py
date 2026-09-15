@@ -9,7 +9,13 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-async def test_req_CIDBQ03000():
+async def test_req_CIDBQ03000(trading_date: str = ""):
+    """Read the current balance or an explicit YYYYMMDD trading date.
+
+    Date queries use the owner's documented TrdDt field. Consumers must verify
+    that both the input echo and each balance row contain the requested date;
+    a blank date does not establish the broker's business-day boundary.
+    """
 
     logging.basicConfig(level=logging.DEBUG)
 
@@ -29,7 +35,7 @@ async def test_req_CIDBQ03000():
         body=CIDBQ03000.CIDBQ03000InBlock1(
             RecCnt=1,
             AcntTpCode="1",
-            TrdDt=""
+            TrdDt=trading_date
         )
     )
     print(await req.req_async())

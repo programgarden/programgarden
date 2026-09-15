@@ -1,3 +1,14 @@
+## [1.9.9] - 2026-09-15
+
+### Added
+- Retain supported CIDBQ03000 equity/business-day net cash-flow snapshots, separating native and aggregate targets and preserving missing evidence. Opt-in dated capture adds two spaced queries per five minutes with exact date validation, bounded timeouts and isolated copies. Existing blank-date trading balance behavior is unchanged.
+
+### Changed
+- Record the owner's daily, non-cumulative CustmMnyioAmt definition and the observed paper CIDBQ family response header. Do not infer individual transaction times or apply these facts to other TRs.
+
+### Fixed
+- Accept the observed COSOQ response family header for complete COSOQ00201 valuation payloads. A real read-only response with two positions now passes captured-packet replay; exact blocks, matching echo and per-currency reconciliation remain required.
+
 ## [1.9.8] - 2026-09-15
 
 ### Added

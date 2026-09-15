@@ -1,3 +1,14 @@
+## [1.37.10] - 2026-09-15
+
+### Added
+- Carry isolated futures account asset/date observations to every PnL listener, including accounts without open positions. Enable two spaced, date-confirmed balance queries per five minutes for account-return consumers. Legacy futures workflow FIFO money remains unavailable.
+
+### Fixed
+- Finance 1.9.9 accepts the observed COSOQ family response header for complete stock valuation snapshots; real captured-response replay now preserves supported account valuation amounts.
+
+### Changed
+- Require core 1.28.3 and finance 1.9.9 for the additive account snapshot contract.
+
 ## [1.37.9] - 2026-09-15
 
 ### Added

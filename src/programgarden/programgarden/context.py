@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from collections import deque
+from copy import deepcopy
 import asyncio
 import logging
 import time
@@ -1969,6 +1970,8 @@ class ExecutionContext:
         account_positions: Optional[Dict[str, Any]],
         currency: Optional[str] = "USD",
         account_valuation: Optional[Dict[str, Any]] = None,
+        account_snapshot: Optional[Dict[str, Any]] = None,
+        account_daily_snapshots: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Notify all listeners about workflow P&L update (확장 버전).
         
@@ -2107,6 +2110,8 @@ class ExecutionContext:
                     "personal_metrics": personal_metrics,
                     "account_valuation": account_valuation,
                     "workflow_valuation": workflow_valuation,
+                    "account_snapshot": deepcopy(account_snapshot) if product == "overseas_futures" else None,
+                    "account_daily_snapshots": deepcopy(account_daily_snapshots) if product == "overseas_futures" else None,
                     
                     # 신규 필드: 워크플로우 상품별
                     "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),

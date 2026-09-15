@@ -34,7 +34,7 @@ def position(currency="HKD", amount=Decimal("100"), **changes):
     return SimpleNamespace(**(values | changes))
 
 
-async def callback_event(positions):
+async def callback_event(positions, *, balance_only=False, snapshot=None, batch=None):
     events = []
 
     async def observe(event):
@@ -44,14 +44,21 @@ async def callback_event(positions):
     context.add_listener(SimpleNamespace(on_workflow_pnl_update=observe))
     context.add_listener(SimpleNamespace(on_workflow_pnl_update=observe, pnl_start_date="20260909"))
     callback = None
+    balance_callback = None
 
     def register(value):
         nonlocal callback
         callback = value
 
+    def register_balance(value):
+        nonlocal balance_callback
+        balance_callback = value
+
     tracker = SimpleNamespace(
         start=AsyncMock(), stop=AsyncMock(), get_positions=lambda: positions,
         on_account_pnl_change=register,
+        on_balance_change=register_balance, get_account_pnl=lambda: None,
+        get_account_snapshot=lambda: snapshot, get_daily_account_snapshots=lambda: batch,
     )
     real = SimpleNamespace(connect=AsyncMock(), close=AsyncMock())
     account = SimpleNamespace(account_tracker=lambda **kwargs: tracker)
@@ -60,11 +67,25 @@ async def callback_event(positions):
     ))
     executor = BrokerNodeExecutor()
     await executor._start_overseas_futures_tracker(ls, "broker", "overseas_futures", "ls", context)
-    callback(SimpleNamespace(currency="USD"))  # A stale aggregate label must not win.
+    if balance_only:
+        balance_callback(None)
+    else:
+        callback(SimpleNamespace(currency="USD"))  # A stale aggregate label must not win.
     await executor.cleanup_fill_subscriptions(context.job_id)
     assert len(events) == 2
     assert events[1].competition_start_date == "20260909"
     return events
+
+
+@pytest.mark.asyncio
+async def test_empty_positions_still_forward_isolated_account_assets():
+    snapshot = {'rows': [{'equity': Decimal('100'), 'currency': 'HKD'}]}
+    batch = {'entries': [{'snapshot': snapshot}]}
+    events = await callback_event({}, balance_only=True, snapshot=snapshot, batch=batch)
+    events[0].account_daily_snapshots['entries'][0]['snapshot']['rows'][0]['equity'] = 999
+    assert events[1].account_daily_snapshots['entries'][0]['snapshot']['rows'][0]['equity'] == 100
+    assert snapshot['rows'][0]['equity'] == 100
+    assert all(event.workflow_pnl_rate is None for event in events)
 
 
 @pytest.mark.asyncio

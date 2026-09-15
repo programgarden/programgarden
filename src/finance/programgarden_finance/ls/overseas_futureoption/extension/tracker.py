@@ -9,9 +9,12 @@
 """
 
 import logging
+from copy import deepcopy
 from decimal import Decimal
 from typing import Dict, List, Optional, Callable, Any, Set
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import time
+from zoneinfo import ZoneInfo
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -92,6 +95,7 @@ class FuturesAccountTracker:
         refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
         spec_refresh_hours: int = DEFAULT_SPEC_REFRESH_HOURS,
         commission_rate: Decimal = DEFAULT_FEE_PER_CONTRACT,
+        capture_daily_snapshots: bool = False,
     ):
         """
         Args:
@@ -121,6 +125,11 @@ class FuturesAccountTracker:
         self._positions: Dict[str, FuturesPositionItem] = {}
         self._position_evidence_errors: Dict[str, str] = {}
         self._balance: Optional[FuturesBalanceInfo] = None
+        self._account_snapshot: Optional[Dict[str, Any]] = None
+        self._capture_daily_snapshots = capture_daily_snapshots
+        self._daily_account_snapshots: Optional[Dict[str, Any]] = None
+        self._daily_snapshot_checked_at: Optional[float] = None
+        self._daily_snapshot_lock = asyncio.Lock()
         self._open_orders: Dict[str, FuturesOpenOrder] = {}
         self._current_prices: Dict[str, Decimal] = {}
         
@@ -203,6 +212,45 @@ class FuturesAccountTracker:
         
         # 미체결 주문 조회 (CIDBQ01800)
         await self._fetch_open_orders()
+        if self._capture_daily_snapshots:
+            await self._fetch_daily_account_snapshots()
+
+    async def _fetch_daily_account_snapshots(self):
+        """Query explicit dates at most every five minutes, without changing trading balances.
+
+        The ordinary blank-date response cannot establish a broker business day.
+        Query today and the preceding calendar date explicitly; only matching
+        returned dates are eligible for daily accounting. Missing/failed date
+        observations remain explicit nulls and must not become zero cash flows.
+        """
+        from ..accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+        from .account_snapshot import futures_account_snapshot
+
+        async with self._daily_snapshot_lock:
+            if (self._daily_snapshot_checked_at is not None
+                    and time.monotonic() - self._daily_snapshot_checked_at < 300):
+                return
+            today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+            entries = []
+            for day in (today - timedelta(days=1), today):
+                await asyncio.sleep(1)
+                requested_date = day.strftime("%Y%m%d")
+                body = CIDBQ03000InBlock1(RecCnt=1, AcntTpCode="1", TrdDt=requested_date)
+                snapshot = None
+                try:
+                    response = await asyncio.wait_for(
+                        self._accno_client.CIDBQ03000(body=body).req_async(), timeout=30,
+                    )
+                    snapshot = futures_account_snapshot(response, body, datetime.now(timezone.utc))
+                except Exception:
+                    logger.debug("Dated account observation unavailable")
+                entries.append({"requested_date": requested_date, "snapshot": snapshot})
+            self._daily_account_snapshots = {
+                "version": 1, "source": "CIDBQ03000",
+                "observed_at": datetime.now(timezone.utc).isoformat(), "entries": entries,
+            }
+            self._daily_snapshot_checked_at = time.monotonic()
+            self._notify_balance_change()
     
     async def _fetch_positions(self):
         """보유포지션 조회 (CIDBQ01500)"""
@@ -347,18 +395,22 @@ class FuturesAccountTracker:
     async def _fetch_balance(self):
         """예수금/증거금 조회 (CIDBQ03000)"""
         logger.debug("[_fetch_balance] 조회 시작")
+        self._account_snapshot = None
         
         try:
             from ..accno.CIDBQ03000.blocks import CIDBQ03000InBlock1
+            from .account_snapshot import futures_account_snapshot
             
-            tr = self._accno_client.CIDBQ03000(
-                body=CIDBQ03000InBlock1(
-                    RecCnt=1,
-                    AcntTpCode="1",
-                    TrdDt=""
-                ),
+            body = CIDBQ03000InBlock1(
+                RecCnt=1,
+                AcntTpCode="1",
+                TrdDt=""
             )
+            tr = self._accno_client.CIDBQ03000(body=body)
             resp = await tr.req_async()
+            self._account_snapshot = futures_account_snapshot(
+                resp, body, datetime.now(timezone.utc)
+            )
             
             # 응답 코드 확인
             rsp_cd = getattr(resp, 'rsp_cd', '')
@@ -413,11 +465,7 @@ class FuturesAccountTracker:
                         last_updated=now
                     )
                     
-                    logger.info(
-                        f"[_fetch_balance] 예수금=${self._balance.deposit:.2f}, "
-                        f"주문가능=${self._balance.orderable_amount:.2f}, "
-                        f"증거금=${self._balance.total_margin:.2f}"
-                    )
+                    logger.debug("Balance refresh completed")
                     
                     self._notify_balance_change()
             else:
@@ -429,6 +477,7 @@ class FuturesAccountTracker:
             self._last_errors.pop("balance", None)
                 
         except Exception as e:
+            self._account_snapshot = None
             error_msg = f"[예수금 조회 실패] {str(e)}"
             self._last_errors["balance"] = error_msg
             logger.error(f"[_fetch_balance] 조회 실패: {e}", exc_info=True)
@@ -810,6 +859,14 @@ class FuturesAccountTracker:
     def get_balance(self) -> Optional[FuturesBalanceInfo]:
         """예수금/증거금 조회"""
         return self._balance
+
+    def get_account_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Return an isolated copy of the latest supported account observation."""
+        return deepcopy(self._account_snapshot)
+
+    def get_daily_account_snapshots(self) -> Optional[Dict[str, Any]]:
+        """Return dated query evidence, including explicit failed date observations."""
+        return deepcopy(self._daily_account_snapshots)
     
     def get_open_orders(self) -> Dict[str, FuturesOpenOrder]:
         """미체결 주문 조회"""
