@@ -74,7 +74,7 @@ class TrT0425(TRRequestAbstract, OccursReqAbstract):
 
         parsed_block: list[T0425OutBlock1] = []
         if exc is None and not is_error_status:
-            parsed_block = [T0425OutBlock1.model_validate(item) for item in block_data]
+            parsed_block = [T0425OutBlock1.model_validate(item) for item in block_data] if isinstance(block_data, list) else []
 
         error_msg: Optional[str] = None
         if exc is not None:
@@ -95,6 +95,7 @@ class TrT0425(TRRequestAbstract, OccursReqAbstract):
             status_code=status,
             error_msg=error_msg,
         )
+        result._orders_block_present = isinstance(resp_json.get("t0425OutBlock1"), list)
         if resp is not None:
             result.raw_data = resp
         return result

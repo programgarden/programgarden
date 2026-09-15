@@ -42,6 +42,11 @@ snapshot from that same query, including owner-confirmed daily net cash flows.
 Missing evidence and broker dates stay unknown; aggregate targets remain
 separate. This is a collection contract, not a published adjusted-return series.
 
+Domestic workflow evidence uses complete trade-basis holdings and pending orders,
+plus independently observed non-credit orderable cash. Missing observations
+remain unavailable; same-day unsettled purchases remain visible. Average-cost
+position rates are normalized only after matching the observed PnL/cost ratio.
+
 Domestic source-contract update: every `CSPAQ12300OutBlock2` field is **not
 provided**, including explicit zero/empty broker placeholders. Its schema and
 `response.block2_status` expose that restriction. Use separately observed

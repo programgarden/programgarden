@@ -1,4 +1,9 @@
-## [1.10.0] - 2026-09-15
+## [1.10.2] - 2026-09-15
+
+### Fixed
+- Provide complete domestic pending-order evidence with bounded pagination, explicit side/quantity checks and separate observed venue. Missing responses cannot become an empty list.
+- Require observed non-credit orderable cash from CSPAQ22200 and retain explicit zero without falling back to credit amounts.
+- Expose observed sellable quantities and normalize average-cost PnlRat fractions only when they match explicit valuation PnL and acquisition amount.
 
 ## [1.10.1] - 2026-09-15
 
@@ -7,6 +12,8 @@
 - Read all t0424 trading-cache pages separately from monetary evidence. Invalidate unavailable observations without overwriting retained trading positions.
 - Preserve detached REST evidence across tick updates and concurrent refreshes. Document the actual t0425 Korean buy label.
 
+
+## [1.10.0] - 2026-09-15
 
 ### Added
 - Add NS3 NXT trade-tick models, shared-socket subscriptions and a read-only example, preserving absent fields and numeric/time strings from the owner-supplied source.

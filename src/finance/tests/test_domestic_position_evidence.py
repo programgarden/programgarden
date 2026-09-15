@@ -155,3 +155,19 @@ async def test_trading_cache_reads_all_pages_and_never_overwrites_duplicate_symb
     with patch("programgarden_finance.ls.korea_stock.extension.valuation.asyncio.sleep", new=AsyncMock()):
         with pytest.raises(DomesticPositionEvidenceUnavailable):
             await collect_domestic_trading_positions(client)
+
+
+def test_live_fraction_is_scaled_only_with_matching_amount_evidence():
+    row = csp.CSPAQ12300OutBlock3(**{**ROW, "SellAbleQty": 1, "EvalPnl": -30,
+                                     "NowPrc": 7950, "PnlRat": -0.003759})
+    value = position_evidence([row], NOW)["positions"]["001500"]
+    assert float(value["pnl_rate"]) == pytest.approx(-0.3759)
+    assert value["sellable_qty"] == 1
+    row.PnlRat = -0.3759
+    assert position_evidence([row], NOW)["positions"]["001500"]["pnl_rate"] is None
+    row.model_fields_set.discard("SellAbleQty")
+    assert position_evidence([row], NOW)["positions"]["001500"]["sellable_qty"] is None
+
+
+def test_rate_and_sellable_contract_fields_exist():
+    assert {"PnlRat", "SellAbleQty"} <= csp.CSPAQ12300OutBlock3.model_fields.keys()
