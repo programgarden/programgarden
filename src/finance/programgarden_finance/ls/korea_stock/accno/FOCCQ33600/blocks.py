@@ -48,6 +48,12 @@ class FOCCQ33600InBlock1(BaseModel):
     the per-row granularity with ``TermTp`` (daily / weekly / monthly).
     """
 
+    RecCnt: int = Field(
+        default=1,
+        title="Record count",
+        description="The owner-supplied official request example sends 1; the input table omits this field.",
+        examples=[1],
+    )
     QrySrtDt: str = Field(
         default="",
         title="조회시작일 (Query start date, YYYYMMDD)",
@@ -95,6 +101,9 @@ class FOCCQ33600Request(BaseModel):
 class FOCCQ33600OutBlock1(BaseModel):
     """FOCCQ33600OutBlock1 — input echo-back block."""
 
+    RecCnt: int = Field(default=0, title="Record count", description="Source length 5.")
+    AcntNo: str = Field(default="", title="Account number", description="Sensitive account identifier; source length 20.", repr=False)
+    Pwd: str = Field(default="", title="Account password", description="Sensitive broker echo; source length 8. Do not log or publish.", repr=False)
     QrySrtDt: str = Field(
         default="",
         title="조회시작일 (Query start date, YYYYMMDD)",
