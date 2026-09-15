@@ -285,14 +285,42 @@ def real_account_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dic
     }
 
 
-def account_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict[str, Any]:
+def account_fixture(
+    config: Dict[str, Any], symbols_raw: Any = None, *, product: str = "overseas_stock"
+) -> Dict[str, Any]:
     """AccountNode (REST) deep fixture.
 
-    Real shape: ``{"positions": [...], "balance": {...}}``.
+    Include the held-symbol port consumed by entry guards. Domestic synthetic
+    observations use domestic identities and KRW, never an AAPL/USD fallback.
     """
+    if product == "korea_stock":
+        raw = symbols_raw if symbols_raw is not None else _config_symbols(config)
+        if raw is None:
+            raw = [{"symbol": "005930", "exchange": "KRX"}]
+        if isinstance(raw, (str, dict)):
+            raw = [raw]
+        if isinstance(raw, list):
+            raw = [
+                {"symbol": row, "exchange": "KRX"} if isinstance(row, str)
+                else {"exchange": "KRX", **row} if isinstance(row, dict)
+                else row for row in raw
+            ]
+        positions = _fixture_positions(config, raw)
+        for position in positions:
+            position["currency"] = "KRW"
+            position.pop("market_code", None)
+        balance = _fixture_balance("KRW")
+    else:
+        positions = _fixture_positions(config, symbols_raw)
+        balance = _fixture_balance()
+    balance["_partial_failure"] = False
     return {
-        "positions": _fixture_positions(config, symbols_raw),
-        "balance": _fixture_balance(),
+        "positions": positions,
+        "held_symbols": [
+            {"symbol": position["symbol"], "exchange": position["exchange"]}
+            for position in positions
+        ],
+        "balance": balance,
     }
 
 
@@ -301,7 +329,7 @@ def open_orders_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
 
     Real shape: ``{"open_orders": [...], "count": N}``.
     """
-    return {"open_orders": [], "count": 0}
+    return {"open_orders": [], "count": 0, "error": None}
 
 
 def real_order_event_fixture(config: Dict[str, Any]) -> Dict[str, Any]:

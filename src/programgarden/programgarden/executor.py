@@ -5828,7 +5828,9 @@ class AccountNodeExecutor(NodeExecutorBase):
             # still surfaced (the fixture branch returns before the normal
             # evaluate_all_bindings pass, which would otherwise bypass it).
             config = evaluate_all_bindings(config, context, node_id)
-            fixture = _df.account_fixture(config)
+            fixture = _df.account_fixture(
+                config, product="korea_stock" if node_type == "KoreaStockAccountNode" else "overseas_stock"
+            )
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
