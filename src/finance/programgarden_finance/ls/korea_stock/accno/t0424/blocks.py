@@ -453,6 +453,7 @@ class T0424Response(BaseModel):
     error_msg: Optional[str] = Field(default=None, title="Error message")
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
+    _positions_blocks_present: bool = PrivateAttr(default=False)
 
     @property
     def raw_data(self) -> Optional[Response]:

@@ -2216,6 +2216,26 @@ class ExecutionContext:
             # realized PnL or fees. Do not infer these from the local legacy FIFO.
             return unavailable_workflow_pnl()
 
+        if product == "korea_stock":
+            from math import isfinite
+            from decimal import Decimal
+            reason = "price_unreported" if all_positions is None else None
+            for position in (all_positions or {}).values():
+                for field in ("quantity", "buy_price", "current_price"):
+                    value = position.get(field)
+                    if (isinstance(value, bool) or not isinstance(value, (int, float, Decimal))
+                            or not isfinite(value) or value <= 0):
+                        reason = "price_unreported" if field == "current_price" else "basis_unreported"
+            if reason:
+                # Missing observations cannot enter legacy arithmetic or become
+                # an empty, measured-zero workflow valuation after a refresh error.
+                return dict.fromkeys(
+                    f"{scope}_{metric}" for scope in ("workflow", "other", "total")
+                    for metric in ("pnl_rate", "pnl_amount", "eval_amount", "buy_amount")
+                ) | {"workflow_rate_unavailable_reason": reason,
+                     "workflow_positions": [], "other_positions": [],
+                     "trust_score": 0, "anomaly_count": 0}
+
         # 트래커 없으면 기본값 (모든 포지션이 "other")
         if self._workflow_position_tracker is None:
             # 트래커 없음 = 모든 포지션이 "other"
@@ -2343,6 +2363,18 @@ class ExecutionContext:
         if not account_positions:
             return {}
 
+        # Domestic observations keep missing costs/prices distinct from zeros.
+        # A single incomplete holding invalidates the account-level estimate.
+        for position in account_positions.values():
+            if position.get("product") == "korea_stock":
+                from math import isfinite
+                from decimal import Decimal
+                for field in ("quantity", "buy_price", "current_price", "pnl_amount"):
+                    value = position.get(field)
+                    if (isinstance(value, bool) or not isinstance(value, (int, float, Decimal))
+                            or not isfinite(value) or (field != "pnl_amount" and value <= 0)):
+                        return {}
+
         if any(pos.get("product") == "overseas_futures" for pos in account_positions.values()):
             from .futures_pnl import unavailable_account_pnl
 
@@ -2387,7 +2419,7 @@ class ExecutionContext:
                 # 채우므로, 명시적 0/0.0 은 권위값이 아니라고 보고 산술 폴백한다
                 # (실손익을 0 으로 무음 소거하는 것을 방지). 진짜 0 손익도 산술이
                 # ≈0 을 내므로 결과 동일.
-                if pnl_amount_raw:
+                if pnl_amount_raw or (pos.get("product") == "korea_stock" and pnl_amount_raw == 0):
                     try:
                         total_pnl += float(pnl_amount_raw)
                     except (TypeError, ValueError):

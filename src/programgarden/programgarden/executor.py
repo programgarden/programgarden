@@ -5728,34 +5728,27 @@ class BrokerNodeExecutor(NodeExecutorBase):
         }
         await real.connect()
 
-        # 수익률 콜백 등록
         def on_pnl_change(pnl_info):
-            # tracker에서 현재 positions 조회
+            # Read a detached observation; BEP/tick cache values are not averages.
+            evidence = tracker.get_position_evidence()
+            account_positions = evidence["positions"] if evidence is not None else None
             current_prices = {}
-            account_positions = {}
-
-            positions = tracker.get_positions()  # Dict[symbol, KrStockPositionItem]
-            if positions:
-                for symbol, pos_item in positions.items():
-                    if pos_item.current_price:
-                        current_prices[symbol] = float(pos_item.current_price)
-                    account_positions[symbol] = {
-                        "symbol": symbol,
-                        "quantity": pos_item.quantity,
-                        "buy_price": float(pos_item.buy_price),
-                        "current_price": float(pos_item.current_price),
-                        "pnl_rate": pos_item.pnl_rate,
-                        "product": product,
-                    }
-
+            if account_positions is not None:
+                for symbol, position in account_positions.items():
+                    for key in ("buy_price", "average_price", "acquisition_amount", "current_price", "eval_amount", "pnl_amount"):
+                        if position.get(key) is not None:
+                            position[key] = float(position[key])
+                    if position.get("current_price") is not None:
+                        current_prices[symbol] = position["current_price"]
             self._start_background_task(context,
                 context.notify_workflow_pnl(
                     broker_node_id=node_id,
                     product=product,
                     provider=provider,
                     current_prices=current_prices,
-                    account_positions=account_positions if account_positions else None,
+                    account_positions=account_positions,
                     currency="KRW",
+                    account_valuation=evidence["account_valuation"] if evidence is not None else None,
                 ),
                 notification=True,
             )

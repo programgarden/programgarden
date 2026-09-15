@@ -225,10 +225,11 @@ class T0425OutBlock1(BaseModel):
         description=(
             "Buy / sell side indicator. The complete enum mapping is not "
             "declared in the available LS source — consume as returned by LS. "
-            "Common observations: '1' indicates 매도 (sell) and '2' indicates "
-            "매수 (buy) per the example script's display mapping."
+            "The 2026-09-15 live NXT account response returned '매수' for a "
+            "confirmed buy. Numeric '1' (sell) and '2' (buy) are legacy example "
+            "mappings, not an exhaustive wire enum. Preserve unknown values."
         ),
-        examples=["1", "2"],
+        examples=["매수", "1", "2"],
     )
     qty: int = Field(
         default=0,
