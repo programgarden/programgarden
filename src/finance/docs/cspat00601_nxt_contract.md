@@ -47,3 +47,28 @@ Actual order validation requires owner-selected parameters, current NXT symbol
 eligibility, prices/session state and an owner-executed command. NXT quote ticks
 already observed through NS3 do not prove execution. Modify/cancel venue rules,
 other price types and workflow-node NXT integration remain separate work.
+
+## Discovery and directly observed quotes
+
+The owner supplied `t9945.nxt_chk`: 1 means provided by NXT, 0 means not provided.
+The supplied t8436 table has no equivalent field. `run_t9945.py --nxt-only`
+filters only explicitly observed 1 values; absent/empty/unknown values remain
+unknown. Direct read-only requests at 16:12 KST on 2026-09-15 returned this field
+on all 4,300 master rows, including 335 KOSPI and 271 KOSDAQ rows with value 1.
+These are snapshot counts, not a permanent eligible-symbol list or halt check.
+
+A 30-symbol t8407 screen identified candidates within the account's observed
+non-credit orderable amount; t8407 has no explicit NXT selector and its prices
+were used only for screening. A subsequent 45-second subscription received NH1
+books for 001500 and 000080 and an NS3 trade for 000080, with matching N-prefixed
+venue codes. No account orders were sent. No quote for 001130 arrived in that
+window; this alone does not mean it is ineligible.
+
+The old NH1 example passed six digits, but its validator only padded that input
+and omitted N. NH1 now normalizes six digits to `N` + six digits + three spaces,
+preserving the same subscription key for removal/reconnect. Invalid batches are
+rejected before subscription state changes.
+
+NH1 `donsigubun="1"` was observed during the aftermarket, despite the existing
+SDK's pre-open description. Do not use that enum description alone to decide
+that trading is closed/open; its source reconciliation remains pending.

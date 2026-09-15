@@ -1,3 +1,15 @@
+## [1.10.0] - 2026-09-15
+
+### Added
+- Add NS3 NXT trade-tick models, shared-socket subscriptions and a read-only example, preserving absent fields and numeric/time strings from the owner-supplied source.
+- Add a preview-only NXT CSPAT00601 limit-order example and sync/async transport tests. The existing MbrNo route is retained; order acknowledgement is explicitly separate from SC1/account fill evidence.
+
+### Fixed
+- Normalize six-digit NH1 example symbols to the required N-prefixed subscription key, using identical keys for add/remove/reconnect and rejecting malformed batches before mutation.
+- Add observed-only t9945 NXT filtering and correct the CSPAQ22200 example's stale credit/non-credit orderable labels.
+- Mark every CSPAQ12300 summary field as not provided, including zero/empty placeholders. Correct request selector codes, position fields, RecCnt and FOCCQ33600 request/echo contracts from the supplied LS tables.
+- Preserve domestic field presence and clarify average price versus BEP. Do not infer the account-return formula, current-day availability or execution venue.
+
 ## [1.9.9] - 2026-09-15
 
 ### Added

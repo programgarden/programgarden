@@ -94,8 +94,14 @@ class T9945OutBlock(BaseModel):
     nxt_chk: str = Field(
         default="",
         title="NXT상장구분 (NXT listing flag)",
-        description="NXT venue listing flag. '1' = listed on NXT (NXT 거래소 제공), '0' = not listed on NXT (NXT 거래소 미제공).",
+        description=(
+            "NXT venue listing flag. '1' = provided by NXT, '0' = not provided by NXT. "
+            "Missing, empty or other values are unknown; inspect model_fields_set "
+            "before filtering. This flag does not establish current session, halt "
+            "state, valid quote or permission for every order type."
+        ),
         examples=["0", "1"],
+        json_schema_extra={"ls_required": True, "ls_source_length": "1", "ls_source_date": "2026-09-15"},
     )
     filler: str = Field(
         default="",

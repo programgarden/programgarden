@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden"
-version = "1.37.10"
+version = "1.37.11"
 license = "AGPL-3.0-or-later"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
@@ -37,7 +37,7 @@ litellm = ">=1.40.0"
 # (1.26.0 이후로도 context.py 는 WorkflowPnLEvent(**event_data) 에 personal_metrics
 #  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
 programgarden-core = "^1.28.3"
-programgarden-finance = "^1.9.9"
+programgarden-finance = "^1.10.0"
 programgarden-community = "^1.15.3"
 
 [tool.poetry.group.dev.dependencies]
