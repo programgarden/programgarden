@@ -175,3 +175,15 @@ Evidence and local fills that conflict keep startup held. Partial cancellation
 and amendment chains remain unsupported pending verified broker semantics.
 The focused cancellation, aggregate-recovery and reconciliation suite passes
 124 cases. This source change is not yet published.
+
+
+## Durable adjustment delivery (source only, 2026-09-16)
+
+Execution-scoped SQLite audits are forwarded through shared `AdjustmentDelivery`.
+HTTP acknowledgements mark only accepted IDs for that API/project/execution
+destination. Failed/offline sends retain immutable history across restart.
+Worker uses OIDC; tray uses the owner JWT. Forwarding is bounded to five seconds
+per batch and six seconds at shutdown, before releasing the storage lease.
+Wiring errors do not prevent engine execution. The new route is
+`/ingest_position_adjustments`; deploy its migration/readers before publishing
+these runtime producers. No active runner has been upgraded.

@@ -1839,6 +1839,14 @@ class WorkflowPositionTracker:
                 WHERE product=? AND provider=? AND trading_mode=? ORDER BY id DESC LIMIT ?
             """, (self.product, self.provider, self.trading_mode, limit)).fetchall()
             return [dict(row) for row in rows]
+
+    def pending_position_adjustments(self, destination: str, limit: int = 100) -> List[Dict[str, Any]]:
+        from .adjustment_delivery import pending_adjustments
+        return pending_adjustments(self, destination, limit)
+
+    def acknowledge_position_adjustments(self, destination: str, ids: List[int]) -> None:
+        from .adjustment_delivery import acknowledge_adjustments
+        acknowledge_adjustments(self, destination, ids)
     
     def get_other_positions(
         self,
