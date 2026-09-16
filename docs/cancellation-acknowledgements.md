@@ -61,3 +61,16 @@ Paused main/event loops now observe stop without running queued strategy nodes.
 intercepted. This is unpublished engine source. Futures/domestic bulk actions,
 host/UI controls and durable adjustment display remain separate integration gates;
 existing explicit product CancelOrder nodes retain their accepted-request outputs.
+
+
+## Managed client routing (2026-09-16)
+
+`cancel_all_orders_async(job_id, executor=pg.executor)` uses exactly the supplied
+client and its current event loop. The synchronous wrapper accepts the same
+executor for worker-thread callers and dispatches to the owning active loop.
+Neither wrapper searches other clients or accounts. Omitting the executor retains
+the legacy tools singleton, which cannot find jobs created by `ProgramGarden()`.
+Managed hosts can instead call `await job.cancel_pending_orders()` directly.
+Seventeen routing/owned-cancellation tests cover same-named jobs in separate real
+clients, wrong-loop refusal, thread dispatch and the existing broker-bound guards.
+This is source only; UI support range awaits the owner product decision.

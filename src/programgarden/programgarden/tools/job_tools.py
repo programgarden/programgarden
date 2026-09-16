@@ -272,7 +272,23 @@ def emergency_close_all(job_id: str) -> Dict[str, Any]:
     }
 
 
-def cancel_all_orders(job_id: str) -> Dict[str, Any]:
+async def cancel_all_orders_async(job_id: str, *, executor=None) -> Dict[str, Any]:
+    """Use the owning executor; never search another client's jobs implicitly.
+
+    Managed callers pass ``pg.executor`` or use ``job.cancel_pending_orders``.
+    The legacy tools singleton is only the default for jobs created by these tools.
+    """
+    owner = executor if executor is not None else _get_executor()
+    job = owner.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job not found: {job_id}")
+    task = job._task
+    if task is None or task.get_loop() is not asyncio.get_running_loop():
+        raise RuntimeError("Pending cancellation requires the owning job event loop")
+    return await job.cancel_pending_orders()
+
+
+def cancel_all_orders(job_id: str, *, executor=None) -> Dict[str, Any]:
     """
     Cancel all pending orders
 
@@ -286,7 +302,8 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         >>> cancel_all_orders("job-abc123")
         {"cancelled_orders": [...], "failed_orders": [...]}
     """
-    job = _get_executor().get_job(job_id)
+    owner = executor if executor is not None else _get_executor()
+    job = owner.get_job(job_id)
     if job is None:
         raise ValueError(f"Job not found: {job_id}")
     try:
@@ -301,7 +318,7 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         except TimeoutError:
             future.cancel()
             raise
-    raise RuntimeError("Use await job.cancel_pending_orders() on the job's event loop")
+    raise RuntimeError("Use await cancel_all_orders_async(job_id, executor=pg.executor) on the owning loop")
 
 
 def restore_job(
