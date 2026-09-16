@@ -1,4 +1,14 @@
 ## [1.10.3] - 2026-09-16
+
+## [1.10.5] - 2026-09-16
+
+### Fixed
+- Document observed overseas-stock order/cancellation fields without inventing code tables.
+- Keep ambiguous partial-cancellation semantics explicit in COSAQ00102 models.
+
+### Dependencies
+- Require programgarden-core 1.30.1 or later.
+
 ### Fixed
 - Preserve whether CIDBQ01500/02400/05300 detail arrays were actually provided. Parser defaults no longer count as observed empty lists in model_fields_set.
 
