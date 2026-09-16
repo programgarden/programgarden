@@ -1,3 +1,8 @@
+## Unreleased
+### Fixed
+- Refresh futures account data on actual TC3 fills and TC2 confirmations using the SDK `svc_id` field.
+- Schedule refreshes on the owning event loop, coalesce event bursts, serialize account reads and detach only this tracker's listeners on shutdown.
+
 ## [1.10.3] - 2026-09-16
 
 ## [1.10.5] - 2026-09-16
