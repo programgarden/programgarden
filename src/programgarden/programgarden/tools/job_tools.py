@@ -286,14 +286,22 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         >>> cancel_all_orders("job-abc123")
         {"cancelled_orders": [...], "failed_orders": [...]}
     """
-    # No broker adapter is wired here yet; never present an empty success.
-    return {
-        "job_id": job_id,
-        "status": "not_implemented",
-        "error": "Owned pending-order cancellation is not implemented",
-        "cancelled_orders": [],
-        "failed_orders": [],
-    }
+    job = _get_executor().get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job not found: {job_id}")
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        task = job._task
+        if task is None or not task.get_loop().is_running():
+            raise RuntimeError("Pending cancellation requires the active job event loop") from None
+        future = asyncio.run_coroutine_threadsafe(job.cancel_pending_orders(), task.get_loop())
+        try:
+            return future.result(timeout=125)
+        except TimeoutError:
+            future.cancel()
+            raise
+    raise RuntimeError("Use await job.cancel_pending_orders() on the job's event loop")
 
 
 def restore_job(

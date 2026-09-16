@@ -243,8 +243,7 @@ def test_actual_sdk_ack_is_not_final_cancellation(product):
     assert result["cancelled_order"]["status"] == "cancel_requested"
 
 
-def test_unimplemented_bulk_cancel_never_claims_empty_success():
+def test_bulk_cancel_with_no_job_never_claims_empty_success():
     from programgarden.tools.job_tools import cancel_all_orders
-    result = cancel_all_orders("not-started")
-    assert result["status"] == "not_implemented"
-    assert result["cancelled_orders"] == []
+    with pytest.raises(ValueError, match="Job not found"):
+        cancel_all_orders("not-started")

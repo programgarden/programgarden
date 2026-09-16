@@ -37,3 +37,27 @@ and host/UI integration remain open. Emergency market liquidation stays excluded
 Validation: 52 focused executor, real SDK field-contract, metadata and locale
 checks plus six schema/example cases pass. Broker calls are intercepted; no real
 order, cancellation, credential login or active workflow change was performed.
+# Owned pending-order action (source checkpoint)
+
+`await job.cancel_pending_orders()` requires a paused, quiescent, execution-scoped
+overseas-stock job and its exact product credential. It reads complete fresh
+broker evidence, matches date/order/symbol/side/venue against the owned ledger,
+and excludes manual or other executions' orders. Each request is journalled before
+the broker call; timeouts and explicit repeated calls cannot resend it. Up to20
+targets and a120-second operation deadline bound the work.
+
+The result separates `requested_orders`, `cancelled_orders`, `filled_orders` and
+`pending_orders`, each identified by order date and number. Terminal status needs
+the previously verified full-fill or wholly unfilled cancellation evidence.
+Missing reads and historical partial-cancel chains return confirmation pending.
+No position is sold, and this operation does not fabricate fills or PnL. Restart
+must perform the normal fresh account verification before strategy execution.
+
+The synchronous `cancel_all_orders` wrapper dispatches onto the existing job loop;
+async callers use the job method. Stop remains separate and sends no broker order.
+Paused main/event loops now observe stop without running queued strategy nodes.
+
+84 focused cancellation and actual-lifecycle tests pass with broker transport
+intercepted. This is unpublished engine source. Futures/domestic bulk actions,
+host/UI controls and durable adjustment display remain separate integration gates;
+existing explicit product CancelOrder nodes retain their accepted-request outputs.

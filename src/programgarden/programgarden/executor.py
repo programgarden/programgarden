@@ -21817,8 +21817,10 @@ class WorkflowJob:
                 break
 
             # Wait if paused
-            while self.context.is_paused:
+            while self.context.is_paused and self.context.is_running:
                 await asyncio.sleep(0.1)
+            if not self.context.is_running:
+                return
 
             node = self.workflow.nodes.get(node_id)
             if not node:
@@ -23567,8 +23569,10 @@ class WorkflowJob:
                 continue
             
             # Wait if paused
-            while self.context.is_paused:
+            while self.context.is_paused and self.context.is_running:
                 await asyncio.sleep(0.1)
+            if not self.context.is_running:
+                return
             
             if event.type == "realtime_update":
                 self.stats["realtime_updates"] += 1
@@ -24002,8 +24006,57 @@ class WorkflowJob:
 
     async def resume(self) -> None:
         """Resume execution"""
+        if getattr(self, "_cancellation_requires_restart", False):
+            raise RuntimeError("Restart with fresh account verification after pending-order cancellation")
         self.status = "running"
         self.context.resume()
+
+    async def cancel_pending_orders(self) -> Dict[str, Any]:
+        """Cancel only verified owned stock orders while strategy execution is paused.
+
+        This is an explicit action, never an automatic side effect of stop().
+        Broker responses are not assumed terminal. Restart must verify the account
+        again before any strategy order can be resumed.
+        """
+        from .database.owned_order_cancellation import cancel_owned_pending_orders
+        from .database.position_reconciliation import ReconciliationUnavailable
+
+        if getattr(self, "_owned_cancellation_active", False):
+            raise ReconciliationUnavailable("cancellation_already_in_progress")
+
+        def quiescent():
+            return (self.status == "paused" and self.context.is_paused
+                    and not self.context.is_shutdown
+                    and all(state != NodeState.RUNNING for state in self._node_states.values()))
+
+        tracker = self.context._workflow_position_tracker
+        if (self.context.is_dry_run or tracker is None or not tracker.execution_key
+                or tracker.product != "overseas_stock" or not quiescent()):
+            raise ReconciliationUnavailable("cancellation_requires_paused_owned_stock_execution")
+        credential = self.context.get_credential(broker_credential_key(tracker.product))
+        if (not isinstance(credential, dict) or not credential.get("appkey")
+                or not credential.get("appsecret")
+                or bool(credential.get("paper_trading", False)) != (tracker.trading_mode == "paper")):
+            raise ReconciliationUnavailable("cancellation_credential_scope_unavailable")
+        self._owned_cancellation_active = True
+        self._cancellation_requires_restart = True
+        try:
+            node_id = self.context._workflow_broker_node_id or "owned_cancellation"
+            ls, success, _ = ensure_ls_login(
+                credential["appkey"], credential["appsecret"], tracker.trading_mode == "paper",
+                self.context, node_id, tracker.product, caller_name="owned_cancellation")
+            if not success:
+                raise ReconciliationUnavailable("cancellation_broker_login_failed")
+
+            async def send(target):
+                return await CancelOrderNodeExecutor()._cancel_overseas_stock(
+                    ls, target["order_no"], target["symbol"], target["exchange"], {}, self.context, node_id)
+
+            result = await asyncio.wait_for(cancel_owned_pending_orders(
+                ls, tracker, send, can_send=quiescent), timeout=120)
+            return {"job_id": self.job_id, **result, "restart_required": True}
+        finally:
+            self._owned_cancellation_active = False
 
     async def _cleanup_broker_fill_subscriptions(self) -> None:
         """Stop all broker-owned work before cleaning up the remaining nodes."""
