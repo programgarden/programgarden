@@ -1,4 +1,11 @@
 ## [1.30.0] - 2026-09-16
+
+## [1.30.1] - 2026-09-16
+
+### Fixed
+- Describe cancellation outputs as broker acknowledgement with confirmation pending.
+- Remove metadata examples that treated acceptance as completed cancellation.
+
 ### Added
 - OverseasFuturesOrderableQuantityNode reads contract/side/price-specific capacity without placing an order.
 - Futures REST quote schema exposes nullable observed tick_size, with matching English/Korean node labels.
