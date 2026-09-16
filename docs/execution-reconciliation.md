@@ -1,6 +1,8 @@
 # Execution reconciliation foundation
 
-Status: source-only P4 checkpoint, not a published runtime release.
+Status: published in engine1.40.0/core1.30.1/finance1.10.5. Engine1.40.1
+also permits editor presentation metadata in strict validation; execution
+configuration typos still fail. Active runners are never upgraded automatically.
 Author: Codex, 2026-09-16.
 
 ## Runtime storage contract
@@ -28,8 +30,8 @@ Account switches cannot overlap an old writer. The target is published atomicall
 and never overwrites an existing file. Windows uses byte-range file locking;
 Windows packaging and runtime verification remain owner-managed. Locks coordinate
 writers sharing a storage directory; server execution ownership still controls
-cloud-versus-desktop starts. Worker/tray source wiring is implemented and tested,
-but not published. Do not enable a deployed host before the remaining P4 gates.
+cloud-versus-desktop starts. Worker v1.26.23 is published as an opt-in runtime;
+tray source wiring is tested and native packaging is pending.
 
 ## Verified adjustment boundary
 
@@ -44,15 +46,15 @@ never imported. The FIFO reduction and its basis audit commit together; failure
 rolls both back. No synthetic trade_history row, realized profit, win or fill
 notification is created. An actual adjustment emits `position_reconciled` via
 the existing risk-event listener; no change emits no event. SQLite adjustment
-history is implemented, but cloud persistence and the user-facing history are
-still pending.
+history, cloud persistence and the user-facing history are published. Native
+producer availability depends on the separately packaged tray release.
 
 Scoped manual/other fills consume only non-workflow lots. This prevents a late
 manual sell from applying an already observed startup reduction twice. External
 changes to owned lots require a new verified reconciliation. Legacy behavior
 remains unchanged. Scoped cancellation notifications retain order ownership so
 a late partial fill cannot lose attribution; final cancellation reconciliation
-is not yet implemented.
+uses only observed terminal evidence. Historical partial/amended gaps remain held.
 
 ## Approved order-total recovery (2026-09-16)
 
@@ -177,7 +179,7 @@ The focused cancellation, aggregate-recovery and reconciliation suite passes
 124 cases. This source change is not yet published.
 
 
-## Durable adjustment delivery (source only, 2026-09-16)
+## Durable adjustment delivery (published, 2026-09-16)
 
 Execution-scoped SQLite audits are forwarded through shared `AdjustmentDelivery`.
 HTTP acknowledgements mark only accepted IDs for that API/project/execution

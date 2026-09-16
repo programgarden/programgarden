@@ -198,8 +198,10 @@ def _is_aiagent_node(node_type: Any) -> bool:
 # workflow at the strict save gate.
 _RESERVED_NODE_KEYS: frozenset = frozenset(
     {"id", "type", "category", "position", "config", "description", "plugin",
-     "fields", "credential_id"}
+     "fields", "credential_id", "customLabel", "size"}
 )
+# The editor persists these two presentation fields on nodes. They are not
+# execution settings; keep them intact while rejecting unknown configuration.
 
 
 def _node_allowed_keys(node_type: Any) -> Optional[frozenset]:

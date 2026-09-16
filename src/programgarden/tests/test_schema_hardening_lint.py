@@ -139,6 +139,33 @@ def test_r5_credential_id_reserved_not_flagged():
 
 # ── validate_deep integration (save chokepoint) ───────────────────────────
 
+@pytest.mark.parametrize("invalid_field", [None, "schedule", "customLabl"])
+def test_editor_metadata_preserves_strict_validation(invalid_field):
+    """Canvas labels/sizes survive validation without hiding configuration typos."""
+    from copy import deepcopy
+
+    wf = {
+        "id": "editor-metadata", "name": "Editor metadata",
+        "nodes": [
+            {"id": "start", "type": "StartNode", "customLabel": "Begin",
+             "size": {"width": 240, "height": 80}},
+            {"id": "cron", "type": "ScheduleNode", "cron": "*/5 * * * *",
+             "customLabel": "Check every five minutes",
+             "size": {"width": 260, "height": 100}},
+        ],
+        "edges": [{"from": "start", "to": "cron"}],
+    }
+    if invalid_field:
+        wf["nodes"][1][invalid_field] = "ignored configuration"
+    original = deepcopy(wf)
+    result = ProgramGarden().validate_deep(
+        wf, semantic_rules=STRICT_SEMANTIC_SEVERITIES, timeout=15.0,
+    )
+    assert _fields_for(result.errors, "start") == set()
+    assert _fields_for(result.errors, "cron") == ({invalid_field} if invalid_field else set())
+    assert result.is_valid is (invalid_field is None)
+    assert wf == original
+
 def test_validate_deep_strict_detects_schedule_hallucination():
     pg = ProgramGarden()
     wf = {

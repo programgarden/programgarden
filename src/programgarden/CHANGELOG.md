@@ -1,3 +1,10 @@
+## [1.40.1] - 2026-09-16
+### Fixed
+- Preserve editor node labels (`customLabel`) and dimensions (`size`) during strict deep validation. Unknown execution settings and misspelled metadata keys still fail validation.
+- Synchronize the root project version with the published engine package.
+### Dependencies
+- Core ^1.30.1, finance ^1.10.5 and community ^1.15.3 remain unchanged.
+
 ## [1.40.0] - 2026-09-16
 ### Added
 - Opt-in managed execution storage with verified legacy SQLite/WAL adoption and exclusive project/execution leases.

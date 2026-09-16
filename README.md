@@ -43,7 +43,7 @@
 ## 패키지 구조
 
 The [execution reconciliation contract](docs/execution-reconciliation.md) describes
-host-owned storage adoption and the remaining unpublished restart/stop gates.
+host-owned storage adoption and the verified restart/stop boundaries in 1.40.0+.
 
 The [stock valuation outcomes contract](docs/stock-valuation-outcomes.md) explains
 separate account/workflow open-position gains, losses and net amounts by currency.
