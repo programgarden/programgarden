@@ -15,8 +15,21 @@ their previous filename and behavior when the argument is absent.
 Scoped positions, risk state and checkpoints share a filename derived only
 from the SHA-256 hash of the key. The ledger binds the key, product, provider and
 paper/live mode and rejects mismatches. Invalid keys fail before execution.
-Worker/tray adoption of an existing legacy database is **not implemented**.
-Do not switch deployed hosts to this argument until migration is verified.
+`database.execution_storage.prepare_execution_storage` now provides host adoption.
+The authenticated server must supply exactly one project account-execution ID.
+It copies a matching legacy database with SQLite backup (including committed WAL),
+leaving the original file and P3 marker untouched. The marker must positively bind
+the project and execution; unknown/mixed ownership or multiple candidates holds
+startup. Existing ledger rows must match product, provider and paper/live mode
+before the engine binds the copied database. A changed DSL ID does not reset state.
+
+Project and execution file locks remain held until engine shutdown completes.
+Account switches cannot overlap an old writer. The target is published atomically
+and never overwrites an existing file. Windows uses byte-range file locking;
+Windows packaging and runtime verification remain owner-managed. Locks coordinate
+writers sharing a storage directory; server execution ownership still controls
+cloud-versus-desktop starts. Worker/tray source wiring is implemented and tested,
+but not published. Do not enable a deployed host before the remaining P4 gates.
 
 ## Verified adjustment boundary
 
@@ -99,7 +112,8 @@ before a runtime is enabled; v1/v2 behavior remains compatible.
 ## Remaining integration gates
 
 - Obtain missing partial-cancel/modify evidence; the recovery policy is approved.
-- Preserve and verify legacy DB ownership before worker/tray storage adoption.
+- Exercise the implemented worker/tray storage adoption on stopped dev fixtures
+  before runtime publication; unknown legacy ownership still requires review.
 - Complete explicitly owned pending cancellation; distinguish submission from
   confirmed outcome. Emergency market liquidation remains excluded.
 - Persist and render the adjustment history with brief localized notifications.
@@ -131,3 +145,13 @@ The later lifecycle diagnostic made three more history queries; its bounded
 collector has 20 offline tests in the server repository. Captures preserve raw
 field presence and private order links. No partial-fill cancellation was observed;
 a separate owner-executed test awaits owner-selected order terms.
+
+
+## Host adoption checkpoint (2026-09-16)
+
+The worker holds managed storage until its sole awaited engine shutdown completes;
+failed cleanup keeps the OS lease until child exit. Desktop validation uses an
+isolated temporary directory and never rewrites live markers. Desktop stop requests
+cancel the runner once; its finally block owns the only checkpoint writer. A
+failed/unfinished shutdown holds the next start before a new bridge is opened.
+This checkpoint changes no package versions or running user workflows.

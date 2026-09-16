@@ -2,6 +2,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -58,6 +59,25 @@ def test_excluded_liquidation_does_not_claim_success():
     result = emergency_close_all('job')
     assert result['status'] == 'not_implemented'
     assert result['closed_positions'] == result['cancelled_orders'] == []
+
+
+@pytest.mark.parametrize('column,value', [('product', 'korea_stock'), ('provider', 'other'), ('trading_mode', 'paper')])
+def test_adopted_legacy_rows_must_match_runtime_scope(tmp_path, column, value):
+    legacy = make_context(tmp_path, None)
+    path = Path(legacy._workflow_position_tracker.db_path)
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO workflow_orders(product,provider,order_no,order_date,trading_mode) VALUES ('overseas_stock','ls','1','20260916','live')")
+        conn.execute(f'UPDATE workflow_orders SET {column}=?', (value,))
+    scoped_path = tmp_path / engine_db_filename(workflow_id='', job_id='', execution_key='adopted')
+    with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(scoped_path)) as dest:
+        source.backup(dest)
+    with pytest.raises(RuntimeError, match='storage could not be verified') as failure:
+        make_context(tmp_path, 'adopted')
+    assert isinstance(failure.value.__cause__, ValueError)
+    assert 'different product or trading mode' in str(failure.value.__cause__)
+    with sqlite3.connect(scoped_path) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM execution_storage_identity').fetchone() == (0,)
+        assert conn.execute('SELECT COUNT(*) FROM workflow_orders').fetchone() == (1,)
 
 
 @pytest.mark.asyncio

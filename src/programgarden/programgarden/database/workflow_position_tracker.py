@@ -469,6 +469,22 @@ class WorkflowPositionTracker:
             if self.execution_key is not None and identity is None:
                 from .db_naming import engine_db_filename
                 engine_db_filename(workflow_id="", job_id="", execution_key=self.execution_key)
+                # Host ownership is necessary but not sufficient: a legacy
+                # file can contain another product or paper/live ledger.
+                for table in ("workflow_orders", "workflow_position_lots", "trade_history"):
+                    exists = cursor.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                    ).fetchone()
+                    if not exists:
+                        continue
+                    columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table})")}
+                    if not {"product", "provider", "trading_mode"}.issubset(columns):
+                        raise ValueError("Legacy ledger scope cannot be verified")
+                    scopes = cursor.execute(
+                        f"SELECT DISTINCT product, provider, trading_mode FROM {table}"
+                    ).fetchall()
+                    if any(scope != expected_identity[1:] for scope in scopes):
+                        raise ValueError("Legacy ledger contains a different product or trading mode")
                 cursor.execute("INSERT INTO execution_storage_identity VALUES (1, ?, ?, ?, ?)", expected_identity)
 
             # 워크플로우 주문 기록
