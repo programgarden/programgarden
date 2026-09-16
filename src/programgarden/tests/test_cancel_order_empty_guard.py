@@ -100,7 +100,7 @@ def _accepted(order_no_attr: str, value):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("empty", ["", 0, "0", None])
+@pytest.mark.parametrize("empty", ["", 0, "0", None, "000", -1, "invalid", True])
 def test_cancel_overseas_stock_empty_order_no_blocked(empty):
     ls, _ = _make_ls_overseas_stock(_rejected("OrdNo", empty))
     result = asyncio.run(CancelOrderNodeExecutor()._cancel_overseas_stock(
@@ -212,3 +212,39 @@ def test_amex_cancel_builds_valid_request():
     assert sent.OrdMktCode == "81"
     assert sent.OrdPtnCode == "08"
     assert sent.OrgOrdNo == 321
+
+
+@pytest.mark.parametrize("product", ["overseas_stock", "overseas_futures", "korea_stock"])
+def test_actual_sdk_ack_is_not_final_cancellation(product):
+    from types import SimpleNamespace
+    from programgarden_finance.ls.overseas_stock.order.COSAT00301.blocks import COSAT00301OutBlock2
+    from programgarden_finance.ls.overseas_futureoption.order.CIDBT01000.blocks import CIDBT01000OutBlock2
+    from programgarden_finance.ls.korea_stock.order.CSPAT00801.blocks import CSPAT00801OutBlock2
+    model, field, builder = {
+        "overseas_stock": (COSAT00301OutBlock2, "OrdNo", _make_ls_overseas_stock),
+        "overseas_futures": (CIDBT01000OutBlock2, "OvrsFutsOrdNo", _make_ls_overseas_futures),
+        "korea_stock": (CSPAT00801OutBlock2, "OrdNo", _make_ls_korea_stock),
+    }[product]
+    assert field in model.model_fields
+    block = model(**{field: "456" if product == "overseas_futures" else 456})
+    response = SimpleNamespace(error_msg=None, block2=block, rsp_cd="00156", rsp_msg="ack")
+    ls, _ = builder(response)
+    executor = CancelOrderNodeExecutor()
+    kwargs = dict(ls=ls, order_id="123", symbol="005930" if product == "korea_stock" else "AAPL",
+                  config={"quantity": 1}, context=_make_context(), node_id="cancel")
+    if product != "korea_stock":
+        kwargs["exchange"] = "NASDAQ" if product == "overseas_stock" else "HKEX"
+    result = asyncio.run(getattr(executor, "_cancel_" + product)(**kwargs))
+    assert result["cancel_result"]["success"] is True
+    assert result["cancel_result"]["status"] == "accepted"
+    assert result["cancel_result"]["confirmation_pending"] is True
+    assert result["cancel_result"]["cancel_order_no"] == "456"
+    assert result["cancelled_order_id"] == "123"
+    assert result["cancelled_order"]["status"] == "cancel_requested"
+
+
+def test_unimplemented_bulk_cancel_never_claims_empty_success():
+    from programgarden.tools.job_tools import cancel_all_orders
+    result = cancel_all_orders("not-started")
+    assert result["status"] == "not_implemented"
+    assert result["cancelled_orders"] == []

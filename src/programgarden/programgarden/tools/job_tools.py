@@ -286,9 +286,11 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         >>> cancel_all_orders("job-abc123")
         {"cancelled_orders": [...], "failed_orders": [...]}
     """
-    # TODO: Implement actual cancel
+    # No broker adapter is wired here yet; never present an empty success.
     return {
         "job_id": job_id,
+        "status": "not_implemented",
+        "error": "Owned pending-order cancellation is not implemented",
         "cancelled_orders": [],
         "failed_orders": [],
     }

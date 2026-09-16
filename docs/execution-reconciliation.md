@@ -155,3 +155,9 @@ isolated temporary directory and never rewrites live markers. Desktop stop reque
 cancel the runner once; its finally block owns the only checkpoint writer. A
 failed/unfinished shutdown holds the next start before a new bridge is opened.
 This checkpoint changes no package versions or running user workflows.
+
+
+Cancellation acknowledgement correction is implemented separately; see
+[cancellation-acknowledgements.md](cancellation-acknowledgements.md). All three
+CancelOrder nodes now distinguish accepted requests from confirmed outcomes.
+Owned bulk cancellation and historical partial-cancel reconstruction remain open.

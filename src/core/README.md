@@ -115,3 +115,11 @@ connection. Additional connections produce `DUPLICATE_BROKER_NODE`, including
 unbound or cross-product nodes. Reuse one broker for all consumers. Account-free
 workflows and unrelated credentials remain supported. See
 [the shared contract](../../docs/workflow_account_policy.md).
+
+
+## Cancellation result contract (unreleased P4)
+
+CancelOrder metadata describes request acknowledgement (`accepted`,
+`confirmation_pending=true`), not final cancellation. Replacement orders require
+separate matching completion evidence. See
+[the cancellation contract](../../docs/cancellation-acknowledgements.md).

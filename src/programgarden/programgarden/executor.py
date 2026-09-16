@@ -18718,7 +18718,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             # 거부가 정상 빈발 경로라 신규보다 더 아프다.
             block2 = getattr(response, "block2", None)
             cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 # 실측 취소 거부 코드(2026-08-19): 02259 = 그 원주문번호가 없음,
@@ -18753,13 +18753,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     # 취소는 그 자체로 새 주문번호를 받는다 — 원주문번호와 구분해 남긴다.
                     "cancel_order_no": cancel_ord_no,
@@ -18770,7 +18772,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": exchange,
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
             
@@ -18841,7 +18843,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             cancel_ord_no = (
                 str(getattr(block2, "OvrsFutsOrdNo", "") or "").strip() if block2 else ""
             )
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 reason = (
@@ -18865,13 +18867,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Futures order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Futures cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     "cancel_order_no": cancel_ord_no,
                     "product": "overseas_futures",
@@ -18881,7 +18885,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": exchange_code,
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
             
@@ -19007,7 +19011,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             # 발급되는 취소주문번호이고, 0/빈 값이면 접수되지 않은 것이다.
             block2 = getattr(response, "block2", None)
             cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 reason = (
@@ -19031,13 +19035,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Korea stock order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Korea stock cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     "cancel_order_no": cancel_ord_no,
                     "product": "korea_stock",
@@ -19047,7 +19053,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": "KRX",
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
 
