@@ -29,10 +29,10 @@ saved user graphs are not rewritten. Updated core metadata must be published and
 then synchronized/reseeded into pg-ai together with the corresponding runtime;
 do not seed a contract that deployed engines do not yet produce.
 
-`cancel_all_orders` still has no verified owned-order adapter. It now explicitly
-returns `status: not_implemented`, rather than an apparently successful empty
-result. Bounded owned-order submission, terminal confirmation, persisted history
-and host/UI integration remain open. Emergency market liquidation stays excluded.
+The earlier bulk-helper stub has been replaced by the verified owned-stock
+adapter described below. Emergency market liquidation remains excluded and
+explicitly reports that it is unimplemented. Futures/domestic bulk cancellation
+is not enabled by the presence of their existing individual cancel nodes.
 
 Validation: 52 focused executor, real SDK field-contract, metadata and locale
 checks plus six schema/example cases pass. Broker calls are intercepted; no real
@@ -73,4 +73,19 @@ the legacy tools singleton, which cannot find jobs created by `ProgramGarden()`.
 Managed hosts can instead call `await job.cancel_pending_orders()` directly.
 Seventeen routing/owned-cancellation tests cover same-named jobs in separate real
 clients, wrong-loop refusal, thread dispatch and the existing broker-bound guards.
-This is source only; UI support range awaits the owner product decision.
+The owner approved overseas-stock UI support first; futures/domestic follow
+verified terminal evidence.
+
+## Managed stock stop control
+
+The owner approved overseas stocks first; futures and domestic bulk controls wait
+for verified terminal evidence. This does not remove existing cancel nodes.
+`managed_order_control.pause_and_cancel_owned_orders` validates the exact managed
+execution key before pausing. It drains active nodes for at most ten seconds and
+then calls the existing journalled adapter. The whole operation is bounded at
+135 seconds; a regular host stop interrupts it. The host owns final shutdown on
+success, failure or cancellation. Resuming the same job is prohibited; a fresh
+start must verify the account again. Ordinary stop never sends a broker cancel.
+
+This module is an opt-in integration seam for worker/tray controls. Its presence
+alone does not enable a UI, change an installed runtime or start trading.
