@@ -4468,6 +4468,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 paper_trading=paper_trading,
             )
 
+            # Scoped hosts opt into startup reconciliation. Do this before any
+            # history/background subscription or downstream order can mutate the
+            # ledger; scheduled cycles reuse the completed startup check.
+            if context.execution_key is not None and not context._startup_reconciled:
+                await self._reconcile_startup_account(
+                    context=context, node_id=node_id, product=product, provider=provider,
+                    appkey=appkey, appsecret=appsecret, paper_trading=paper_trading,
+                )
+
             # ========================================
             # 위험관리 추적기 초기화 (노드/플러그인 risk feature 수집)
             # risk_features를 선언한 노드/플러그인이 있으면 RiskTracker 자동 시작
@@ -4571,6 +4580,37 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "credential_id": credential_id,
             }
         }
+
+    async def _reconcile_startup_account(self, *, context, node_id, product, provider,
+                                         appkey, appsecret, paper_trading):
+        from .database.broker_snapshot import read_broker_snapshot
+        from .database.position_reconciliation import ReconciliationUnavailable
+        from programgarden_core.bases.listener import RiskEvent
+
+        tracker = context._workflow_position_tracker
+        if tracker is None or not appkey or not appsecret:
+            raise ReconciliationUnavailable("startup_account_identity_unavailable")
+        ls, success, _ = ensure_ls_login(
+            appkey, appsecret, paper_trading, context, node_id, product,
+            caller_name="execution_startup",
+        )
+        if not success:
+            raise ReconciliationUnavailable("startup_broker_login_failed")
+        revision = tracker.fill_revision
+        snapshot = await asyncio.wait_for(read_broker_snapshot(
+            ls, execution_key=context.execution_key, product=product, provider=provider,
+            trading_mode="paper" if paper_trading else "live",
+        ), timeout=60)
+        adjustments = await tracker.reconcile_from_broker(snapshot.positions, expected_revision=revision)
+        context._startup_broker_snapshot = snapshot
+        context.position_adjustments = adjustments
+        context._startup_reconciled = True
+        if adjustments:
+            await context.notify_risk_event(RiskEvent(
+                job_id=context.job_id, event_type="position_reconciled", severity="info",
+                details={"adjustments": adjustments, "source": snapshot.positions.source,
+                         "reason": "broker_quantity_reduction", "is_trade": False},
+            ))
 
     def _collect_risk_features(self, context: ExecutionContext) -> set:
         """워크플로우 내 노드/플러그인의 risk feature 요구사항 수집.
@@ -17135,7 +17175,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     FutsOrdTpCode="1", BnsTpCode="1" if side == "sell" else "2",
                     AbrdFutsOrdPtnCode=code, CrcyCode="", OvrsDrvtOrdPrc=price,
                     CndiOrdPrc=0.0, OrdQty=qty, PrdtCode="000000",
-                    DueYymm=config.get("expiry_month", ""), ExchCode=exchange,
+                    DueYymm=config.get("expiry_month") or CIDBT00100InBlock1.model_fields["DueYymm"].default,
+                    ExchCode=exchange,
                 ),
             )
             response = await order_api.req_async()
@@ -20614,6 +20655,7 @@ class WorkflowExecutor:
         listeners: Optional[List[ExecutionListener]] = None,
         resource_limits: Optional["ResourceLimits"] = None,
         storage_dir: Optional[str] = None,
+        execution_key: Optional[str] = None,
     ) -> "WorkflowJob":
         """
         Execute workflow
@@ -20627,6 +20669,10 @@ class WorkflowExecutor:
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
             storage_dir: DB/파일 저장 디렉토리. None = /app/data 기본값 (로컬에서 권한 없으면 ./app/data 로 폴백)
         """
+        from programgarden.database.db_naming import engine_db_filename
+        # Validate before allocating resources or opening any database.
+        engine_db_filename(workflow_id="validation", job_id="validation", execution_key=execution_key)
+
         # Compile (structural + registry validation).
         resolved, validation = self.compile(
             definition,
@@ -20696,6 +20742,7 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            execution_key=execution_key,
             ls_token_provider=self.ls_token_provider,
             order_lifecycle_handler=self.order_lifecycle_handler,
         )
@@ -20959,6 +21006,7 @@ class WorkflowExecutor:
         listeners: Optional[List[ExecutionListener]] = None,
         resource_limits: Optional["ResourceLimits"] = None,
         storage_dir: Optional[str] = None,
+        execution_key: Optional[str] = None,
     ) -> "WorkflowJob":
         """체크포인트에서 워크플로우 복원.
 
@@ -20980,6 +21028,10 @@ class WorkflowExecutor:
         from programgarden.database.checkpoint_manager import CheckpointManager
         from datetime import timezone as _tz
 
+        from programgarden.database.db_naming import engine_db_filename
+        # Validate before allocating resources or opening any database.
+        engine_db_filename(workflow_id="validation", job_id="validation", execution_key=execution_key)
+
         # 1. Compile — match execute() before restoring runs.
         resolved, validation = self.compile(
             definition,
@@ -20992,7 +21044,7 @@ class WorkflowExecutor:
         workflow_id = resolved.workflow_id
         from programgarden.tools.job_tools import _resolve_data_dir
         db_dir = _resolve_data_dir(storage_dir)
-        db_path = str(db_dir / f"{workflow_id}_workflow.db")
+        db_path = str(db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key))
 
         mgr = CheckpointManager(db_path)
         checkpoint = mgr.load_checkpoint(job_id)
@@ -21045,6 +21097,7 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            execution_key=execution_key,
             ls_token_provider=self.ls_token_provider,
             order_lifecycle_handler=self.order_lifecycle_handler,
         )
@@ -24273,7 +24326,7 @@ class WorkflowJob:
         """CheckpointManager 싱글톤 반환 (지연 로딩)."""
         if self._checkpoint_mgr is None:
             from programgarden.database.checkpoint_manager import CheckpointManager
-            db_filename = f"{self.workflow.workflow_id}_workflow.db"
+            db_filename = self.context.engine_db_filename
             db_path = self.context._resolve_db_path(db_filename)
             self._checkpoint_mgr = CheckpointManager(db_path)
         return self._checkpoint_mgr

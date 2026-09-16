@@ -279,6 +279,7 @@ class WorkflowPositionTracker:
         product: str = "overseas_stock",
         provider: str = "ls",
         trading_mode: str = "live",
+        execution_key: Optional[str] = None,
     ):
         """
         Args:
@@ -295,6 +296,7 @@ class WorkflowPositionTracker:
         self.product = product
         self.provider = provider
         self.trading_mode = trading_mode
+        self.execution_key = execution_key
 
         # 체결 원장이 바뀔 때마다 증가한다. 읽는 쪽(개인 지표 캐시)이 "가격 틱은
         # 체결을 바꾸지 않는다"는 이유로 결과를 잠시 재사용하는데, 시간만 보고
@@ -449,6 +451,25 @@ class WorkflowPositionTracker:
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
+
+            # Runtime-owned identity guards accidental reuse even if a caller
+            # supplies the wrong file path. Legacy files remain unbound until
+            # the host has verified and explicitly adopted their ownership.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS execution_storage_identity (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    execution_key TEXT NOT NULL,
+                    product TEXT NOT NULL, provider TEXT NOT NULL, trading_mode TEXT NOT NULL
+                )
+            """)
+            identity = cursor.execute("SELECT execution_key,product,provider,trading_mode FROM execution_storage_identity WHERE singleton=1").fetchone()
+            expected_identity = (self.execution_key, self.product, self.provider, self.trading_mode)
+            if identity is not None and identity != expected_identity:
+                raise ValueError("Execution storage identity does not match this runtime")
+            if self.execution_key is not None and identity is None:
+                from .db_naming import engine_db_filename
+                engine_db_filename(workflow_id="", job_id="", execution_key=self.execution_key)
+                cursor.execute("INSERT INTO execution_storage_identity VALUES (1, ?, ?, ?, ?)", expected_identity)
 
             # 워크플로우 주문 기록
             cursor.execute("""
@@ -1144,6 +1165,18 @@ class WorkflowPositionTracker:
                   AND classification = 'workflow'
                 ORDER BY fill_datetime ASC
             """, (symbol, self.trading_mode))
+        elif self.execution_key is not None:
+            # External fills have no authority to consume execution-owned lots.
+            # A late manual fill after a startup adjustment would otherwise
+            # remove the same quantity twice. Reconcile that ownership only
+            # through a complete broker snapshot and its separate audit.
+            cursor.execute("""
+                SELECT id, buy_price, remaining_qty, classification
+                FROM workflow_position_lots
+                WHERE product=? AND provider=? AND symbol=? AND trading_mode=?
+                  AND remaining_qty>0 AND classification!='workflow'
+                ORDER BY fill_datetime ASC
+            """, (self.product, self.provider, symbol, self.trading_mode))
         else:
             cursor.execute("""
                 SELECT id, buy_price, remaining_qty, classification
@@ -1725,6 +1758,40 @@ class WorkflowPositionTracker:
                     )
             
             return positions
+
+    async def reconcile_from_broker(self, snapshot, *, expected_revision: int) -> List[Dict[str, Any]]:
+        """Apply a verified startup snapshot before allowing strategy orders.
+
+        A fill arriving during the broker reads invalidates that snapshot. Hold
+        startup for another explicit check instead of trimming a newer fill.
+        Quantity adjustments are not executions and emit no fill notifications.
+        """
+        from .position_reconciliation import ReconciliationUnavailable, reconcile_lots
+
+        async with self._buffer_lock:
+            if self.fill_revision != expected_revision or self._pending_fills:
+                raise ReconciliationUnavailable("ledger_changed_during_account_check")
+            adjustments = reconcile_lots(self, snapshot, self.execution_key)
+            if adjustments:
+                self.fill_revision += 1
+            return adjustments
+
+    def get_position_adjustments(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return the current product/mode audit without creating synthetic trades."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        with sqlite3.connect(self.db_path) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='position_adjustments'"
+            ).fetchone()
+            if not exists:
+                return []
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM position_adjustments
+                WHERE product=? AND provider=? AND trading_mode=? ORDER BY id DESC LIMIT ?
+            """, (self.product, self.provider, self.trading_mode, limit)).fetchall()
+            return [dict(row) for row in rows]
     
     def get_other_positions(
         self,
@@ -2637,6 +2704,18 @@ class WorkflowPositionTracker:
         Returns:
             취소 성공 여부
         """
+        if self.execution_key is not None:
+            # Keep ownership even after a cancel notification. A late partial
+            # fill still belongs to this execution. Cancellation alone does
+            # not establish the final filled quantity; startup holds until
+            # that evidence has been reconciled.
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute("""
+                    SELECT 1 FROM workflow_orders WHERE product=? AND provider=?
+                    AND trading_mode=? AND order_no=? AND order_date=?
+                """, (self.product, self.provider, self.trading_mode, order_no, order_date)).fetchone()
+            return row is not None
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             

@@ -262,12 +262,13 @@ def emergency_close_all(job_id: str) -> Dict[str, Any]:
         >>> emergency_close_all("job-abc123")
         {"closed_positions": [...], "cancelled_orders": [...], ...}
     """
-    # TODO: Implement actual close
+    # Position liquidation is intentionally outside the current stop/cancel scope.
     return {
         "job_id": job_id,
         "closed_positions": [],
         "cancelled_orders": [],
-        "status": "emergency_closed",
+        "status": "not_implemented",
+        "error": "Emergency liquidation is not implemented; no position or order was changed.",
     }
 
 
@@ -299,6 +300,7 @@ def restore_job(
     secrets: Optional[Dict[str, Any]] = None,
     listeners: Optional[List] = None,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     체크포인트에서 워크플로우 복원
@@ -333,6 +335,7 @@ def restore_job(
             secrets=secrets,
             listeners=listeners,
             storage_dir=storage_dir,
+            execution_key=execution_key,
         )
         return job.get_state()
 
@@ -343,6 +346,7 @@ def has_checkpoint(
     workflow_id: str,
     job_id: str,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> bool:
     """
     체크포인트 존재 여부 확인
@@ -362,7 +366,8 @@ def has_checkpoint(
     from programgarden.database.checkpoint_manager import CheckpointManager
 
     db_dir = _resolve_data_dir(storage_dir)
-    db_path = db_dir / f"{workflow_id}_workflow.db"
+    from programgarden.database.db_naming import engine_db_filename
+    db_path = db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key)
     if not db_path.exists():
         return False
 
@@ -374,6 +379,7 @@ def get_checkpoint_info(
     workflow_id: str,
     job_id: str,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     체크포인트 요약 정보 조회 (outputs 제외, 경량)
@@ -393,7 +399,8 @@ def get_checkpoint_info(
     from programgarden.database.checkpoint_manager import CheckpointManager
 
     db_dir = _resolve_data_dir(storage_dir)
-    db_path = db_dir / f"{workflow_id}_workflow.db"
+    from programgarden.database.db_naming import engine_db_filename
+    db_path = db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key)
     if not db_path.exists():
         return None
 

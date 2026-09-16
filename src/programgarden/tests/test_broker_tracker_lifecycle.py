@@ -52,7 +52,8 @@ async def test_scheduled_cycles_reuse_tracker_and_release_failed_startup(monkeyp
     job, broker = make_job(), BrokerNodeExecutor()
     entered, release = asyncio.Event(), asyncio.Event()
     real = SimpleNamespace(connect=AsyncMock(), close=AsyncMock())
-    tracker = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), on_account_pnl_change=MagicMock())
+    tracker = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), on_account_pnl_change=MagicMock(),
+                              on_balance_change=MagicMock(spec=FuturesAccountTracker.on_balance_change))
     factory = MagicMock(return_value=tracker)
     api = SimpleNamespace(real=lambda: real, market=MagicMock(),
                           accno=lambda: SimpleNamespace(account_tracker=factory))
@@ -164,7 +165,8 @@ async def test_termination_cancels_partial_tracker_startup(termination, blocked_
         await released.wait()
 
     real = SimpleNamespace(connect=AsyncMock(), close=AsyncMock())
-    tracker = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), on_account_pnl_change=MagicMock())
+    tracker = SimpleNamespace(start=AsyncMock(), stop=AsyncMock(), on_account_pnl_change=MagicMock(),
+                              on_balance_change=MagicMock(spec=FuturesAccountTracker.on_balance_change))
     setattr(real if blocked_stage == "connect" else tracker, blocked_stage, AsyncMock(side_effect=blocked))
     api = SimpleNamespace(
         real=lambda: real, market=MagicMock(),
@@ -213,6 +215,10 @@ async def test_late_pnl_callback_cannot_restart_job_work(product):
     tracker = SimpleNamespace(
         start=AsyncMock(), stop=AsyncMock(), get_positions=lambda: {},
         get_valuation_snapshot=lambda: None,
+        get_position_evidence=lambda: None,
+        get_account_snapshot=lambda: None,
+        get_daily_account_snapshots=lambda: [],
+        on_balance_change=MagicMock(spec=FuturesAccountTracker.on_balance_change),
         on_account_pnl_change=MagicMock(),
     )
     api = SimpleNamespace(
