@@ -132,6 +132,7 @@ class ProgramGarden:
         storage_dir: Optional[str] = None,
         wait: bool = True,
         timeout: Optional[float] = None,
+        execution_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute workflow
@@ -145,6 +146,7 @@ class ProgramGarden:
             storage_dir: DB/파일 저장 디렉토리. None 이면 /app/data 기본값 (GKE/Docker PVC 마운트 포인트). 로컬에서 /app/data mkdir 권한 부재 시 ./app/data 로 폴백.
             wait: Whether to wait for completion (default True)
             timeout: Maximum wait time (seconds), None for no limit
+            execution_key: Optional host-owned project/account execution identity; not a DSL field.
 
         Returns:
             Job state
@@ -177,6 +179,7 @@ class ProgramGarden:
                 secrets=secrets,
                 resource_limits=limits,
                 storage_dir=storage_dir,
+                execution_key=execution_key,
             )
 
             if wait:
@@ -202,6 +205,7 @@ class ProgramGarden:
         resource_limits: Optional[Dict[str, Any]] = None,
         storage_dir: Optional[str] = None,
         listeners: Optional[List[ExecutionListener]] = None,
+        execution_key: Optional[str] = None,
     ):
         """
         Execute workflow asynchronously
@@ -214,6 +218,7 @@ class ProgramGarden:
                            If None, auto-detects from system or uses workflow's resource_limits
             storage_dir: DB/파일 저장 디렉토리. None 이면 /app/data 기본값 (GKE/Docker PVC 마운트 포인트). 로컬에서 /app/data mkdir 권한 부재 시 ./app/data 로 폴백.
             listeners: List of ExecutionListener instances for state callbacks (Option A)
+            execution_key: Optional host-owned project/account execution identity; not a DSL field.
 
         Returns:
             WorkflowJob instance (can add more listeners via job.add_listener() - Option B)
@@ -243,6 +248,7 @@ class ProgramGarden:
             secrets=secrets,
             resource_limits=limits,
             storage_dir=storage_dir,
+            execution_key=execution_key,
             listeners=listeners,
         )
 

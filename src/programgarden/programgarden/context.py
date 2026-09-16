@@ -197,10 +197,19 @@ class ExecutionContext:
         #   -> (token, expires_at_epoch)
         ls_token_provider: Optional[Any] = None,
         order_lifecycle_handler: Optional[Any] = None,
+        execution_key: Optional[str] = None,
     ):
         self.job_id = job_id
         self.workflow_id = workflow_id
         self._storage_dir = storage_dir
+        from programgarden.database.db_naming import engine_db_filename
+        self.execution_key = execution_key
+        self.engine_db_filename = engine_db_filename(
+            workflow_id=workflow_id, job_id=job_id, execution_key=execution_key,
+        )
+        self._startup_reconciled = False
+        self._startup_broker_snapshot = None
+        self.position_adjustments: List[Dict[str, Any]] = []
         self.context_params = context_params or {}
 
         # Opt-in LS token provider (Verified League §3.2.3). When set, broker
@@ -2486,7 +2495,7 @@ class ExecutionContext:
             for listener in self._listeners
         )
 
-        if not has_workflow_listener:
+        if not has_workflow_listener and self.execution_key is None:
             logger.debug("No workflow_pnl listener registered, skipping tracker init")
             return
 
@@ -2503,11 +2512,12 @@ class ExecutionContext:
 
             trading_mode = "paper" if paper_trading else "live"
 
-            db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
+            db_filename = self.engine_db_filename
             db_path = self._resolve_db_path(db_filename)
 
             self._workflow_position_tracker = WorkflowPositionTracker(
                 db_path=db_path,
+                execution_key=self.execution_key,
                 job_id=self.job_id,
                 broker_node_id=broker_node_id,
                 product=product,
@@ -2536,6 +2546,8 @@ class ExecutionContext:
         except Exception as e:
             logger.warning(f"Failed to init workflow position tracker: {e}")
             self._workflow_position_tracker = None
+            if self.execution_key is not None:
+                raise RuntimeError("Execution storage could not be verified") from e
 
     # ============================================================
     # Risk Tracker
@@ -2574,7 +2586,7 @@ class ExecutionContext:
 
             trading_mode = "paper" if paper_trading else "live"
 
-            db_filename = f"{self.workflow_id or self.job_id}_workflow.db"
+            db_filename = self.engine_db_filename
             db_path = self._resolve_db_path(db_filename)
 
             self._workflow_risk_tracker = WorkflowRiskTracker(

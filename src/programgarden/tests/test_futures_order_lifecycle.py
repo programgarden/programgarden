@@ -518,3 +518,20 @@ async def test_explicit_bound_tool_connection_reaches_exact_second_broker(tmp_pa
     output = await tool.call_tool("submit", {}, "agent", tool_call_id="bound-call")
     assert len(requests) == 1 and output["result"][0]["success"], output
     assert logins[0][0][:2] == ("key-b", "secret-b")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('expiry', [None, '', '202609'])
+async def test_new_order_expiry_uses_the_sdk_example_default_when_unspecified(tmp_path, monkeypatch, expiry):
+    from programgarden_finance.ls.overseas_futureoption.order.CIDBT00100.blocks import CIDBT00100InBlock1
+    ctx = context(tmp_path)
+    requests, _ = sdk(monkeypatch)
+    executor = engine.NewOrderNodeExecutor()
+    monkeypatch.setattr(executor, '_confirm_order_fill', AsyncMock(return_value=None))
+    config = deepcopy(CONFIG)
+    if expiry is not None:
+        config['expiry_month'] = expiry
+    result = await execute(executor, ctx, config)
+    assert result['order_result']['success'] is True
+    assert len(requests) == 1
+    assert requests[0].DueYymm == (expiry or CIDBT00100InBlock1.model_fields['DueYymm'].default)

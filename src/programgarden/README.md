@@ -1,5 +1,10 @@
 # ProgramGarden
 
+Unreleased execution reconciliation work is documented in
+[execution-reconciliation.md](../../docs/execution-reconciliation.md). Its
+optional host storage identity is not yet enabled in deployed worker/tray hosts;
+historical recovery policy and host migration remain open.
+
 ProgramGarden은 AI 시대에 맞춰 파이썬을 모르는 투자자도 개인화된 시스템 트레이딩을 자동으로 수행할 수 있게 돕는 노드 기반 자동매매 DSL(Domain Specific Language) 오픈소스입니다.
 
 노드를 조합하여 워크플로우를 정의하고, 실행 엔진이 이를 자동으로 처리합니다. LS증권 OpenAPI를 메인으로 해외 주식/선물 거래 자동화를 지원합니다.

@@ -279,6 +279,7 @@ class WorkflowPositionTracker:
         product: str = "overseas_stock",
         provider: str = "ls",
         trading_mode: str = "live",
+        execution_key: Optional[str] = None,
     ):
         """
         Args:
@@ -295,6 +296,7 @@ class WorkflowPositionTracker:
         self.product = product
         self.provider = provider
         self.trading_mode = trading_mode
+        self.execution_key = execution_key
 
         # 체결 원장이 바뀔 때마다 증가한다. 읽는 쪽(개인 지표 캐시)이 "가격 틱은
         # 체결을 바꾸지 않는다"는 이유로 결과를 잠시 재사용하는데, 시간만 보고
@@ -450,6 +452,41 @@ class WorkflowPositionTracker:
             conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
 
+            # Runtime-owned identity guards accidental reuse even if a caller
+            # supplies the wrong file path. Legacy files remain unbound until
+            # the host has verified and explicitly adopted their ownership.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS execution_storage_identity (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    execution_key TEXT NOT NULL,
+                    product TEXT NOT NULL, provider TEXT NOT NULL, trading_mode TEXT NOT NULL
+                )
+            """)
+            identity = cursor.execute("SELECT execution_key,product,provider,trading_mode FROM execution_storage_identity WHERE singleton=1").fetchone()
+            expected_identity = (self.execution_key, self.product, self.provider, self.trading_mode)
+            if identity is not None and identity != expected_identity:
+                raise ValueError("Execution storage identity does not match this runtime")
+            if self.execution_key is not None and identity is None:
+                from .db_naming import engine_db_filename
+                engine_db_filename(workflow_id="", job_id="", execution_key=self.execution_key)
+                # Host ownership is necessary but not sufficient: a legacy
+                # file can contain another product or paper/live ledger.
+                for table in ("workflow_orders", "workflow_position_lots", "trade_history"):
+                    exists = cursor.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                    ).fetchone()
+                    if not exists:
+                        continue
+                    columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table})")}
+                    if not {"product", "provider", "trading_mode"}.issubset(columns):
+                        raise ValueError("Legacy ledger scope cannot be verified")
+                    scopes = cursor.execute(
+                        f"SELECT DISTINCT product, provider, trading_mode FROM {table}"
+                    ).fetchall()
+                    if any(scope != expected_identity[1:] for scope in scopes):
+                        raise ValueError("Legacy ledger contains a different product or trading mode")
+                cursor.execute("INSERT INTO execution_storage_identity VALUES (1, ?, ?, ?, ?)", expected_identity)
+
             # 워크플로우 주문 기록
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_orders (
@@ -564,6 +601,8 @@ class WorkflowPositionTracker:
                 WHERE execution_id IS NOT NULL
             """)
 
+            from .order_recovery import initialize_recovery
+            initialize_recovery(conn)
             conn.commit()
 
     def update_trading_mode(self, trading_mode: str) -> None:
@@ -1013,6 +1052,9 @@ class WorkflowPositionTracker:
             previous = self._find_execution(cursor, fill)
             if previous is not None:
                 return previous
+            from .order_recovery import observe_covered_execution
+            if self.execution_key and observe_covered_execution(conn, self, fill):
+                return "workflow"
             identity = self._execution_key(fill)
             payload = None
             if identity is not None:
@@ -1144,6 +1186,18 @@ class WorkflowPositionTracker:
                   AND classification = 'workflow'
                 ORDER BY fill_datetime ASC
             """, (symbol, self.trading_mode))
+        elif self.execution_key is not None:
+            # External fills have no authority to consume execution-owned lots.
+            # A late manual fill after a startup adjustment would otherwise
+            # remove the same quantity twice. Reconcile that ownership only
+            # through a complete broker snapshot and its separate audit.
+            cursor.execute("""
+                SELECT id, buy_price, remaining_qty, classification
+                FROM workflow_position_lots
+                WHERE product=? AND provider=? AND symbol=? AND trading_mode=?
+                  AND remaining_qty>0 AND classification!='workflow'
+                ORDER BY fill_datetime ASC
+            """, (self.product, self.provider, symbol, self.trading_mode))
         else:
             cursor.execute("""
                 SELECT id, buy_price, remaining_qty, classification
@@ -1725,6 +1779,74 @@ class WorkflowPositionTracker:
                     )
             
             return positions
+
+    async def reconcile_from_broker(self, snapshot, *, expected_revision: int) -> List[Dict[str, Any]]:
+        """Apply a verified startup snapshot before allowing strategy orders.
+
+        A fill arriving during the broker reads invalidates that snapshot. Hold
+        startup for another explicit check instead of trimming a newer fill.
+        Quantity adjustments are not executions and emit no fill notifications.
+        """
+        from .position_reconciliation import ReconciliationUnavailable, reconcile_lots
+
+        async with self._buffer_lock:
+            if self.fill_revision != expected_revision or self._pending_fills:
+                raise ReconciliationUnavailable("ledger_changed_during_account_check")
+            adjustments = reconcile_lots(self, snapshot, self.execution_key)
+            if adjustments:
+                self.fill_revision += 1
+            return adjustments
+
+    async def recover_order_totals(self, totals, *, expected_revision: int,
+                                   cancellations=()) -> List[Dict[str, Any]]:
+        """Recover only broker-verified terminal totals, without fill callbacks."""
+        from .order_recovery import recover_totals
+        from .position_reconciliation import ReconciliationUnavailable
+        async with self._buffer_lock:
+            if self.fill_revision != expected_revision or self._pending_fills:
+                raise ReconciliationUnavailable("ledger_changed_during_order_check")
+            if cancellations:
+                from .order_cancellation import record_cancellations
+                if record_cancellations(self, cancellations):
+                    self.fill_revision += 1
+            recovered = recover_totals(self, totals)
+            if recovered:
+                self.fill_revision += 1
+            return recovered
+
+    def get_order_recoveries(self) -> List[Dict[str, Any]]:
+        """Read the immutable recovery audit; this is not individual fill history."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(row) for row in conn.execute(
+                "SELECT * FROM workflow_order_recoveries WHERE product=? AND provider=? "
+                "AND trading_mode=? ORDER BY id",
+                (self.product, self.provider, self.trading_mode))]
+
+    def get_position_adjustments(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return the current product/mode audit without creating synthetic trades."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        with sqlite3.connect(self.db_path) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='position_adjustments'"
+            ).fetchone()
+            if not exists:
+                return []
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM position_adjustments
+                WHERE product=? AND provider=? AND trading_mode=? ORDER BY id DESC LIMIT ?
+            """, (self.product, self.provider, self.trading_mode, limit)).fetchall()
+            return [dict(row) for row in rows]
+
+    def pending_position_adjustments(self, destination: str, limit: int = 100) -> List[Dict[str, Any]]:
+        from .adjustment_delivery import pending_adjustments
+        return pending_adjustments(self, destination, limit)
+
+    def acknowledge_position_adjustments(self, destination: str, ids: List[int]) -> None:
+        from .adjustment_delivery import acknowledge_adjustments
+        acknowledge_adjustments(self, destination, ids)
     
     def get_other_positions(
         self,
@@ -2070,6 +2192,23 @@ class WorkflowPositionTracker:
             )]
         selected = [row for row in rows if row["product"] == self.product
                     and row["provider"] == self.provider and row["classification"] == "workflow"]
+        recoveries = self.get_order_recoveries()
+        # Internal FIFO replay includes aggregate evidence, while trade_history
+        # and fill callbacks remain individual executions only.
+        legacy_ids = {fill_id for recovery in recoveries for fill_id in json.loads(recovery["legacy_fill_ids"])}
+        for row in selected:
+            if row["id"] in legacy_ids:
+                row["is_recovery"] = True
+        for recovery in recoveries:
+            if Decimal(recovery["recovered_quantity"]) == 0:
+                continue
+            selected.append({**recovery, "id": -recovery["id"],
+                             "quantity": recovery["recovered_quantity"],
+                             "price": recovery["recovered_price"],
+                             "realized_pnl": recovery["estimated_pnl"],
+                             "is_recovery": True, "classification": "workflow"})
+        if recoveries:
+            selected.sort(key=lambda row: (row["fill_datetime"], row["id"]))
         keys = set()
         invalid_count = False
         groups: Dict[Tuple[str, str], List[dict]] = {}
@@ -2087,7 +2226,8 @@ class WorkflowPositionTracker:
                 order_no = self._normalize_identifier(row["order_no"])
                 if order_no is None:
                     raise ValueError("Missing order number")
-                keys.add((order_date, order_no))
+                if not row.get("is_recovery"):
+                    keys.add((order_date, order_no))
             except (ValueError, TypeError, ArithmeticError):
                 invalid_count = True
             key = (row["symbol"] or "", row["exchange"] or "")
@@ -2104,6 +2244,7 @@ class WorkflowPositionTracker:
             # and how much quantity was estimated (Σ unmatched over its sells).
             group_estimated = False
             group_est_qty = Decimal(0)
+            recovery_qty = recovery_profit = recovery_loss = Decimal(0)
             if self.product == "overseas_futures":
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
@@ -2133,14 +2274,16 @@ class WorkflowPositionTracker:
                         if fill["side"] == "buy":
                             if stored != 0:
                                 raise ValueError("Unexpected opening PnL")
-                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price])
+                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price, bool(fill.get("is_recovery"))])
                             lots.sort(key=lambda lot: (lot[0], lot[1]))
                         elif fill["side"] == "sell":
                             remaining = quantity
                             expected = Decimal(0)
+                            recovery_basis = bool(fill.get("is_recovery"))
                             for lot in lots:
                                 closed = min(remaining, lot[2])
                                 expected += (price - lot[3]) * closed
+                                recovery_basis = recovery_basis or bool(closed and lot[4])
                                 lot[2] -= closed
                                 remaining -= closed
                                 if remaining == 0:
@@ -2174,15 +2317,21 @@ class WorkflowPositionTracker:
                                 group_estimated = True
                                 group_est_qty += remaining
                             total += trade_amount
-                            trades += 1
+                            if recovery_basis:
+                                group_estimated = True
+                                group_est_qty += quantity
+                                recovery_qty += quantity
+                                recovery_profit += max(trade_amount, Decimal(0))
+                                recovery_loss += max(-trade_amount, Decimal(0))
+                            else:
+                                trades += 1
+                                wins += int(trade_amount > 0)
+                                losses += int(trade_amount < 0)
+                                evens += int(trade_amount == 0)
                             if trade_amount > 0:
-                                wins += 1
                                 gross_profit += trade_amount
                             elif trade_amount < 0:
-                                losses += 1
                                 gross_loss += -trade_amount
-                            else:
-                                evens += 1
                         else:
                             raise ValueError("Unknown fill side")
                     amount = float(total)
@@ -2206,7 +2355,8 @@ class WorkflowPositionTracker:
                 estimated_quantity = None
             elif group_estimated:
                 status = "estimated"
-                basis = "fifo_with_account_avg_price_estimate"
+                basis = ("fifo_with_order_total_recovery" if recovery_qty
+                         else "fifo_with_account_avg_price_estimate")
                 estimated_quantity = float(group_est_qty)
             else:
                 status = "available"
@@ -2223,6 +2373,10 @@ class WorkflowPositionTracker:
             entry.update(outcome or {"closed_trades": None, "winning_trades": None,
                                      "losing_trades": None, "breakeven_trades": None,
                                      "gross_profit": None, "gross_loss": None})
+            if recoveries:
+                entry.update({"recovery_excluded_quantity": float(recovery_qty) if outcome else None,
+                              "recovery_gross_profit": float(recovery_profit) if outcome else None,
+                              "recovery_gross_loss": float(recovery_loss) if outcome else None})
             realized.append(entry)
         # Counts carry no currency, so they aggregate across symbols. A group the
         # replay rejected is excluded and downgrades the status to "partial" —
@@ -2238,6 +2392,8 @@ class WorkflowPositionTracker:
         else:
             trade_status = "available" if len(scored) == len(realized) else "partial"
             trade_reason = None if trade_status == "available" else "some_groups_unscorable"
+            if recoveries:
+                trade_status, trade_reason = "partial", "aggregate_recovery_excluded"
             closed_total = sum(g["closed_trades"] for g in scored)
             winning_total = sum(g["winning_trades"] for g in scored)
             losing_total = sum(g["losing_trades"] for g in scored)
@@ -2253,8 +2409,10 @@ class WorkflowPositionTracker:
                             else "multi_symbol_currency_unknown")
         else:
             group = counted[0]
-            if group["gross_loss"] > 0:
-                candidate = group["gross_profit"] / group["gross_loss"]
+            scored_profit = group["gross_profit"] - (group.get("recovery_gross_profit") or 0)
+            scored_loss = group["gross_loss"] - (group.get("recovery_gross_loss") or 0)
+            if scored_loss > 0:
+                candidate = scored_profit / scored_loss
                 if Decimal(str(candidate)).is_finite():
                     ratio, ratio_status, ratio_reason = candidate, "available", None
                 else:
@@ -2308,7 +2466,7 @@ class WorkflowPositionTracker:
             }
 
         return {
-            "version": 2,
+            "version": 3 if recoveries else 2,
             "scope": {"kind": "local_workflow_ledger", "product": self.product,
                       "provider": self.provider, "trading_mode": self.trading_mode},
             "as_of": datetime.now(timezone.utc).isoformat(),
@@ -2330,6 +2488,9 @@ class WorkflowPositionTracker:
             "profit_loss_ratio_reason": ratio_reason,
             "profit_loss_ratio_basis": profit_loss_ratio_basis,
             "off_strategy_fills": off_strategy_fills,
+            **({"order_recovery": {"count": len(recoveries), "is_estimated": True,
+                                  "basis": "broker_order_total",
+                                  "excluded_from_trade_count": True}} if recoveries else {}),
             "max_drawdown": None,
             "max_drawdown_status": "unavailable",
             "max_drawdown_reason": "equity_history_unavailable",
@@ -2637,6 +2798,18 @@ class WorkflowPositionTracker:
         Returns:
             취소 성공 여부
         """
+        if self.execution_key is not None:
+            # Keep ownership even after a cancel notification. A late partial
+            # fill still belongs to this execution. Cancellation alone does
+            # not establish the final filled quantity; startup holds until
+            # that evidence has been reconciled.
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute("""
+                    SELECT 1 FROM workflow_orders WHERE product=? AND provider=?
+                    AND trading_mode=? AND order_no=? AND order_date=?
+                """, (self.product, self.provider, self.trading_mode, order_no, order_date)).fetchone()
+            return row is not None
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             

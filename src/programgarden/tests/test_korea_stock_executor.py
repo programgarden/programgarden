@@ -753,6 +753,7 @@ class TestKoreaStockCancelOrderExecutor:
 
         resp = MagicMock()
         resp.error_msg = None
+        resp.block2.OrdNo = 99002
 
         mock_order_api = MagicMock()
         mock_order_api.req_async = AsyncMock(return_value=resp)
@@ -769,7 +770,8 @@ class TestKoreaStockCancelOrderExecutor:
 
         assert result["cancel_result"]["success"] is True
         assert result["cancel_result"]["product"] == "korea_stock"
-        assert result["cancelled_order"]["status"] == "cancelled"
+        assert result["cancelled_order"]["status"] == "cancel_requested"
+        assert result["cancel_result"]["confirmation_pending"] is True
 
     @pytest.mark.asyncio
     async def test_cancel_order_api_error(self):
