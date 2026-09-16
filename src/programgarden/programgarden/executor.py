@@ -4600,12 +4600,14 @@ class BrokerNodeExecutor(NodeExecutorBase):
         recoveries = []
         if product == "overseas_stock":
             from .database.order_recovery import orders_needing_recovery
-            from .database.broker_order_totals import read_stock_order_totals
+            from .database.broker_order_totals import read_stock_order_outcomes
             revision = tracker.fill_revision
             unresolved = orders_needing_recovery(tracker)
             if unresolved:
-                totals = await asyncio.wait_for(read_stock_order_totals(ls, tracker, unresolved), timeout=60)
-                recoveries = await tracker.recover_order_totals(totals, expected_revision=revision)
+                totals, cancellations = await asyncio.wait_for(
+                    read_stock_order_outcomes(ls, tracker, unresolved), timeout=60)
+                recoveries = await tracker.recover_order_totals(
+                    totals, cancellations=cancellations, expected_revision=revision)
                 await asyncio.sleep(2)
         # Recovery has committed even if the following fresh account read fails.
         # Report that actual change now; a retry must neither recover nor notify twice.

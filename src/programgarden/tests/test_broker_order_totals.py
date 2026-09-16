@@ -27,7 +27,7 @@ def client(rows, mutate=None, position=7):
     def orders(body):
         calls.append(body)
         return query(COSAQ00102, "COSAQ00102", body,
-                     rows if body.ExecYn == "1" else [], mutate=mutate)
+                     rows if body.ExecYn in {"0", "1"} else [], mutate=mutate)
     def positions(body):
         return query(COSOQ00201, "COSOQ00201", body, [{"ShtnIsuNo": "AAA", "AstkBalQty": position}])
     accno = NS(cosaq00102=orders, cosoq00201=positions)
@@ -168,7 +168,7 @@ async def test_real_startup_recovers_before_trim_then_late_fill_cannot_double_se
         context=context, node_id="broker", product="overseas_stock", provider="ls",
         appkey="test-key", appsecret="test-secret", paper_trading=False)
     assert context._startup_reconciled
-    assert [request.ExecYn for request in calls] == ["1", "2"]
+    assert [request.ExecYn for request in calls] == ["0", "2"]
     assert tracker.get_workflow_positions()["AAA"].quantity == 7
     assert tracker.get_position_adjustments() == []
     assert context.notify_risk_event.await_count == 1

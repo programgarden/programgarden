@@ -133,8 +133,10 @@ def orders_needing_recovery(tracker):
             fills = conn.execute("""SELECT quantity,execution_id FROM trade_history
                 WHERE product=? AND provider=? AND trading_mode=? AND order_date=?
                 AND ltrim(order_no,'0')=?""", (*scope, day, str(number).lstrip("0"))).fetchall()
+            from .order_cancellation import cancellation_quantity
+            cancelled = cancellation_quantity(conn, tracker, day, number, symbol, side)
             if (any(not row[1] for row in fills)
-                    or sum((quantity(row[0]) for row in fills), Decimal(0)) != quantity(ordered)):
+                    or sum((quantity(row[0]) for row in fills), cancelled) != quantity(ordered)):
                 result.append({"order_date": day, "order_no": number, "symbol": symbol,
                                "side": side, "quantity": ordered})
     return result

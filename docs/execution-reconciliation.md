@@ -161,3 +161,17 @@ Cancellation acknowledgement correction is implemented separately; see
 [cancellation-acknowledgements.md](cancellation-acknowledgements.md). All three
 CancelOrder nodes now distinguish accepted requests from confirmed outcomes.
 Owned bulk cancellation and historical partial-cancel reconstruction remain open.
+# Confirmed unfilled cancellations
+
+Startup now reads the documented all-order history filter (`ExecYn=0`) when
+resolving an incomplete owned order. The observed original/child cancellation
+pattern requires matching symbol, side, venue and quantities, zero executions
+and zero remaining quantity, exactly one linked cancel child, and its explicit
+completion name. Neither an acknowledgement nor absence from pending orders is
+enough. The original ownership row is preserved; terminal cancellation evidence
+is stored separately and creates no fill, position, win or PnL.
+
+Evidence and local fills that conflict keep startup held. Partial cancellation
+and amendment chains remain unsupported pending verified broker semantics.
+The focused cancellation, aggregate-recovery and reconciliation suite passes
+124 cases. This source change is not yet published.

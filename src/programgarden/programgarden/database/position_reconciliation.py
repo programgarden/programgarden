@@ -134,6 +134,8 @@ def assert_order_evidence(conn, tracker, snapshot):
                     or quantity(recovery["total_quantity"]) != quantity(raw_qty)):
                 raise ReconciliationUnavailable("conflicting_recovered_order")
             total += quantity(recovery["recovered_quantity"])
+        from .order_cancellation import cancellation_quantity
+        total += cancellation_quantity(conn, tracker, *key, symbol, side)
         if total != quantity(raw_qty):
             raise ReconciliationUnavailable("owned_fills_require_reconciliation")
 

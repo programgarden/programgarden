@@ -1797,13 +1797,18 @@ class WorkflowPositionTracker:
                 self.fill_revision += 1
             return adjustments
 
-    async def recover_order_totals(self, totals, *, expected_revision: int) -> List[Dict[str, Any]]:
+    async def recover_order_totals(self, totals, *, expected_revision: int,
+                                   cancellations=()) -> List[Dict[str, Any]]:
         """Recover only broker-verified terminal totals, without fill callbacks."""
         from .order_recovery import recover_totals
         from .position_reconciliation import ReconciliationUnavailable
         async with self._buffer_lock:
             if self.fill_revision != expected_revision or self._pending_fills:
                 raise ReconciliationUnavailable("ledger_changed_during_order_check")
+            if cancellations:
+                from .order_cancellation import record_cancellations
+                if record_cancellations(self, cancellations):
+                    self.fill_revision += 1
             recovered = recover_totals(self, totals)
             if recovered:
                 self.fill_revision += 1
