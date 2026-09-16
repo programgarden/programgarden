@@ -585,6 +585,8 @@ class WorkflowPositionTracker:
                 WHERE execution_id IS NOT NULL
             """)
 
+            from .order_recovery import initialize_recovery
+            initialize_recovery(conn)
             conn.commit()
 
     def update_trading_mode(self, trading_mode: str) -> None:
@@ -1034,6 +1036,9 @@ class WorkflowPositionTracker:
             previous = self._find_execution(cursor, fill)
             if previous is not None:
                 return previous
+            from .order_recovery import observe_covered_execution
+            if self.execution_key and observe_covered_execution(conn, self, fill):
+                return "workflow"
             identity = self._execution_key(fill)
             payload = None
             if identity is not None:
@@ -1776,6 +1781,27 @@ class WorkflowPositionTracker:
                 self.fill_revision += 1
             return adjustments
 
+    async def recover_order_totals(self, totals, *, expected_revision: int) -> List[Dict[str, Any]]:
+        """Recover only broker-verified terminal totals, without fill callbacks."""
+        from .order_recovery import recover_totals
+        from .position_reconciliation import ReconciliationUnavailable
+        async with self._buffer_lock:
+            if self.fill_revision != expected_revision or self._pending_fills:
+                raise ReconciliationUnavailable("ledger_changed_during_order_check")
+            recovered = recover_totals(self, totals)
+            if recovered:
+                self.fill_revision += 1
+            return recovered
+
+    def get_order_recoveries(self) -> List[Dict[str, Any]]:
+        """Read the immutable recovery audit; this is not individual fill history."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(row) for row in conn.execute(
+                "SELECT * FROM workflow_order_recoveries WHERE product=? AND provider=? "
+                "AND trading_mode=? ORDER BY id",
+                (self.product, self.provider, self.trading_mode))]
+
     def get_position_adjustments(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Return the current product/mode audit without creating synthetic trades."""
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
@@ -2137,6 +2163,23 @@ class WorkflowPositionTracker:
             )]
         selected = [row for row in rows if row["product"] == self.product
                     and row["provider"] == self.provider and row["classification"] == "workflow"]
+        recoveries = self.get_order_recoveries()
+        # Internal FIFO replay includes aggregate evidence, while trade_history
+        # and fill callbacks remain individual executions only.
+        legacy_ids = {fill_id for recovery in recoveries for fill_id in json.loads(recovery["legacy_fill_ids"])}
+        for row in selected:
+            if row["id"] in legacy_ids:
+                row["is_recovery"] = True
+        for recovery in recoveries:
+            if Decimal(recovery["recovered_quantity"]) == 0:
+                continue
+            selected.append({**recovery, "id": -recovery["id"],
+                             "quantity": recovery["recovered_quantity"],
+                             "price": recovery["recovered_price"],
+                             "realized_pnl": recovery["estimated_pnl"],
+                             "is_recovery": True, "classification": "workflow"})
+        if recoveries:
+            selected.sort(key=lambda row: (row["fill_datetime"], row["id"]))
         keys = set()
         invalid_count = False
         groups: Dict[Tuple[str, str], List[dict]] = {}
@@ -2154,7 +2197,8 @@ class WorkflowPositionTracker:
                 order_no = self._normalize_identifier(row["order_no"])
                 if order_no is None:
                     raise ValueError("Missing order number")
-                keys.add((order_date, order_no))
+                if not row.get("is_recovery"):
+                    keys.add((order_date, order_no))
             except (ValueError, TypeError, ArithmeticError):
                 invalid_count = True
             key = (row["symbol"] or "", row["exchange"] or "")
@@ -2171,6 +2215,7 @@ class WorkflowPositionTracker:
             # and how much quantity was estimated (Σ unmatched over its sells).
             group_estimated = False
             group_est_qty = Decimal(0)
+            recovery_qty = recovery_profit = recovery_loss = Decimal(0)
             if self.product == "overseas_futures":
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
@@ -2200,14 +2245,16 @@ class WorkflowPositionTracker:
                         if fill["side"] == "buy":
                             if stored != 0:
                                 raise ValueError("Unexpected opening PnL")
-                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price])
+                            lots.append([fill["fill_datetime"] or "", fill["id"], quantity, price, bool(fill.get("is_recovery"))])
                             lots.sort(key=lambda lot: (lot[0], lot[1]))
                         elif fill["side"] == "sell":
                             remaining = quantity
                             expected = Decimal(0)
+                            recovery_basis = bool(fill.get("is_recovery"))
                             for lot in lots:
                                 closed = min(remaining, lot[2])
                                 expected += (price - lot[3]) * closed
+                                recovery_basis = recovery_basis or bool(closed and lot[4])
                                 lot[2] -= closed
                                 remaining -= closed
                                 if remaining == 0:
@@ -2241,15 +2288,21 @@ class WorkflowPositionTracker:
                                 group_estimated = True
                                 group_est_qty += remaining
                             total += trade_amount
-                            trades += 1
+                            if recovery_basis:
+                                group_estimated = True
+                                group_est_qty += quantity
+                                recovery_qty += quantity
+                                recovery_profit += max(trade_amount, Decimal(0))
+                                recovery_loss += max(-trade_amount, Decimal(0))
+                            else:
+                                trades += 1
+                                wins += int(trade_amount > 0)
+                                losses += int(trade_amount < 0)
+                                evens += int(trade_amount == 0)
                             if trade_amount > 0:
-                                wins += 1
                                 gross_profit += trade_amount
                             elif trade_amount < 0:
-                                losses += 1
                                 gross_loss += -trade_amount
-                            else:
-                                evens += 1
                         else:
                             raise ValueError("Unknown fill side")
                     amount = float(total)
@@ -2273,7 +2326,8 @@ class WorkflowPositionTracker:
                 estimated_quantity = None
             elif group_estimated:
                 status = "estimated"
-                basis = "fifo_with_account_avg_price_estimate"
+                basis = ("fifo_with_order_total_recovery" if recovery_qty
+                         else "fifo_with_account_avg_price_estimate")
                 estimated_quantity = float(group_est_qty)
             else:
                 status = "available"
@@ -2290,6 +2344,10 @@ class WorkflowPositionTracker:
             entry.update(outcome or {"closed_trades": None, "winning_trades": None,
                                      "losing_trades": None, "breakeven_trades": None,
                                      "gross_profit": None, "gross_loss": None})
+            if recoveries:
+                entry.update({"recovery_excluded_quantity": float(recovery_qty) if outcome else None,
+                              "recovery_gross_profit": float(recovery_profit) if outcome else None,
+                              "recovery_gross_loss": float(recovery_loss) if outcome else None})
             realized.append(entry)
         # Counts carry no currency, so they aggregate across symbols. A group the
         # replay rejected is excluded and downgrades the status to "partial" —
@@ -2305,6 +2363,8 @@ class WorkflowPositionTracker:
         else:
             trade_status = "available" if len(scored) == len(realized) else "partial"
             trade_reason = None if trade_status == "available" else "some_groups_unscorable"
+            if recoveries:
+                trade_status, trade_reason = "partial", "aggregate_recovery_excluded"
             closed_total = sum(g["closed_trades"] for g in scored)
             winning_total = sum(g["winning_trades"] for g in scored)
             losing_total = sum(g["losing_trades"] for g in scored)
@@ -2320,8 +2380,10 @@ class WorkflowPositionTracker:
                             else "multi_symbol_currency_unknown")
         else:
             group = counted[0]
-            if group["gross_loss"] > 0:
-                candidate = group["gross_profit"] / group["gross_loss"]
+            scored_profit = group["gross_profit"] - (group.get("recovery_gross_profit") or 0)
+            scored_loss = group["gross_loss"] - (group.get("recovery_gross_loss") or 0)
+            if scored_loss > 0:
+                candidate = scored_profit / scored_loss
                 if Decimal(str(candidate)).is_finite():
                     ratio, ratio_status, ratio_reason = candidate, "available", None
                 else:
@@ -2375,7 +2437,7 @@ class WorkflowPositionTracker:
             }
 
         return {
-            "version": 2,
+            "version": 3 if recoveries else 2,
             "scope": {"kind": "local_workflow_ledger", "product": self.product,
                       "provider": self.provider, "trading_mode": self.trading_mode},
             "as_of": datetime.now(timezone.utc).isoformat(),
@@ -2397,6 +2459,9 @@ class WorkflowPositionTracker:
             "profit_loss_ratio_reason": ratio_reason,
             "profit_loss_ratio_basis": profit_loss_ratio_basis,
             "off_strategy_fills": off_strategy_fills,
+            **({"order_recovery": {"count": len(recoveries), "is_estimated": True,
+                                  "basis": "broker_order_total",
+                                  "excluded_from_trade_count": True}} if recoveries else {}),
             "max_drawdown": None,
             "max_drawdown_status": "unavailable",
             "max_drawdown_reason": "equity_history_unavailable",

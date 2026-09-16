@@ -68,7 +68,7 @@ async def read(client, product="overseas_stock", mode="live"):
 
 async def test_stock_balance_and_pending_use_declared_fields_and_query_echo_date():
     ls, calls = stock_client(balances=[{"ShtnIsuNo": "AAA", "IsuNo": "WRONG", "AstkBalQty": 7}],
-                            orders=[{"ShtnIsuNo": "AAA", "OrdNo": 42, "BnsTpCode": "02",
+                            orders=[{"ShtnIsuNo": "AAA", "OrdNo": 42, "BnsTpCode": "2",
                                      "OrdMktCode": "82", "UnercQty": 1}])
     result = await read(ls)
     assert result.positions.quantities == {"AAA": 7}

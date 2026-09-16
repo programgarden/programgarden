@@ -10,6 +10,7 @@ Workflow execution engine
 
 from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple, Mapping
 from datetime import datetime
+from decimal import Decimal
 import asyncio
 import math
 import ast
@@ -4596,6 +4597,24 @@ class BrokerNodeExecutor(NodeExecutorBase):
         )
         if not success:
             raise ReconciliationUnavailable("startup_broker_login_failed")
+        recoveries = []
+        if product == "overseas_stock":
+            from .database.order_recovery import orders_needing_recovery
+            from .database.broker_order_totals import read_stock_order_totals
+            revision = tracker.fill_revision
+            unresolved = orders_needing_recovery(tracker)
+            if unresolved:
+                totals = await asyncio.wait_for(read_stock_order_totals(ls, tracker, unresolved), timeout=60)
+                recoveries = await tracker.recover_order_totals(totals, expected_revision=revision)
+                await asyncio.sleep(2)
+        # Recovery has committed even if the following fresh account read fails.
+        # Report that actual change now; a retry must neither recover nor notify twice.
+        if any(Decimal(row["quantity"]) > 0 for row in recoveries):
+            await context.notify_risk_event(RiskEvent(
+                job_id=context.job_id, event_type="order_totals_recovered", severity="info",
+                details={"recoveries": recoveries, "basis": "broker_order_total",
+                         "is_estimated": True, "is_trade": False},
+            ))
         revision = tracker.fill_revision
         snapshot = await asyncio.wait_for(read_broker_snapshot(
             ls, execution_key=context.execution_key, product=product, provider=provider,
@@ -4604,6 +4623,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         adjustments = await tracker.reconcile_from_broker(snapshot.positions, expected_revision=revision)
         context._startup_broker_snapshot = snapshot
         context.position_adjustments = adjustments
+        context.order_recoveries = tracker.get_order_recoveries()
         context._startup_reconciled = True
         if adjustments:
             await context.notify_risk_event(RiskEvent(
@@ -24588,6 +24608,23 @@ class WorkflowJob:
             return None
 
         ls = entry["ls"]
+        if tracker.execution_key:
+            from .database.order_recovery import orders_needing_recovery
+            from .database.broker_order_totals import read_stock_order_totals
+            unresolved = orders_needing_recovery(tracker)
+            if not unresolved:
+                return {"recovered_orders": 0}
+            revision = tracker.fill_revision
+            totals = await asyncio.wait_for(read_stock_order_totals(ls, tracker, unresolved), timeout=60)
+            recovered = await tracker.recover_order_totals(totals, expected_revision=revision)
+            if any(Decimal(row["quantity"]) > 0 for row in recovered):
+                from programgarden_core.bases.listener import RiskEvent
+                await self.context.notify_risk_event(RiskEvent(
+                    job_id=self.job_id, event_type="order_totals_recovered", severity="info",
+                    details={"recoveries": recovered, "basis": "broker_order_total",
+                             "is_estimated": True, "is_trade": False},
+                ))
+            return {"recovered_orders": len(recovered)}
         node_id = "fill_reconciler"
         # 🔴 체결 조회는 `NewOrderNodeExecutor` 의 메서드다 — WorkflowJob 의 것이 아니다.
         #    `self._query_...` 로 부르면 AttributeError 로 매 주기 죽는다(2026-09-14 실관측).

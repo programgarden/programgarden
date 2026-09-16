@@ -103,17 +103,20 @@ def assert_order_evidence(conn, tracker, snapshot):
     for day, number, symbol, side, raw_qty in orders:
         key = day, str(number).lstrip("0")
         fills = conn.execute("""
-            SELECT symbol, side, quantity, classification, execution_id FROM trade_history
+            SELECT symbol, side, quantity, classification, execution_id, id FROM trade_history
             WHERE product=? AND provider=? AND trading_mode=? AND order_date=?
               AND ltrim(order_no, '0')=?
         """, (*scope, *key)).fetchall()
         symbol = normalized_symbol(symbol, tracker.product)
         total = Decimal(0)
-        for fill_symbol, fill_side, fill_qty, classification, execution_id in fills:
+        from .order_recovery import recovery_for_order
+        recovery = recovery_for_order(conn, tracker, *key)
+        legacy_ids = set(json.loads(recovery["legacy_fill_ids"])) if recovery else set()
+        for fill_symbol, fill_side, fill_qty, classification, execution_id, fill_id in fills:
             if (normalized_symbol(fill_symbol, tracker.product) != symbol or fill_side != side
                     or classification != "workflow"):
                 raise ReconciliationUnavailable("ambiguous_order_fill_identity")
-            if not execution_id:
+            if not execution_id and fill_id not in legacy_ids:
                 raise ReconciliationUnavailable("historical_execution_identity_unavailable")
             total += quantity(fill_qty)
         remainder = Decimal(0)
@@ -126,6 +129,11 @@ def assert_order_evidence(conn, tracker, snapshot):
             # Wait for terminal evidence before changing any owned lots.
             if remainder:
                 raise ReconciliationUnavailable("owned_order_still_pending")
+        if recovery:
+            if (recovery["symbol"] != symbol or recovery["side"] != side
+                    or quantity(recovery["total_quantity"]) != quantity(raw_qty)):
+                raise ReconciliationUnavailable("conflicting_recovered_order")
+            total += quantity(recovery["recovered_quantity"])
         if total != quantity(raw_qty):
             raise ReconciliationUnavailable("owned_fills_require_reconciliation")
 

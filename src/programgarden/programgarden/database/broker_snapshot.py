@@ -31,7 +31,7 @@ def pending_row(row, product, *, day=None):
         # COSAQ00102 detail rows do not expose OrdDt. Use only the validated
         # exact-date query echo, never an invented detail field or wall clock.
         order_day = day
-        side = {"01": "sell", "02": "buy"}.get(str(required(row, "BnsTpCode")))
+        side = {"1": "sell", "2": "buy"}.get(str(required(row, "BnsTpCode")))
         market = str(required(row, "OrdMktCode"))
     else:
         symbol = str(required(row, "IsuCodeVal")).strip()

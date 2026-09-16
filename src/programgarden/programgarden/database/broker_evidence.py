@@ -18,6 +18,17 @@ _BLOCKS = {
     "CIDBQ01500": ("CIDBQ01500OutBlock1", "CIDBQ01500OutBlock2"),
 }
 
+# These exact short response headers were observed on live read-only probes.
+# The body still has to contain the full requested TR's blocks and query echo.
+# Do not generalize this to arbitrary prefixes or other transaction families.
+_OBSERVED_RESPONSE_CODES = {
+    "COSAQ00102": {"COSAQ00102", "COSAQ"},
+    "COSOQ00201": {"COSOQ00201", "COSOQ"},
+    "CIDBQ01500": {"CIDBQ01500", "CIDBQ"},
+    "CIDBQ02400": {"CIDBQ02400", "CIDBQ"},
+    "CIDBQ05300": {"CIDBQ05300", "CIDBQ"},
+}
+
 
 class StartupEvidenceUnavailable(RuntimeError):
     """An incomplete response must never authorize execution."""
@@ -35,7 +46,8 @@ async def checked_body(response, tr, request=None):
         raise StartupEvidenceUnavailable(f"{tr}: transport_failure")
     header = response.header
     if (header is None or not {"tr_cd", "tr_cont", "tr_cont_key"} <= header.model_fields_set
-            or header.tr_cd != tr or header.tr_cont not in {"N", "0"} or header.tr_cont_key.strip()):
+            or header.tr_cd not in _OBSERVED_RESPONSE_CODES.get(tr, {tr})
+            or header.tr_cont not in {"N", "0"} or header.tr_cont_key.strip()):
         raise StartupEvidenceUnavailable(f"{tr}: incomplete_continuation")
     raw = response.raw_data
     body = raw.json() if raw is not None else None
