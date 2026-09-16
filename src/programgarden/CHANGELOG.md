@@ -1,3 +1,19 @@
+## [1.40.0] - 2026-09-16
+### Added
+- Opt-in managed execution storage with verified legacy SQLite/WAL adoption and exclusive project/execution leases.
+- Fresh broker reconciliation before restart, trim-only owned-position adjustments and immutable acknowledged audit delivery.
+- Verified overseas-stock original-order total recovery with estimated-money provenance and exclusion from individual-fill/win counts.
+- Explicit owned-stock cancellation: exact ledger ownership, durable single-attempt journal, pause/drain control and bounded terminal confirmation.
+### Fixed
+- Separate broker cancellation acknowledgement from completion across all three products; ordinary stop never sends cancellation requests.
+- Deduplicate late precise fills against order-total recovery and retain unknown partial-cancellation gaps as restart blockers.
+- Stop paused jobs without executing queued strategy nodes; route managed cancellation through the caller's exact executor/event loop.
+### Dependencies
+- Require core ^1.30.1, finance ^1.10.5 and community ^1.15.3.
+### Scope
+- Managed hosts opt into execution identity. Existing standalone storage and active deployed runners are not rewritten by package publication.
+- Futures/domestic bulk cancellation awaits verified terminal evidence. Emergency market liquidation is excluded.
+
 ## [1.39.1] - 2026-09-16
 ### Fixed
 - Futures orderable quantity resolves credentials from the selected workflow broker, using the same exact-account contract as order submission. Valid inline credentials and broker-scoped secrets now work; unrelated direct/product secret slots cannot substitute another account.
