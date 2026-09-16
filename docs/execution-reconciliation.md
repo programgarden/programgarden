@@ -77,9 +77,16 @@ further broker requests or ledger writes. No trade was submitted.
 
 Partially filled/cancelled orders, amendment chains, pagination and ambiguous
 legacy dates remain held. Absence from pending orders does not prove cancellation.
-The owner was asked for COSAQ00102 MrcTpCode/OrdTrxPtnCode enum meanings and CnfQty
-semantics; the SDK explicitly lacks those descriptions. No guessed mapping is
-used. A manual pending order also blocks a reduction of that instrument.
+The owner could not obtain authoritative COSAQ00102 enum/quantity mappings and
+suggested live observation. Three additional read-only history requests found
+four old unfilled cancellation pairs (history date 2026-08-19). Normal and cancel
+rows both explicitly returned MrcTpCode="" and OrdTrxPtnCode=0; the names differed.
+Cancellation children had CnfQty=1 and their originals had CnfQty=0. Fully filled
+originals still had OrdTrxPtnNm="접수완료". Neither codes nor display names alone
+establish execution state. SDK field descriptions retain these limited observed
+facts instead of unobserved enum examples. Partial-fill/amendment semantics remain
+unverified; no recovery eligibility changed. A manual pending order also blocks
+a reduction of that instrument.
 
 Personal evidence becomes `version:3` only when recovery exists. Groups add
 `recovery_excluded_quantity`, `recovery_gross_profit`, `recovery_gross_loss`; the
@@ -116,7 +123,11 @@ same-number adjacent dates and accounting. Five real SQLite-produced evidence
 fixtures pass the server and dashboard contract readers. The API has 112 passing
 tests; the dashboard has 47 focused invariants, clean type/lint checks and four
 actual-component browser cases (KO/EN, 390/1280 widths, popovers and Escape).
-Three read-only history probes were made: the first exposed a local probe's use
+The first three read-only history probes were made: the first exposed a local probe's use
 of a nonexistent diagnostics attribute, and the next two captured the short-header
 contract. Subsequent verification replayed captured responses offline. No
-production mutation, cancellation, new trade or workflow restart was performed.
+production ledger mutation, cancellation, new trade or workflow restart was performed.
+The later lifecycle diagnostic made three more history queries; its bounded
+collector has 20 offline tests in the server repository. Captures preserve raw
+field presence and private order links. No partial-fill cancellation was observed;
+a separate owner-executed test awaits owner-selected order terms.
