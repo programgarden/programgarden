@@ -1,3 +1,8 @@
+## Unreleased
+### Fixed
+- Deliver brokerage PnL callbacks on the workflow event loop, including SDK websocket worker-thread notifications and shutdown races.
+- Retain explicitly reported TC3 currency in standalone futures fill records without inferring a monetary accounting basis.
+
 ## [1.40.1] - 2026-09-16
 ### Fixed
 - Preserve editor node labels (`customLabel`) and dimensions (`size`) during strict deep validation. Unknown execution settings and misspelled metadata keys still fail validation.

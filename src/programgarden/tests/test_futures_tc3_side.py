@@ -131,7 +131,7 @@ async def test_tc3_sdk_side_and_managed_reconciliation_guard(monkeypatch, caplog
         assert scheduled == 1
         assert writes == [{
             "order_no": "000123", "order_date": "20260909", "symbol": "SYNTHETIC",
-            "exchange": "FUTURES", "side": expected, "quantity": 2, "price": 100.25,
+            "exchange": "FUTURES", "currency": "", "side": expected, "quantity": 2, "price": 100.25,
             # TC3 프레임에는 통신매체코드 필드가 없다. 종전에는 '40'(OPEN API)을
             # 하드코딩해 프레임이 말하지 않은 값을 원장에 남겼고, tracker 의
             # detect_anomalies 가 그 '40' 을 unknown_api 비율의 분모로 써서
@@ -222,3 +222,12 @@ async def test_tc3_blank_order_date_keeps_the_fill_and_drops_execution_id(monkey
     assert writes[0]["order_date"] == ""
     assert writes[0]["order_no"] == "000123", "주문번호는 멀쩡한 프레임이다"
     assert writes[0]["execution_id"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("currency", ["HKD", "USD", ""])
+async def test_tc3_preserves_the_observed_currency(monkeypatch, currency):
+    assert "crncy_cd" in TC3RealResponseBody.model_fields
+    writes, scheduled = await deliver_tc3(monkeypatch, "2", crncy_cd=currency)
+    assert scheduled == 1
+    assert writes[0]["currency"] == currency
