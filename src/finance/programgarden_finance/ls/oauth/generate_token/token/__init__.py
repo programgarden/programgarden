@@ -1,3 +1,5 @@
+import json
+
 import aiohttp
 import requests
 
@@ -15,6 +17,43 @@ import logging
 
 logger = logging.getLogger("programgarden.ls.oauth.generate_token.token")
 
+
+
+_ERROR_BODY_CAP = 300
+
+
+def _failure_from_http(status: int, reason, body_text) -> TokenResponse:
+    """A token request the server ANSWERED with an error status.
+
+    LS puts the reason in a small JSON body (``error_code`` / ``error_description``). Only those
+    two fields are lifted out — never the whole body, which could echo request data. A body that
+    is not JSON is kept as a short excerpt inside ``error_msg``.
+    """
+    error_code = error_description = None
+    excerpt = ""
+    text = (body_text or "").strip()
+    if text:
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            code, description = parsed.get("error_code"), parsed.get("error_description")
+            error_code = str(code) if code not in (None, "") else None
+            error_description = str(description) if description not in (None, "") else None
+        else:
+            excerpt = " ".join(text.split())[:_ERROR_BODY_CAP]
+    detail = " ".join(part for part in (error_code, error_description) if part) or excerpt
+    error_msg = f"HTTP {status} {reason or ''}".strip() + (f": {detail}" if detail else "")
+    logger.error(f"Token 요청 실패: {error_msg}")
+    return TokenResponse(
+        header=None,
+        block=None,
+        status_code=status,
+        error_msg=error_msg,
+        error_code=error_code,
+        error_description=error_description,
+    )
 
 class Token(TRRequestAbstract):
     """
@@ -58,12 +97,18 @@ class Token(TRRequestAbstract):
                     data=self.request_data.body.model_dump(),
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
-                    response.raise_for_status()
+                    if response.status >= 400:
+                        # Read the body BEFORE giving up: LS explains a refusal there
+                        # (error_code / error_description); raise_for_status() throws it away.
+                        return _failure_from_http(
+                            response.status, response.reason, await response.text()
+                        )
                     raw = await response.json()
 
                     return TokenResponse(
                         header=TokenResponseHeader.model_validate(response.headers),
                         block=TokenOutBlock.model_validate(raw) if raw is not None else None,
+                        status_code=response.status,
                     )
 
         except aiohttp.ClientError as e:
@@ -102,13 +147,15 @@ class Token(TRRequestAbstract):
                 timeout=10,
             )
 
-            response.raise_for_status()
+            if response.status_code >= 400:
+                return _failure_from_http(response.status_code, response.reason, response.text)
 
             raw = response.json()
 
             result = TokenResponse(
                 header=TokenResponseHeader.model_validate(response.headers),
                 block=TokenOutBlock.model_validate(raw) if raw is not None else None,
+                status_code=response.status_code,
             )
             result.raw_data = response
 

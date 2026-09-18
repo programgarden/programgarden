@@ -107,10 +107,50 @@ class TokenOutBlock(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Token-issuance response envelope."""
+    """Token-issuance response envelope.
+
+    On failure ``header`` and ``block`` are ``None`` and the fields below say why. They used to
+    be missing from this model while ``Token.req`` / ``req_async`` already passed
+    ``error_msg=...`` — pydantic dropped the unknown keyword, so every caller saw a failure with
+    no reason at all and could not tell a refused app key (LS answers HTTP 403 with
+    ``error_code`` ``IGW00103``) from a network outage.
+    """
 
     header: Optional[TokenResponseHeader]
     block: Optional[TokenOutBlock]
+    status_code: Optional[int] = Field(
+        default=None,
+        title="HTTP 상태 코드 (HTTP status)",
+        description=(
+            "HTTP status returned by the LS token endpoint. None when the request never "
+            "reached the server (connection error, timeout) or failed before it was sent."
+        ),
+        examples=[200, 403],
+    )
+    error_msg: Optional[str] = Field(
+        default=None,
+        title="오류 메시지 (Error message)",
+        description="Why the request failed. None on success.",
+        examples=["HTTP 403 Forbidden"],
+    )
+    error_code: Optional[str] = Field(
+        default=None,
+        title="LS 오류 코드 (LS error code)",
+        description=(
+            "``error_code`` from the LS error body, exactly as returned by LS. None when LS "
+            "sent no such field. Observed 2026-09-19: 'IGW00103' for an invalid app key."
+        ),
+        examples=["IGW00103"],
+    )
+    error_description: Optional[str] = Field(
+        default=None,
+        title="LS 오류 설명 (LS error description)",
+        description=(
+            "``error_description`` from the LS error body, exactly as returned by LS. "
+            "Observed 2026-09-19: '유효하지 않은 AppKey입니다.'"
+        ),
+        examples=["유효하지 않은 AppKey입니다."],
+    )
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
