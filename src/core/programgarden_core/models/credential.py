@@ -126,7 +126,7 @@ BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
         }
     ),
     # ============================================================
-    # LS증권 해외선물 (overseas_futures) - 모의투자 지원
+    # LS증권 해외선물 (overseas_futures) - 실거래·모의투자 둘 다 지원(등록 폼에서 모드 선택)
     # ============================================================
     "broker_ls_overseas_futures": CredentialTypeSchema(
         type_id="broker_ls_overseas_futures",

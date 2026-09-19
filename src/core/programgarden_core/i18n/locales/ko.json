@@ -122,7 +122,7 @@
   "nodes.NewOrderNode.name": "신규 주문",
   "nodes.OverseasFuturesAccountNode.description": "해외선물 보유종목, 증거금 잔고, 포지션 상세를 REST API 1회 조회로 가져옵니다. 출력: held_symbols, balance (증거금, 유지증거금, 가용증거금), positions (계약별 수량, 평균 단가, 미실현 손익). 상위 OverseasFuturesBrokerNode 연결 필수. 미체결 주문은 OverseasFuturesOpenOrdersNode를 별도로 사용하세요. 실시간 업데이트가 필요하면 OverseasFuturesRealAccountNode를 사용하세요. AI Agent 도구로 사용 가능.",
   "nodes.OverseasFuturesAccountNode.name": "해외선물 계좌 조회",
-  "nodes.OverseasFuturesBrokerNode.description": "해외선물 거래를 위한 LS증권 OpenAPI 연결을 설정합니다(CME, EUREX, SGX, HKEX). 인증 게이트웨이 역할 — 하위 계좌, 시세, 주문 노드가 DAG 순회를 통해 자동으로 브로커 연결을 상속합니다. credential_id로 broker_ls_overseas_futures 인증 정보를 참조합니다. 위험 없는 테스트를 위한 모의투자 모드를 지원합니다. 일반적인 연결: StartNode → OverseasFuturesBrokerNode → FuturesAccountNode / FuturesMarketDataNode / FuturesNewOrderNode.",
+  "nodes.OverseasFuturesBrokerNode.description": "해외선물 거래를 위한 LS증권 OpenAPI 연결을 설정합니다(CME·EUREX·SGX·HKEX 등 — 어느 거래소가 열려 있는지는 계좌마다 다릅니다). 인증 게이트웨이 역할 — 하위 계좌, 시세, 주문 노드가 DAG 순회를 통해 자동으로 브로커 연결을 상속합니다. credential_id로 broker_ls_overseas_futures 인증 정보를 참조합니다. 실계좌와 모의투자 계좌를 모두 지원합니다 — 등록한 자격증명의 모드를 그대로 따릅니다(모의투자는 위험 없는 연습용이고, 실거래도 그대로 가능합니다). 계좌가 여는 거래소는 계좌마다 다르므로, 주문 가능 종목 조회로 확인하세요. 일반적인 연결: StartNode → OverseasFuturesBrokerNode → FuturesAccountNode / FuturesMarketDataNode / FuturesNewOrderNode.",
   "nodes.OverseasFuturesBrokerNode.name": "해외선물 브로커",
   "nodes.OverseasFuturesCancelOrderNode.description": "해외선물 미체결 주문을 원래 주문 ID로 취소합니다. FuturesOpenOrdersNode 또는 FuturesRealOrderEventNode에서 original_order_id를 받아야 합니다. 출력: 취소 결과, 취소된 주문 ID. 최소 5초 간격 제한 적용. 일반적인 연결: FuturesOpenOrdersNode → FuturesCancelOrderNode.",
   "nodes.OverseasFuturesCancelOrderNode.name": "해외선물 취소주문",
