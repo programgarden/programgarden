@@ -264,7 +264,10 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
     LS증권 OpenAPI를 통해 해외선물 거래를 위한 브로커 연결을 생성합니다.
 
     Note:
-    - 해외선물은 모의투자 지원
+    - 해외선물은 **실거래와 모의투자 둘 다** 지원한다. 등록 폼에서 모드를 고르는 유일한
+      상품이며, ``paper_trading`` 은 등록한 자격증명의 모드를 따른다. (모의투자를 자주
+      쓰는 것은 증거금 비용 때문이지, 실거래가 안 되기 때문이 아니다.)
+    - 계좌가 여는 거래소(CME 등)는 **계좌마다 다르다** — 주문 가능 종목 조회로만 알 수 있다.
     - credential_types: broker_ls_overseas_futures
     """
 
