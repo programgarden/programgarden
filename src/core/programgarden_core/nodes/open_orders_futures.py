@@ -108,7 +108,7 @@ class OverseasFuturesOpenOrdersNode(BaseNode):
         },
         {
             "title": "Guard against duplicate futures orders",
-            "description": "Only place a new futures order when there are no existing open orders for the target contract.",
+            "description": 'Only place a new futures order when there are no existing open orders for the target contract. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "futures-order-dedup-guard",
                 "name": "Futures Order Dedup Guard",
@@ -117,7 +117,7 @@ class OverseasFuturesOpenOrdersNode(BaseNode):
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "futures_cred", "paper_trading": True},
                     {"id": "open_orders", "type": "OverseasFuturesOpenOrdersNode"},
                     {"id": "if_no_orders", "type": "IfNode", "left": "{{ nodes.open_orders.count }}", "operator": "==", "right": 0},
-                    {"id": "order", "type": "OverseasFuturesNewOrderNode", "symbol": "ESH26", "exchange": "CME", "side": "buy", "order_type": "limit", "quantity": 1, "price": 5200.0},
+                    {'id': 'order', 'type': 'OverseasFuturesNewOrderNode', 'side': 'buy', 'order_type': 'limit', 'order': {'symbol': 'ESH26', 'exchange': 'CME', 'quantity': 1, 'price': 5200.0}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

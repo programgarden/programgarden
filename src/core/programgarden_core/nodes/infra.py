@@ -446,7 +446,7 @@ class SplitNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Sequential (default) or parallel execution modes",
+        "Sequential (default) or parallel execution modes; branches containing IfNode or order nodes are serialized to preserve per-item decisions",
         "Per-item delay_ms for rate-limiting downstream API calls",
         "continue_on_error=True keeps the loop running when one item fails",
         "Emits item / index / total outputs so downstream can branch on position",
@@ -493,13 +493,13 @@ class SplitNode(BaseNode):
                     },
                     {"id": "split", "type": "SplitNode"},
                     {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
                     {"from": "watchlist", "to": "split"},
                     {"from": "split", "to": "fundamental"},
-                ],
+                {'from': 'fundamental', 'to': 'split_results'}],
                 "credentials": [
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
@@ -525,13 +525,13 @@ class SplitNode(BaseNode):
                         "start_date": "20260301",
                         "end_date": "20260401",
                     },
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "universe"},
                     {"from": "universe", "to": "split"},
                     {"from": "split", "to": "historical"},
-                ],
+                {'from': 'historical', 'to': 'split_results'}],
                 "credentials": [
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
@@ -803,7 +803,7 @@ class AggregateNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "split", "type": "SplitNode"},
+                    {"id": "split", "type": "SplitNode", 'array': '{{ nodes.account.positions }}'},
                     {
                         "id": "mapper",
                         "type": "FieldMappingNode",
@@ -996,7 +996,7 @@ class IfNode(BaseNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Gate new order behind a minimum balance",
-            "description": "IfNode checks the account balance; true branch places the order, false branch displays a warning.",
+            "description": 'IfNode checks the account balance; true branch places the order, false branch displays a warning. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "if-balance-gate",
                 "name": "If balance ≥ threshold → order / else notify",
@@ -1004,8 +1004,8 @@ class IfNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "if_balance", "type": "IfNode", "left": "{{ nodes.account.balance }}", "operator": ">=", "right": 1000},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "AAPL", "exchange": "NASDAQ", "side": "buy", "quantity": 1, "price": 150.0},
+                    {"id": "if_balance", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_amount }}", "operator": ">=", "right": 1000},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'buy', 'order': {'symbol': 'AAPL', 'exchange': 'NASDAQ', 'quantity': 1, 'price': 150.0}},
                     {"id": "warn", "type": "SummaryDisplayNode", "title": "Insufficient funds", "data": {"balance": "{{ nodes.account.balance }}"}},
                 ],
                 "edges": [

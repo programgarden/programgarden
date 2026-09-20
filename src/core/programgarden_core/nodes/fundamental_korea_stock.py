@@ -109,17 +109,17 @@ class KoreaStockFundamentalNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}, {"symbol": "000660"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '005930'}, {'symbol': '000660'}]},
                     {"id": "fundamental", "type": "KoreaStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -142,17 +142,17 @@ class KoreaStockFundamentalNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}, {"symbol": "005380"}, {"symbol": "051910"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '005930'}, {'symbol': '005380'}, {'symbol': '051910'}]},
                     {"id": "fundamental", "type": "KoreaStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

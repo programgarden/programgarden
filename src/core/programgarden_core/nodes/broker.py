@@ -150,7 +150,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         },
         {
             "title": "Broker → Historical → Condition → Order",
-            "description": "Full trading path: broker session feeds historical data, a condition plugin decides, then the order node fires when the condition passes.",
+            "description": 'Full trading path: broker session feeds historical data, a condition plugin decides, then the order node fires when the condition passes. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "broker-stock-trade",
                 "name": "Broker + RSI + order",
@@ -181,7 +181,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                         },
                         "fields": {"period": 14, "threshold": 30, "direction": "below"},
                     },
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "AAPL", "exchange": "NASDAQ", "side": "buy", "quantity": 1, "price": 150.0},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'buy', 'order': {'symbol': 'AAPL', 'exchange': 'NASDAQ', 'quantity': 1, 'price': 150.0}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

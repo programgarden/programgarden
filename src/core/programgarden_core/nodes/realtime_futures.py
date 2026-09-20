@@ -92,7 +92,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "ESH26", "exchange": "CME"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'ESH26', 'exchange': 'CME'}]},
                     {"id": "real", "type": "OverseasFuturesRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 60},
                     {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "period": "1d", "start_date": "20260101", "end_date": "20260301"},
@@ -112,7 +112,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                         "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"},
                     },
                     {"id": "display", "type": "TableDisplayNode", "title": "MACD bullish cross", "data": "{{ nodes.condition.passed_symbols }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
@@ -123,7 +123,7 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                     {"from": "throttle", "to": "condition"},
                     {"from": "historical", "to": "condition"},
                     {"from": "condition", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -146,17 +146,17 @@ class OverseasFuturesRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "MHIH26", "exchange": "HKEX"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MHIH26', 'exchange': 'HKEX'}]},
                     {"id": "real", "type": "OverseasFuturesRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "chart", "type": "CandlestickChartNode", "data": "{{ nodes.real.ohlcv_data }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "real"},
                     {"from": "broker", "to": "real"},
                     {"from": "real", "to": "chart"},
-                ],
+                {'from': 'chart', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -340,7 +340,7 @@ class OverseasFuturesRealAccountNode(BaseNode):
         },
         {
             "title": "Realtime margin guard with auto-liquidation",
-            "description": "Monitor futures margin in realtime and liquidate position when margin falls below safety threshold.",
+            "description": 'Monitor futures margin in realtime and liquidate position when margin falls below safety threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "futures-margin-guard",
                 "name": "Futures Margin Guard",
@@ -350,7 +350,7 @@ class OverseasFuturesRealAccountNode(BaseNode):
                     {"id": "real_account", "type": "OverseasFuturesRealAccountNode", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "mode": "latest", "interval_sec": 5, "pass_first": True},
                     {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "positions": "{{ nodes.real_account.positions }}", "fields": {"threshold_pct": -3.0}},
-                    {"id": "order", "type": "OverseasFuturesNewOrderNode", "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "side": "sell", "order_type": "market", "quantity": "{{ item.quantity }}"},
+                    {'id': 'order', 'type': 'OverseasFuturesNewOrderNode', 'side': 'sell', 'order_type': 'market', 'order': {'symbol': '{{ item.symbol }}', 'exchange': '{{ item.exchange }}', 'quantity': '{{ item.quantity }}'}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

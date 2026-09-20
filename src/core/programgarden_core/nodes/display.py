@@ -209,7 +209,7 @@ class TableDisplayNode(BaseDisplayNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "table", "type": "TableDisplayNode", "title": "Current Positions", "data": "{{ nodes.account.positions }}", "columns": ["symbol", "exchange", "quantity", "avg_price", "pnl"], "sort_by": "pnl", "sort_order": "desc", "limit": 20},
+                    {"id": "table", "type": "TableDisplayNode", "title": "Current Positions", "data": "{{ nodes.account.positions }}", "columns": ["symbol", "exchange", "quantity", "avg_price", 'pnl_amount'], "sort_by": "pnl", "sort_order": "desc", "limit": 20},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

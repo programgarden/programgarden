@@ -1344,5 +1344,17 @@
   "fields.OverseasFuturesOrderableQuantityNode.query_type": "New positions, liquidation or total capacity.",
   "enums.query_type.new": "New",
   "enums.query_type.close": "Liquidation",
-  "enums.query_type.total": "Total"
+  "enums.query_type.total": "Total",
+  "nodes.SessionGateNode.allowed": "True only inside a configured window; bind to IfNode.",
+  "nodes.SessionGateNode.closed_dates": "Explicit YYYY-MM-DD exclusions. Either local calendar date or opening date blocks the window.",
+  "nodes.SessionGateNode.days": "Allowed opening weekdays. The post-midnight portion belongs to the previous opening day.",
+  "nodes.SessionGateNode.description": "Check configured local windows immediately; enforce allowed using IfNode.",
+  "nodes.SessionGateNode.local_date": "Current calendar date in the configured timezone.",
+  "nodes.SessionGateNode.local_time": "Current local ISO timestamp including UTC offset.",
+  "nodes.SessionGateNode.name": "Session gate",
+  "nodes.SessionGateNode.reason": "inside_configured_window or outside_configured_window.",
+  "nodes.SessionGateNode.session_date": "Opening date of the matched window, or an empty string when blocked.",
+  "nodes.SessionGateNode.timezone": "IANA timezone; daylight-saving transitions use the installed timezone database.",
+  "nodes.SessionGateNode.trigger": "Evaluate the current local time when triggered.",
+  "nodes.SessionGateNode.windows": "Local HH:MM start/end windows; start inclusive, end exclusive. Overnight windows are supported."
 }

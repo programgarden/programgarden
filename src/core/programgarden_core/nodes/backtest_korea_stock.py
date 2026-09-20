@@ -125,17 +125,17 @@ class KoreaStockHistoricalDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '005930'}]},
                     {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": True},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "historical"},
                     {"from": "broker", "to": "historical"},
                     {"from": "historical", "to": "condition"},
-                ],
+                {'from': 'condition', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -158,17 +158,17 @@ class KoreaStockHistoricalDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "247540"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '247540'}]},
                     {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(365, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1w", "adjust": True},
                     {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 20, "std": 2.0, "direction": "below_lower"}},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "historical"},
                     {"from": "broker", "to": "historical"},
                     {"from": "historical", "to": "condition"},
-                ],
+                {'from': 'condition', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

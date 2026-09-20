@@ -62,6 +62,7 @@ from programgarden_core.nodes.symbol import (
     SymbolFilterNode,
     ExclusionListNode,
 )
+from programgarden_core.nodes.session_gate import SessionGateNode
 from programgarden_core.nodes.trigger import (
     ScheduleNode,
     TradingHoursFilterNode,
@@ -164,6 +165,7 @@ __all__ = [
     # Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",
+    "SessionGateNode",
     # Condition
     "ConditionNode",
     "LogicNode",

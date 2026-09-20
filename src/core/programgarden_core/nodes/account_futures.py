@@ -116,7 +116,7 @@ class OverseasFuturesAccountNode(BaseNode):
         },
         {
             "title": "Margin check before futures order",
-            "description": "Read account margin and place a new order only when available margin exceeds the threshold.",
+            "description": 'Read account margin and place a new order only when available margin exceeds the threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "futures-account-margin-check",
                 "name": "Futures Margin Check",
@@ -125,7 +125,7 @@ class OverseasFuturesAccountNode(BaseNode):
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "futures_cred", "paper_trading": True},
                     {"id": "account", "type": "OverseasFuturesAccountNode"},
                     {"id": "if_margin", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_amount }}", "operator": ">=", "right": 10000},
-                    {"id": "order", "type": "OverseasFuturesNewOrderNode", "symbol": "ESH26", "exchange": "CME", "side": "buy", "order_type": "limit", "quantity": 1, "price": 5200.0},
+                    {'id': 'order', 'type': 'OverseasFuturesNewOrderNode', 'side': 'buy', 'order_type': 'limit', 'order': {'symbol': 'ESH26', 'exchange': 'CME', 'quantity': 1, 'price': 5200.0}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

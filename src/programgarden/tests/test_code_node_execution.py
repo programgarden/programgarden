@@ -297,3 +297,17 @@ async def test_whole_array_passed_in_one_call():
     out = job.context.get_all_outputs("c")
     assert out.get("count") == 2
     assert out.get("syms") == ["AAPL", "MSFT"]
+
+
+@pytest.mark.parametrize('bad', [len, float('nan'), {'nested': object()}])
+def test_non_json_input_is_rejected_before_worker_dispatch(bad, monkeypatch):
+    from programgarden import code_worker
+    def forbidden():
+        raise AssertionError('Invalid input reached worker pool')
+    monkeypatch.setattr(code_worker, 'get_code_worker_pool', forbidden)
+    result=code_worker.run_code_node_sandboxed(
+        code='def execute(data, params, context): return data',
+        node_id='invalid_input', data=bad, params={}, ctx_snapshot={},
+    )
+    assert result['ok'] is False
+    assert result['message']=='CodeNode input must contain only finite JSON-safe values.'

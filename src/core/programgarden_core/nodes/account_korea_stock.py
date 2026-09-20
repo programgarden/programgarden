@@ -115,7 +115,7 @@ class KoreaStockAccountNode(BaseNode):
         },
         {
             "title": "Cash check before Korea stock order",
-            "description": "Read account balance and only place an order when orderable cash exceeds 1,000,000 KRW.",
+            "description": 'Read account balance and only place an order when orderable cash exceeds 1,000,000 KRW. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea-stock-cash-check",
                 "name": "Korea Stock Cash Check",
@@ -124,7 +124,7 @@ class KoreaStockAccountNode(BaseNode):
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "account", "type": "KoreaStockAccountNode"},
                     {"id": "if_cash", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_amount }}", "operator": ">=", "right": 1000000},
-                    {"id": "order", "type": "KoreaStockNewOrderNode", "symbol": "005930", "side": "buy", "order_type": "limit", "quantity": 1, "price": 75000},
+                    {'id': 'order', 'type': 'KoreaStockNewOrderNode', 'side': 'buy', 'order_type': 'limit', 'order': {'symbol': '005930', 'quantity': 1, 'price': 75000}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
