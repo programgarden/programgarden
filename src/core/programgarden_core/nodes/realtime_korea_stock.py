@@ -91,7 +91,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "005930"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '005930'}]},
                     {"id": "real", "type": "KoreaStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 60},
                     {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "period": "1d", "start_date": "20260301", "end_date": "20260401"},
@@ -111,7 +111,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
                         "fields": {"period": 14, "threshold": 30, "direction": "below"},
                     },
                     {"id": "display", "type": "TableDisplayNode", "title": "RSI oversold", "data": "{{ nodes.condition.passed_symbols }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
@@ -122,7 +122,7 @@ class KoreaStockRealMarketDataNode(BaseNode):
                     {"from": "throttle", "to": "condition"},
                     {"from": "historical", "to": "condition"},
                     {"from": "condition", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -145,17 +145,17 @@ class KoreaStockRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "247540"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '247540'}]},
                     {"id": "real", "type": "KoreaStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "chart", "type": "CandlestickChartNode", "data": "{{ nodes.real.ohlcv_data }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "real"},
                     {"from": "broker", "to": "real"},
                     {"from": "real", "to": "chart"},
-                ],
+                {'from': 'chart', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -339,7 +339,7 @@ class KoreaStockRealAccountNode(BaseNode):
         },
         {
             "title": "Realtime trailing stop for Korea stocks",
-            "description": "Monitor live positions and trigger a stop-loss sell when drawdown exceeds threshold.",
+            "description": 'Monitor live positions and trigger a stop-loss sell when drawdown exceeds threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea-stock-real-trailing-stop",
                 "name": "Korea Stock Realtime Trailing Stop",
@@ -349,7 +349,7 @@ class KoreaStockRealAccountNode(BaseNode):
                     {"id": "real_account", "type": "KoreaStockRealAccountNode", "stay_connected": True, "market": "KOSPI"},
                     {"id": "throttle", "type": "ThrottleNode", "mode": "latest", "interval_sec": 5, "pass_first": True},
                     {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "positions": "{{ nodes.real_account.positions }}", "fields": {"threshold_pct": -3.0}},
-                    {"id": "order", "type": "KoreaStockNewOrderNode", "symbol": "{{ item.symbol }}", "side": "sell", "order_type": "market", "quantity": "{{ item.quantity }}"},
+                    {'id': 'order', 'type': 'KoreaStockNewOrderNode', 'side': 'sell', 'order_type': 'market', 'order': {'symbol': '{{ item.symbol }}', 'quantity': '{{ item.quantity }}'}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

@@ -119,10 +119,10 @@ class KoreaStockSymbolQueryNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "symbols", "type": "KoreaStockSymbolQueryNode", "market": "KOSDAQ"},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.symbols.symbols }}"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.symbols.symbols }}'},
                     {"id": "fundamental", "type": "KoreaStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "symbols"},
@@ -130,7 +130,7 @@ class KoreaStockSymbolQueryNode(BaseNode):
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

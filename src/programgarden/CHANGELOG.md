@@ -1,3 +1,20 @@
+## [1.41.0] - 2026-09-21
+
+### Added
+- Native immediate SessionGateNode support without automatic array iteration.
+
+### Fixed
+- Apply IfNode routing inside Split branches, keeping decisions and skipped outputs local to each item. Preserve collection of an active alternative when its sibling is skipped. A false outer gate now skips Split execution before its special handler.
+- Serialize Split branches containing IfNode or order nodes even if parallel=true was requested, preventing shared-context item/gate races; emit an explicit warning. Other parallel branches retain existing behavior.
+- Reject non-JSON/nonfinite CodeNode inputs before subprocess dispatch, including a bound array helper accidentally passed without parentheses. Preserve subprocess credential isolation.
+- Correct AI-facing core examples and metadata so generated workflows reference actual output fields and pair Split with Aggregate.
+
+### Dependencies
+- Require programgarden-core ^1.31.0; finance ^1.10.5 and community ^1.15.3 remain unchanged.
+
+### Scope
+- Session windows do not establish exchange holiday/halts or guarantee execution. Persistent order reservations belong to application examples and must use account-isolated durable storage.
+
 ## [1.40.1] - 2026-09-16
 ### Fixed
 - Preserve editor node labels (`customLabel`) and dimensions (`size`) during strict deep validation. Unknown execution settings and misspelled metadata keys still fail validation.

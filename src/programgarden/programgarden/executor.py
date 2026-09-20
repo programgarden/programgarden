@@ -21837,6 +21837,16 @@ class WorkflowJob:
                 )
                 continue
 
+            # === IfNode: 비활성 브랜치 스킵 ===
+            if node_id in if_skipped_nodes:
+                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.SKIPPED,
+                )
+                continue
+
             # === Item-based execution: Skip branch nodes (handled by SplitNode) ===
             if node_id in branch_nodes and node.node_type not in ("SplitNode", "AggregateNode"):
                 _safe_print(f"  ⏭ Skipping branch node: {node_id} (handled by SplitNode)")
@@ -21851,16 +21861,6 @@ class WorkflowJob:
             # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
             if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
                 _safe_print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
-                continue
-
-            # === IfNode: 비활성 브랜치 스킵 ===
-            if node_id in if_skipped_nodes:
-                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
-                await self.context.notify_node_state(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    state=NodeState.SKIPPED,
-                )
                 continue
 
             _safe_print(f"  ▶ Executing node: {node_id} ({node.node_type})")
@@ -22265,7 +22265,7 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "KoreaStockAccountNode", "KoreaStockRealAccountNode",
-        "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "SQLiteNode", "HTTPRequestNode", "SessionGateNode",  # 데이터 노드
         "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
@@ -22979,6 +22979,24 @@ class WorkflowJob:
         parallel = config.get("parallel", False)
         delay_ms = config.get("delay_ms", 0)
         continue_on_error = config.get("continue_on_error", True)
+        # Branch expressions share ExecutionContext outputs. Until contexts
+        # are isolated per parallel item, an await can replace item A's gate
+        # evidence with item B's data. Serialize guarded/order branches even
+        # when parallel was requested; do not race an authorization decision.
+        guarded_branch = any(
+            self.workflow.nodes[n].node_type == "IfNode"
+            or self.workflow.nodes[n].node_type.endswith(
+                ("NewOrderNode", "ModifyOrderNode", "CancelOrderNode")
+            )
+            for n in branch_order if n in self.workflow.nodes
+        )
+        if parallel and guarded_branch:
+            parallel = False
+            self.context.log(
+                "warning",
+                "SplitNode guarded/order branches execute sequentially to preserve per-item decisions.",
+                split_id,
+            )
 
         # Resolve the array to split — the single source of truth for this
         # branch: per-item item/index/total AND the items/_array output ports
@@ -23181,10 +23199,25 @@ class WorkflowJob:
         # 종목들이 한 노드를 공유하면 대기시간까지 공유돼 한 번에 한 종목만 통과한다.
         branch_scope = f"{split_id}#{index}"
 
+        # Routing decisions belong to this item, never the preceding item.
+        if_skipped_nodes: Set[str] = set()
+        terminal_nodes = {
+            edge.from_node_id for edge in self.workflow.edges
+            if edge.from_node_id in branch_order
+            and self.workflow.nodes.get(edge.to_node_id)
+            and self.workflow.nodes[edge.to_node_id].node_type == "AggregateNode"
+        }
+
         # Execute each branch node
         for node_id in branch_order:
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+            if node_id in if_skipped_nodes:
+                # Do not expose a previous item's gated output through a later
+                # expression or collect it as this item's result.
+                self.context._outputs.pop(node_id, None)
+                self.context._outputs.pop(f"_input_{node_id}", None)
                 continue
 
             is_realtime = node.node_type in REALTIME_NODE_TYPES
@@ -23238,6 +23271,10 @@ class WorkflowJob:
                 order_invocation_id=f"split:{branch_scope}",
                 order_iteration_index=index,
             )
+
+            if node.node_type == "IfNode" and outputs:
+                taken = outputs.pop("_if_branch", "true")
+                if_skipped_nodes.update(self._compute_if_skip_nodes(node_id, taken))
 
             # Store outputs
             for port_name, value in outputs.items():
@@ -23310,7 +23347,7 @@ class WorkflowJob:
         # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
         # skip 하여 "실시간 체결가" 표에 가격 없는/이질적인 행이 끼지 않게 한다. branch
         # 노드가 아예 없으면(bare Split→Aggregate) item 을 그대로 수집한다(정상 패턴).
-        if branch_order and last_had_public is False:
+        if branch_order and (last_had_public is False or (terminal_nodes and terminal_nodes <= if_skipped_nodes)):
             return _SKIP_BRANCH_ITEM
 
         return result

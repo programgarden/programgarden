@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden"
-version = "1.40.1"
+version = "1.41.0"
 license = "AGPL-3.0-or-later"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
@@ -36,7 +36,7 @@ litellm = ">=1.40.0"
 # 로 통째 실패한다(1.35.1 의 조용한 TypeError 보다 강한 모듈 로드 실패).
 # (1.26.0 이후로도 context.py 는 WorkflowPnLEvent(**event_data) 에 personal_metrics
 #  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
-programgarden-core = "^1.30.1"
+programgarden-core = "^1.31.0"
 programgarden-finance = "^1.10.5"
 programgarden-community = "^1.15.3"
 

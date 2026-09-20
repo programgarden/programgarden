@@ -131,10 +131,10 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "symbols", "type": "OverseasFuturesSymbolQueryNode", "futures_exchange": "6", "futures_contract_month": "front", "max_results": 50},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.symbols.symbols }}"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.symbols.symbols }}'},
                     {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "symbols"},
@@ -142,7 +142,7 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                     {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -364,15 +364,19 @@ class FuturesContractNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "contract", "type": "FuturesContractNode", "base_products": ["HMH", "HMCE"], "contract_selection": "front"},
-                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ item }}", "interval": "1d"},
-                    {"id": "rsi", "type": "ConditionNode", "conditions": [{"indicator": "rsi", "operator": "<", "value": 30}]},
+                    {"id": "split", "type": "SplitNode", "array": "{{ nodes.contract.symbols }}", "parallel": False, "delay_ms": 1000},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "interval": "1d"},
+                    {"id": "rsi", "type": "ConditionNode", "plugin": "RSI", "fields": {"period": 14, "threshold": 30, "direction": "below"},
+                     "items": {"from": "{{ nodes.historical.value.time_series }}", "extract": {"symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}},
+                    {"id": "aggregate", "type": "AggregateNode", "mode": "collect"},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "contract"},
-                    {"from": "contract", "to": "historical"},
-                    {"from": "broker", "to": "historical"},
+                    {"from": "contract", "to": "split"},
+                    {"from": "split", "to": "historical"},
                     {"from": "historical", "to": "rsi"},
+                    {"from": "rsi", "to": "aggregate"},
                 ],
                 "credentials": [
                     {

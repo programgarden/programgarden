@@ -472,12 +472,25 @@ def run_code_node_sandboxed(
       {"ok": True, "value": <raw return>}
       {"ok": False, "error_code": ..., "message": ..., "suggestion": ..., "line": ..., "traceback": ...}
     """
+    # Expressions can accidentally return a bound helper (e.g. `.count`
+    # instead of `.count()`). Never pickle such objects into the child: their
+    # proxy state can recurse during unpickling and crash the worker process.
+    # Normalize the input boundary to the same finite JSON domain as outputs.
+    try:
+        inputs = json.loads(json.dumps(
+            {"data": data, "params": params or {}, "ctx_snapshot": ctx_snapshot or {}},
+            allow_nan=False,
+        ))
+    except (TypeError, ValueError, RecursionError):
+        return _error_envelope(
+            "CODE_NODE_EXEC_ERROR",
+            "CodeNode input must contain only finite JSON-safe values.",
+            suggestion="Check data/params bindings; call array helpers such as count() instead of passing a method.",
+        )
     task: Dict[str, Any] = {
         "code": code,
         "node_id": node_id,
-        "data": data,
-        "params": params or {},
-        "ctx_snapshot": ctx_snapshot or {},
+        **inputs,
         "allowed_imports": list(allowed_imports) if allowed_imports else None,
     }
     pool = get_code_worker_pool()

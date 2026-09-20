@@ -278,3 +278,7 @@ job = await pg.run_async(
 ## 변경 로그
 
 자세한 변경 사항은 `CHANGELOG.md`를 참고하세요.
+
+See [Session gates and guarded Split](../../docs/session-gates-and-guarded-split.md)
+for immediate timezone decisions, per-item conditional routing, effective sequential
+execution of guarded/order branches, and finite CodeNode input bindings.

@@ -427,7 +427,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Signal-driven buy order via PositionSizingNode",
-            "description": "RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy.",
+            "description": 'RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_new_order_rsi_buy",
                 "name": "RSI Buy Order",
@@ -438,7 +438,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "fields": ["price"]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold_threshold": 30}},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": "{{ nodes.market.value.current_price }}", "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.value.price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
                     {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "limit", "order": "{{ nodes.sizing.order }}"},
                 ],
                 "edges": [
@@ -468,7 +468,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Basket sell order — auto-iterate over positions array",
-            "description": "Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold.",
+            "description": 'Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_basket_sell",
                 "name": "Basket Sell",
@@ -1210,7 +1210,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Place a CME NQ futures buy order",
-            "description": "Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME.",
+            "description": 'Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_nq_buy",
                 "name": "NQ Futures Buy",
@@ -1242,7 +1242,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
         },
         {
             "title": "HKEX mini-futures basket order via auto-iterate",
-            "description": "Place orders for multiple HKEX futures contracts by auto-iterating over a signals array.",
+            "description": 'Place orders for multiple HKEX futures contracts by auto-iterating over a signals array. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_hkex_basket",
                 "name": "HKEX Futures Basket",
@@ -1961,7 +1961,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "RSI-driven buy order for Samsung Electronics",
-            "description": "RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode.",
+            "description": 'RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_new_order_rsi_buy",
                 "name": "Korea Stock RSI Buy",
@@ -2009,7 +2009,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Market sell order for all held Korean stocks",
-            "description": "Fetch account positions and auto-iterate to place a market sell for every held stock.",
+            "description": 'Fetch account positions and auto-iterate to place a market sell for every held stock. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_basket_sell",
                 "name": "Korea Stock Basket Sell",

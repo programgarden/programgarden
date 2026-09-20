@@ -2610,18 +2610,19 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.30.1"
+version = "1.31.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.30.1-py3-none-any.whl", hash = "sha256:ec724677743a9c22379f646e117e4024a731aa101b6fd073f21a11c8af597f28"},
-    {file = "programgarden_core-1.30.1.tar.gz", hash = "sha256:7b59522f55934aba13b49ef54ca7d55cb81d6559e98067008e837100196a63a0"},
+    {file = "programgarden_core-1.31.0-py3-none-any.whl", hash = "sha256:1cf546e821ed9dea4d8bef5aa76307ca48360726abca865cdfc8a494376664e0"},
+    {file = "programgarden_core-1.31.0.tar.gz", hash = "sha256:461b6c4c51a8f1139249b44d6f7ec428c2eb51f9dd72c42774b2c202be679f0a"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+tzdata = ">=2025.2,<2026.0"
 
 [[package]]
 name = "programgarden-finance"
@@ -4179,4 +4180,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "bbfbc9ceef2a3acd076161c5408a8bbf14aee33db0462ec7d94c1aefca38f0f6"
+content-hash = "e3e080a70c2941ac074b287150db21d25aa8c01f4d1cf4e09e5186a5aae424dd"

@@ -108,17 +108,17 @@ class OverseasStockFundamentalNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}]},
                     {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -141,17 +141,17 @@ class OverseasStockFundamentalNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}, {'symbol': 'MSFT', 'exchange': 'NASDAQ'}]},
                     {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

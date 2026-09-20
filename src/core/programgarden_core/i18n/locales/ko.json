@@ -1344,5 +1344,17 @@
   "fields.OverseasFuturesOrderableQuantityNode.query_type": "신규 진입·청산·총 주문가능수량 중 조회할 항목입니다.",
   "enums.query_type.new": "신규",
   "enums.query_type.close": "청산",
-  "enums.query_type.total": "총가능"
+  "enums.query_type.total": "총가능",
+  "nodes.SessionGateNode.allowed": "허용 구간 안에서만 true입니다. IfNode에 연결하세요.",
+  "nodes.SessionGateNode.closed_dates": "YYYY-MM-DD 제외일 목록입니다. 현지 날짜 또는 구간 시작 날짜가 해당하면 차단합니다.",
+  "nodes.SessionGateNode.days": "시작일 기준 허용 요일입니다. 자정 이후 구간은 전날의 시작 요일에 속합니다.",
+  "nodes.SessionGateNode.description": "설정한 현지 시간대를 즉시 확인합니다. IfNode로 허용 여부를 분기하세요.",
+  "nodes.SessionGateNode.local_date": "설정한 시간대의 현재 날짜입니다.",
+  "nodes.SessionGateNode.local_time": "UTC 오프셋을 포함한 현재 현지 ISO 시각입니다.",
+  "nodes.SessionGateNode.name": "거래 시간대 확인",
+  "nodes.SessionGateNode.reason": "inside_configured_window 또는 outside_configured_window입니다.",
+  "nodes.SessionGateNode.session_date": "허용 구간의 시작일입니다. 차단되면 빈 문자열입니다.",
+  "nodes.SessionGateNode.timezone": "IANA 시간대입니다. 설치된 시간대 데이터로 서머타임을 반영합니다.",
+  "nodes.SessionGateNode.trigger": "실행 시점의 현지 시간을 확인합니다.",
+  "nodes.SessionGateNode.windows": "현지 HH:MM 구간입니다. 시작은 포함하고 종료는 제외하며 자정을 넘는 구간도 지원합니다."
 }

@@ -9,7 +9,7 @@ ProgramGarden은 AI 시대에 맞춰 파이썬을 모르는 투자자도 개인�
 
 ## 주요 특징
 
-- **노드 기반 DSL**: 68개 내장 노드를 조합하여 워크플로우를 정의하는 도메인 특화 언어
+- **노드 기반 DSL**: 73 core nodes를 조합하여 워크플로우를 정의하는 도메인 특화 언어
 - **타입 안전한 스키마**: Pydantic 모델 기반의 FieldSchema, 입출력 포트 정의로 IDE 친화적이고 안전한 개발
 - **레지스트리 시스템**: NodeTypeRegistry와 PluginRegistry로 노드/플러그인 메타데이터 관리
 - **다국어 지원(i18n)**: 한국어/영어 번역 파일을 통한 노드 설명, 필드명 자동 번역
@@ -27,23 +27,23 @@ poetry add programgarden-core
 
 요구 사항: Python 3.12+
 
-## 노드 카테고리 (11개, 68개 코어 노드)
+## Node categories (11 categories, 73 core nodes)
 
 | 카테고리 | 노드 수 | 대표 노드 |
 |----------|---------|----------|
 | infra | 8 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode, KoreaStockBrokerNode |
-| account | 12 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
-| market | 20 | MarketDataNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ExclusionListNode, CurrencyRateNode, KoreaStock* |
+| account | 13 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
+| market | 22 | MarketDataNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ExclusionListNode, CurrencyRateNode, KoreaStock* |
 | condition | 2 | ConditionNode, LogicNode |
 | order | 10 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
 | risk | 1 | PortfolioNode |
-| schedule | 2 | ScheduleNode, TradingHoursFilterNode |
-| data | 3 | SQLiteNode, HTTPRequestNode, FieldMappingNode |
+| schedule | 3 | ScheduleNode, TradingHoursFilterNode, SessionGateNode |
+| data | 4 | SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode |
 | display | 6 | TableDisplayNode, LineChartNode, CandlestickChartNode, SummaryDisplayNode |
 | analysis | 2 | BacktestEngineNode, BenchmarkCompareNode |
 | ai | 2 | LLMModelNode, AIAgentNode |
 
-> community 패키지에서 4개 노드 추가: TelegramNode(messaging), FearGreedIndexNode(market), FundamentalDataNode(market), FileReaderNode(data) → 전체 73개
+> Community adds five nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode and PerformanceReportNode, for 78 total.
 
 ## 사용 예시
 
@@ -70,7 +70,7 @@ print(schema.config_schema)
 
 ```
 programgarden_core/
-├── nodes/          # 69개 노드 정의 (base.py, infra.py, account.py, ...)
+├── nodes/          # 73 core node definitions
 ├── bases/          # Finance 베이스 클래스
 ├── models/         # Pydantic 모델 (FieldSchema, Edge, WorkflowDefinition 등)
 ├── registry/       # NodeTypeRegistry, PluginRegistry
@@ -123,3 +123,6 @@ CancelOrder metadata describes request acknowledgement (`accepted`,
 `confirmation_pending=true`), not final cancellation. Replacement orders require
 separate matching completion evidence. See
 [the cancellation contract](../../docs/cancellation-acknowledgements.md).
+
+Session windows and IfNode routing inside Split are described in
+[Session gates and guarded Split](../../docs/session-gates-and-guarded-split.md).
