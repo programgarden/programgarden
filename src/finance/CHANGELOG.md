@@ -1,3 +1,11 @@
+## [1.10.6] - 2026-09-21
+
+### Fixed
+- Preserve all 111 documented CDPCQ04700 response fields across five blocks and retain private original JSON for authorized diagnostics.
+- Distinguish omitted, blank, null and explicit zero values; reject malformed blocks without logging account response values.
+- Align the diagnostic example with all seven documented request fields and use one explicit read with an existing token, without automatic retry or token issuance.
+- Document observed sparse transfer/conversion rows: a positive foreign-named amount with blank currency does not establish USD funding, and an internal currency movement is not automatically an external deposit.
+
 ## [1.10.3] - 2026-09-16
 
 ## [1.10.5] - 2026-09-16
