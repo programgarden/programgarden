@@ -200,9 +200,11 @@ class G3104OutBlock(BaseModel):
         title="거래상태 (Trading-suspend flag)",
         description=(
             "Trading suspend flag. Code-set not enumerated in available "
-            "source; consume as returned by LS."
+            "source; consume as returned by LS. No halt/resumption timestamp "
+            "is supplied by this field. Blank/missing values do not establish "
+            "normal trading; retain field presence separately."
         ),
-        examples=["", "Y", "N"],
+        examples=[""],
     )
     sellonly: str = Field(
         default="",

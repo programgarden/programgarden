@@ -415,7 +415,7 @@ class CDPCQ04700OutBlock3(_ResponseBlock):
     IntrstUtlfee: int | Literal[""] | None = Field(default=None, title="이자이용료",
         description="Broker-reported IntrstUtlfee. Documented length 16; actual population and currency semantics are not guaranteed.")
     MnyDvdAmt: int | Literal[""] | None = Field(default=None, title="배당금액",
-        description="Broker-reported MnyDvdAmt. Documented length 16; actual population and currency semantics are not guaranteed.")
+        description="Broker-reported dividend amount, documented length 16. Population, currency and gross/net basis are not guaranteed. It is not independently evidence of an overseas USD dividend. Reconcile transaction identity, explicit currency, cash effect, withholding and cancellations; blank/zero is not proof of no dividend.")
     RcvblOcrAmt: int | Literal[""] | None = Field(default=None, title="미수발생금액",
         description="Broker-reported RcvblOcrAmt. Documented length 16; actual population and currency semantics are not guaranteed.")
     TrxBrnNo: str | None = Field(default=None, title="처리지점번호",

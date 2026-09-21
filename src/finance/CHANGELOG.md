@@ -1,3 +1,10 @@
+## [1.10.7] - 2026-09-21
+
+### Fixed
+- Correct g3190 expiry metadata: the documented expiry date does not establish delisting or its effective timestamp.
+- Clarify that g3190/g3104 status flags lack an authoritative code map/event time; missing values do not mean normal trading.
+- Explain the sparse CDPCQ04700 dividend field's currency, withholding and gross/net limitations for chatbot consumers. No broker request, order, parsing default or runtime dependency changes.
+
 ## [1.10.6] - 2026-09-21
 
 ### Fixed
