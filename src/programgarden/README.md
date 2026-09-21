@@ -89,6 +89,14 @@ the finance package's observed-response reference and StockAccountTracker;
 `02679` is not a generic success code. Missing, malformed, mismatched and failed
 reads retain `error` / `reason=fetch_failed` so workflows can block new entries.
 
+Overseas-stock historical queries preserve the exchange supplied by each symbol,
+including when the account has no holdings. Item-bound consumers of an explicitly
+empty selected upstream list are skipped before expression evaluation; this also
+covers SymbolFilter output and explicit edge ports. Empty condition gates retain
+their stronger literal-order protection, while non-item aggregate/report nodes
+continue to run. A skipped order keeps its declared output ports and a no-signal
+result row. These safeguards do not establish that upstream market data is valid.
+
 For one-shot workflows, an unhandled `order_result.success=False` returned directly
 by a main-flow node makes the final job status `failed` and emits `WORKFLOW_FAILED`.
 The original broker message remains in node diagnostics and the failure statistics.

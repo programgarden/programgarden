@@ -12809,8 +12809,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
 
             for symbol in symbols:
                 try:
-                    # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE/AMEX, 82=NASDAQ)
-                    exchcd = position_market_code.get(symbol) or "82"  # 기본값 NASDAQ
+                    # Preserve the requested symbol's exchange even without holdings.
+                    exchcd = (
+                        (symbol_exchange_map or {}).get(symbol)
+                        or position_market_code.get(symbol)
+                        or self.EXCHANGE_CODES.get(symbol_to_exchange.get(symbol), "82")
+                    )
                     
                     # symbols_raw에서 exchange 정보 가져오기 (우선순위: symbols_raw > exchcd 변환)
                     exchange = symbol_to_exchange.get(symbol) or exchcd_to_exchange.get(exchcd, "NASDAQ")
@@ -21963,10 +21967,16 @@ class WorkflowJob:
                 #    `{{ nodes.cond.symbols }}` 로 전체를 소비하는 알림/집계/표시 노드까지
                 #    침묵한다. "통과 0건이면 아무것도 안 하는 게 정답" 은 **주문 노드**
                 #    이야기이고, 상태 보고 노드는 그날도 말을 해야 한다(요구사항 4).
+                # Empty SymbolFilter/explicit-port lists also have no iteration item.
+                # Preserve non-item aggregate/report consumers and the stronger
+                # condition-gate guard for literal orders.
                 skip_reason = None
                 if (
                     not should_iterate
-                    and iterate_source == self.ITERATE_SOURCE_PASSED_SYMBOLS
+                    and (
+                        iterate_source == self.ITERATE_SOURCE_PASSED_SYMBOLS
+                        or self._references_iteration_item(config)
+                    )
                     and isinstance(input_data, list)
                     and not input_data
                     and (
@@ -21975,8 +21985,8 @@ class WorkflowJob:
                     )
                 ):
                     skip_reason = (
-                        f"upstream condition gate '{iterate_source_node_id}' passed 0 symbols "
-                        "(passed_symbols=[]) — skipped without executing, so no broker "
+                        f"selected upstream source '{iterate_source_node_id}' returned an empty array "
+                        "— skipped without executing, so no broker "
                         "request was made"
                     )
 
@@ -21990,14 +22000,14 @@ class WorkflowJob:
                     # `context.log` 는 파드 stdout 에 안 찍히므로 _safe_print 를 병기한다.
                     self.context.log(
                         "info",
-                        f"{node.node_type}: 상류 조건 노드 '{iterate_source_node_id}' 의 통과 "
-                        f"종목이 0건이라 실행을 건너뜁니다 (no_upstream_signal — 주문/조회 "
-                        f"요청 없음).",
+                        f"{node.node_type}: selected upstream source '{iterate_source_node_id}' "
+                        "has no items; skipping execution "
+                        "(no_upstream_signal; no order/query request).",
                         node_id,
                     )
                     _safe_print(
                         f"  ⏭️  no_upstream_signal: {node_id} ({node.node_type}) "
-                        f"← {iterate_source_node_id}.passed_symbols=0 — not executed"
+                        f"← {iterate_source_node_id} selected items=0 — not executed"
                     )
                     outputs = self._no_signal_skip_outputs(
                         node.node_type, skip_reason, iterate_source_node_id,
@@ -22528,7 +22538,7 @@ class WorkflowJob:
         for port_name, port_type in _declared_output_ports(node_type):
             payload[port_name] = _empty_port_value(port_type)
 
-        message = "No trading signal today (upstream condition passed 0 symbols)."
+        message = "No items available from the selected upstream source."
         if node_type.endswith("OrderNode"):
             # 주문 노드 소비자(원장/UI/챗봇)는 order_result 와 `result` 행을 본다.
             order_result = {
