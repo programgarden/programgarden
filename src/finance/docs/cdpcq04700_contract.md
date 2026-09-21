@@ -113,6 +113,13 @@ omitted here; the regression fixture uses synthetic values.
   matching `FcurrTrdAmt`. Its domestic balance did not change. The raw row alone
   therefore does not identify or reconcile the originating counter-leg.
 
+The owner subsequently identified the observed `1512` row as conversion or an
+internal account movement, not a new external dollar deposit. This is an account-
+specific classification, not a universal meaning for that summary code. The raw
+row still does not establish its counter-leg: conversion into a measured USD
+scope can add USD capital once, whereas moving existing USD within that scope
+cannot. Never infer either conclusion from the incoming display label alone.
+
 These observations establish these rows, not a universal summary-code map or
 complete lifetime funding history. Terminal continuation covers the requested
 mode and date range; a conversion-only scan excludes other modes. Connecting
