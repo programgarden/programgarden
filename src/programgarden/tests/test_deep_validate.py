@@ -84,12 +84,9 @@ def order_workflow() -> dict:
             {
                 "id": "new_order",
                 "type": "OverseasStockNewOrderNode",
-                "config": {
-                    "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"},
-                    "side": "buy",
-                    "quantity": 1,
-                    "order_type": "market",
-                },
+                "order": {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 1},
+                "side": "buy",
+                "order_type": "market",
             },
         ],
         "edges": [
@@ -148,7 +145,7 @@ async def test_new_order_executor_simulates_in_deep_mode():
     out = await ex.execute(
         node_id="new_order",
         node_type="OverseasStockNewOrderNode",
-        config={"symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}, "side": "buy", "quantity": 1},
+        config={"order": {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 1}, "side": "buy"},
         context=ctx,
     )
     assert out.get("status") == "simulated"
@@ -845,6 +842,11 @@ async def test_c1_guard_nested_item_binding_not_false_rejected():
     have zero DEEP_VALIDATION_BINDING_UNRESOLVED errors and stay valid."""
     pg = ProgramGarden()
     wf = _load_example("30-liquidate-futures-positions")
+    # Account outputs are deliberately excluded as implicit iteration sources.
+    # The old fixture passed only because dry-run never checked its order.
+    for edge in wf["edges"]:
+        if edge["from"] == "account" and edge["to"] == "close_order":
+            edge["from_port"] = "positions"
     result = await asyncio.wait_for(pg.executor.deep_validate(wf, timeout=12.0), timeout=20.0)
     binding_errs = [e for e in result.errors if e.code == "DEEP_VALIDATION_BINDING_UNRESOLVED"]
     assert not binding_errs, (

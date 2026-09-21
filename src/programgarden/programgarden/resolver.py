@@ -328,6 +328,9 @@ class WorkflowResolver:
         # 10.8 Display 노드 columns 키가 상류 출력 스키마에 실재하는지 (없는 키는 표에 '-' 만 찍힌다)
         self._validate_display_columns(workflow, registry, result)
 
+        # Order routing choices are literals, never prices or item bindings.
+        self._validate_order_enums(workflow, registry, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -343,6 +346,39 @@ class WorkflowResolver:
         finalize_result(result, limits=limits, expand_cascade=expand_cascade)
 
         return result
+
+    def _validate_order_enums(self, workflow, registry, result) -> None:
+        """Enforce fixed price/order types without changing dynamic close sides."""
+        from programgarden_core.models.field_binding import ExpressionMode
+
+        for node in workflow.nodes:
+            node_type = node.get("type", "")
+            if not node_type.endswith(("NewOrderNode", "ModifyOrderNode", "CancelOrderNode")):
+                continue
+            node_class = registry.get(node_type)
+            if node_class is None:
+                continue
+            for name, field in node_class.get_field_schema().items():
+                if (
+                    name not in {"price_type", "order_type"}
+                    or name not in node
+                    or field.expression_mode != ExpressionMode.FIXED_ONLY
+                    or not field.enum_values
+                    or node[name] in field.enum_values
+                ):
+                    continue
+                result.add(build_error(
+                    ErrorCode.INVALID_FIELD_ENUM,
+                    f"Order field '{name}' requires a fixed value from its enum.",
+                    location=ErrorLocation(
+                        node_id=node.get("id"), node_type=node_type, field_path=name,
+                    ),
+                    available_values=field.enum_values,
+                    suggestion=(
+                        "Use a listed literal value. Put an order's numeric price in "
+                        "order.price, not price_type or order_type."
+                    ),
+                ))
 
     def _attach_inline_recommendations(self, result: ValidationResult, workflow) -> None:
         """Augment specific ErrorInfo entries with related Recommendation hints.
