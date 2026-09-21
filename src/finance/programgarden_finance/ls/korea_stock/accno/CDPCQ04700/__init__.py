@@ -1,4 +1,5 @@
 from typing import Callable, Dict, Any, List, Optional
+from copy import deepcopy
 
 import aiohttp
 
@@ -12,6 +13,8 @@ from .blocks import (
     CDPCQ04700OutBlock1,
     CDPCQ04700OutBlock2,
     CDPCQ04700OutBlock3,
+    CDPCQ04700OutBlock4,
+    CDPCQ04700OutBlock5,
     CDPCQ04700Request,
     CDPCQ04700Response,
     CDPCQ04700ResponseHeader,
@@ -56,49 +59,63 @@ class TrCDPCQ04700(TRAccnoAbstract):
         exc: Optional[Exception],
     ) -> CDPCQ04700Response:
         resp_json = resp_json or {}
-        block1_data = resp_json.get("CDPCQ04700OutBlock1", None)
-        block2_data = resp_json.get("CDPCQ04700OutBlock2", None)
-        block3_data = resp_json.get("CDPCQ04700OutBlock3", [])
 
         status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
         is_error_status = status is not None and status >= 400
 
         header = None
+        parse_error = None
         if exc is None and resp_headers and not is_error_status:
-            header = CDPCQ04700ResponseHeader.model_validate(resp_headers)
+            try:
+                header = CDPCQ04700ResponseHeader.model_validate(resp_headers)
+            except (ValueError, TypeError):
+                parse_error = "Malformed CDPCQ04700 response header"
 
-        parsed_block1: Optional[CDPCQ04700OutBlock1] = None
-        parsed_block2: Optional[CDPCQ04700OutBlock2] = None
-        parsed_block3: List[CDPCQ04700OutBlock3] = []
-
-        if exc is None and not is_error_status:
-            if block1_data:
-                parsed_block1 = CDPCQ04700OutBlock1.model_validate(block1_data)
-            if block2_data:
-                parsed_block2 = CDPCQ04700OutBlock2.model_validate(block2_data)
-            if block3_data and isinstance(block3_data, list):
-                parsed_block3 = [CDPCQ04700OutBlock3.model_validate(item) for item in block3_data]
+        parsed_blocks: Dict[str, Any] = {}
+        if exc is None and not is_error_status and parse_error is None:
+            for index, model in enumerate((CDPCQ04700OutBlock1, CDPCQ04700OutBlock2,
+                                           CDPCQ04700OutBlock3, CDPCQ04700OutBlock4,
+                                           CDPCQ04700OutBlock5), start=1):
+                key = f"CDPCQ04700OutBlock{index}"
+                if key not in resp_json:
+                    continue  # A model default is not an explicitly returned block.
+                raw = resp_json[key]
+                try:
+                    if index == 3:
+                        if not isinstance(raw, list):
+                            raise ValueError("Expected a detail array")
+                        parsed = [model.model_validate(item) for item in raw]
+                    else:
+                        if raw is not None and not isinstance(raw, dict):
+                            raise ValueError("Expected a summary object")
+                        parsed = model.model_validate(raw) if raw is not None else None
+                    parsed_blocks[f"block{index}"] = parsed
+                except (ValueError, TypeError):
+                    # Never include raw account fields from a ValidationError.
+                    parse_error = f"Malformed {key} response"
+                    parsed_blocks = {}
+                    break
 
         error_msg: Optional[str] = None
         if exc is not None:
-            error_msg = str(exc)
-            logger.error(f"CDPCQ04700 request failed: {exc}")
+            error_msg = f"Request failed: {type(exc).__name__}"
+            logger.error("CDPCQ04700 request failed: %s", type(exc).__name__)
         elif is_error_status:
             error_msg = f"HTTP {status}"
-            if resp_json.get("rsp_msg"):
-                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
-            logger.error(f"CDPCQ04700 request failed with status: {error_msg}")
+            # The original message remains available on the private response.
+            logger.error("CDPCQ04700 request failed with HTTP %s", status)
+        elif parse_error:
+            error_msg = parse_error
 
         result = CDPCQ04700Response(
             header=header,
-            block1=parsed_block1,
-            block2=parsed_block2,
-            block3=parsed_block3,
+            **parsed_blocks,
             rsp_cd=resp_json.get("rsp_cd", ""),
             rsp_msg=resp_json.get("rsp_msg", ""),
             status_code=status,
             error_msg=error_msg,
         )
+        result._raw_payload = deepcopy(resp_json)
         if resp is not None:
             result.raw_data = resp
         return result
@@ -137,6 +154,8 @@ __all__ = [
     CDPCQ04700OutBlock1,
     CDPCQ04700OutBlock2,
     CDPCQ04700OutBlock3,
+    CDPCQ04700OutBlock4,
+    CDPCQ04700OutBlock5,
     CDPCQ04700Request,
     CDPCQ04700Response,
     CDPCQ04700ResponseHeader,

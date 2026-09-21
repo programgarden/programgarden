@@ -48,6 +48,9 @@ Do not infer support from the example's directory name alone.
 The separate `example/korea_stock/run_CDPCQ04700.py` demonstrates transaction
 history with commission and tax fields. Its existence is not evidence that
 all those fields have been live-tested for overseas stocks.
+The [CDPCQ04700 contract review](cdpcq04700_contract.md) also identifies SDK
+field/block loss and explains missing/blank/zero distinctions. That review is
+schema evidence, not a before/after deposit observation.
 
 A separate confirmed structural defect is fixed: an omitted OutBlock3 must not
 count as an explicitly empty detail block. COSAQ00102 keeps its public `block3`

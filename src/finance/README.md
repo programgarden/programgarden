@@ -250,7 +250,12 @@ futures.real()    # 실시간 데이터
 
 #### 국내 주식 (88 TR)
 - **시장 정보**: `t9945`(마스터), `t8450`(호가), `t1101`(호가), `t1102`(현재가), `t1104`(현재가시세메모), `t1105`(피봇/디마크), `t1301`(체결), `t1302`(분별주가), `t1305`(기간별주가), `t1308`(시간대별체결챠트), `t1310`(당일전일분틱), `t1410`(초저유동성), `t1427`(상/하한가직전), `t1449`(가격대별매매비중), `t1471`(시간별체결), `t1475`(체결), `t1486`(시간별예상체결가), `t1488`(예상체결가등락율상위), `t8407`(복수종목시세), `t8454`(멀티현재가), `t1404`/`t1405`(프로그램매매), `t1422`/`t1442`(관리/이상종목)
-- **계좌**: `CSPAQ22200`(예수금), `CSPAQ12200`(잔고), `CSPAQ12300`(잔고상세), `CSPAQ13700`(order/execution history), `CDPCQ04700`(투자가능금액), `FOCCQ33600`(증거금), `CSPAQ00600`(credit/margin limits), `CSPBQ00200`(평가손익), `t0424`(잔고2), `t0425`(종목별잔고)
+- **계좌**: `CSPAQ22200`(예수금), `CSPAQ12200`(잔고), `CSPAQ12300`(잔고상세), `CSPAQ13700`(order/execution history), `CDPCQ04700`(account transaction history), `FOCCQ33600`(증거금), `CSPAQ00600`(credit/margin limits), `CSPBQ00200`(평가손익), `t0424`(잔고2), `t0425`(종목별잔고)
+
+`CDPCQ04700` field definitions do not prove live deposit coverage. Read the
+[field-presence and currency contract](docs/cdpcq04700_contract.md) before using
+its results to qualify funding or adjust returns. Missing, blank and zero
+values must remain distinct; aggregate inflow is not automatically USD.
 - **주문**: `CSPAT00601`(현물주문), `CSPAT00701`(정정), `CSPAT00801`(취소)
 - **랭킹**: `t1441`(등락률), `t1444`(시가총액), `t1452`(거래량), `t1463`(거래대금), `t1466`(전일동시간비), `t1481`(급등락), `t1482`(신고/신저)
 - **차트**: `t8451`(일주월년봉), `t8452`(분봉), `t8453`(틱봉), `t1665`(종합차트)
