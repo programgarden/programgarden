@@ -4,6 +4,15 @@
 - Finance 1.10.7 corrects expiry-versus-delisting and status/dividend field guidance. Finance-only metadata patch; engine/core/community and trading behavior are unchanged.
 - Finance 1.10.6 preserves the complete CDPCQ04700 schema and private raw evidence, with sparse-field and internal-conversion guidance. This is a finance-only release; no engine version, dependency floor or trading behavior changes.
 
+## [1.41.3] - 2026-09-22
+
+### Fixed
+- Validate fixed order/price types and resolved new-order payloads before deep simulation reports success. Preserve confirmed no-signal skips and dynamic futures close sides.
+- Report missing sizing symbols/prices, empty required indicator fields, all-error indicator results and per-item execution failures. Later successful iterations no longer erase earlier failures.
+- Preserve position quantity when deep validation exercises an inactive exit signal. Long lookbacks require adequate explicit fixtures instead of treating insufficient data as a valid signal.
+- Defer nested item bindings until iteration and omit whole-array warnings when quote/chart executors already select the current symbol. No customer strategy, allocation, graph or runtime order routing is changed.
+- Correct canonical orders-array, price-type, position-quantity and chart-row guidance.
+
 ## [1.41.2] - 2026-09-21
 
 ### Fixed

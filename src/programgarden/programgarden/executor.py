@@ -10946,7 +10946,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         # the risk → order → notify branch is exercised.
                         if getattr(context, "is_deep_validate", False) and positions and not _passed:
                             _passed = [
-                                {"symbol": p.get("symbol"), "exchange": p.get("exchange", "UNKNOWN")}
+                                dict(p)
                                 for p in positions if isinstance(p, dict) and p.get("symbol")
                             ]
                             context.log(
@@ -11018,6 +11018,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 )
 
             # === 플러그인 required_fields 검증 ===
+            required_fields = []
             if plugin_schema and hasattr(plugin_schema, 'required_fields'):
                 required_fields = plugin_schema.required_fields or []
                 extract = items_config.get("extract", {})
@@ -11056,6 +11057,20 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     "symbol_results": [],
                     "values": [],
                 }
+
+            if context.is_deep_validate:
+                # Wrapper rows can have the right keys but no OHLCV values.
+                # A fixture's missing fields are wiring failures, not no-signal.
+                missing_values = [
+                    key for key in required_fields
+                    if all(row.get(key) in (None, "") for row in data)
+                ]
+                if missing_values:
+                    raise ValueError(
+                        f"ConditionNode '{node_id}' extracted no values for "
+                        f"{missing_values}. Bind items.from to the bar array "
+                        "(for example item.time_series), not per-symbol wrappers."
+                    )
 
             # symbols 자동 추출 (data에서)
             symbols = []
@@ -11210,9 +11225,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 values = result.get("values", [])
                 
             except PluginTimeoutError as e:
+                if context.is_deep_validate:
+                    raise
                 context.log("error", f"Plugin timeout: {e}", node_id)
                 failed_symbols = normalized_symbols
             except Exception as e:
+                if context.is_deep_validate:
+                    raise
                 context.log("error", f"Plugin error: {e}", node_id)
                 import traceback
                 context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
@@ -11242,6 +11261,18 @@ class ConditionNodeExecutor(NodeExecutorBase):
         # "no signal this pass"). Deep validation's job is flow/field/type
         # integrity, not reproducing a market signal, so guarantee at least the
         # input symbols flow through. Runtime / dry_run are untouched.
+        if (
+            context.is_deep_validate
+            and symbol_results
+            and all(row.get("error") for row in symbol_results)
+        ):
+            raise ValueError(
+                f"ConditionNode '{node_id}' could not evaluate any symbol: "
+                f"{sorted({str(row['error']) for row in symbol_results})}. "
+                "Check extracted bar fields and indicator lookback. If the default "
+                "fixture is too short, provide a longer deep-validation fixture."
+            )
+
         if getattr(context, "is_deep_validate", False) and normalized_symbols and not passed_symbols:
             passed_symbols = list(normalized_symbols)
             failed_symbols = []
@@ -14509,6 +14540,14 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         )
         
         # 방법별 수량 계산
+        if context.is_deep_validate and any(
+            not self._get_price(row.get("symbol", ""), row, price_data, context, node_id)
+            for row in symbols
+        ):
+            raise ValueError(
+                "Position sizing has candidates without usable prices. Bind market_data "
+                "to matching quote rows or retain price on each candidate."
+            )
         if method == "fixed_percent":
             result = self._calc_fixed_percent(
                 symbols, available_balance, max_percent, price_data, context, node_id
@@ -15555,6 +15594,25 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         # dry_run: LS API 미호출, 모의 응답 반환
         if context.is_dry_run:
+            if context.is_deep_validate:
+                # Exercise the actual payload contract before simulating success.
+                # Do not enter connection, balance, quote or broker request paths.
+                config = evaluate_all_bindings(config, context, node_id)
+                if not self._normalize_order(config.get("order"), config, context, node_id):
+                    upstream = _input_namespace(context, node_id)
+                    if (
+                        config.get("order") is None
+                        and isinstance(upstream, dict)
+                        and upstream.get("reason") == EmptyOrderReason.NO_SIGNAL.value
+                        and self._extract_upstream_error(upstream) is None
+                    ):
+                        return self._empty_result(EmptyOrderReason.NO_SIGNAL)
+                    raise ValueError(
+                        f"{node_type} requires order to resolve to an object with "
+                        "a symbol and a positive whole-share/contract quantity. "
+                        "Use the current sizing order item or a position retaining "
+                        "quantity; a symbol string alone is not an order."
+                    )
             import uuid
             order_id = f"DRYRUN-{uuid.uuid4()}"
             context.log(
@@ -22078,6 +22136,20 @@ class WorkflowJob:
                         },
                     )
 
+                if (
+                    self.context.is_deep_validate
+                    and node.node_type == "PositionSizingNode"
+                    and outputs.get("reason") in {"no_symbol", "fetch_failed"}
+                ):
+                    from programgarden_core import ErrorCode, ErrorLocation, build_error
+                    self._node_error_infos[node_id] = build_error(
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                        f"Position sizing inputs are invalid: {outputs.get('detail', '')}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion="Bind symbols, balance and price data required by the sizing method.",
+                        details={"stage": "sizing_inputs", "reason": outputs["reason"]},
+                    )
+
                 # An order node that failed did NOT raise — it returned
                 # order_result.success=False. Reporting that as COMPLETED leaves
                 # errors_count=0 / last_error=None, i.e. every observable surface
@@ -22687,6 +22759,16 @@ class WorkflowJob:
                     all_results.append(outputs)
                 except Exception as e:
                     self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
+                    if getattr(self.context, "is_deep_validate", False):
+                        from programgarden_core import ErrorCode, ErrorLocation, build_error
+                        # A later successful item must not erase an earlier failure.
+                        self._node_error_infos.setdefault(node_id, build_error(
+                            ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                            f"Node '{node_id}' failed at iteration {idx + 1}/{total}: {e}",
+                            location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                            suggestion="Check this item's input fields and bindings before executing the workflow.",
+                            details={"stage": "auto_iteration", "iteration_index": idx},
+                        ))
                     # continue_on_error: 기본적으로 계속 진행
                     all_results.append({"error": str(e), "item": current_item})
                 finally:
@@ -22734,6 +22816,25 @@ class WorkflowJob:
           `_consumes_whole_array` 가 애초에 반복을 막는다)
         """
         if total <= 1 or not isinstance(current_item, dict):
+            return item_config
+        # These executors already select one symbol from the iteration context.
+        # Keep the generic warning for other consumers and conflicting overrides.
+        if (
+            not self.context.is_deep_validate
+            and node_type in {
+                "OverseasStockMarketDataNode", "OverseasFuturesMarketDataNode",
+                "KoreaStockMarketDataNode", "OverseasStockHistoricalDataNode",
+                "OverseasFuturesHistoricalDataNode", "KoreaStockHistoricalDataNode",
+            }
+            and current_item.get("symbol")
+            and all(
+                not override or self._same_symbol_entry(override, current_item)
+                for override in (
+                    item_config.get("symbol"),
+                    self.context.get_output(f"_input_{node_id}", "symbol"),
+                )
+            )
+        ):
             return item_config
         narrowed = None
         for port in self._WHOLE_ARRAY_REEVAL_PORTS:
@@ -23545,7 +23646,7 @@ class WorkflowJob:
         if self.context._iteration_item is None:
             for k in list(config_copy.keys()):
                 v = config_copy[k]
-                if isinstance(v, str) and "{{ item" in v:
+                if self._references_iteration_item(v):
                     deferred[k] = config_copy.pop(k)
 
         deep_mode = bool(getattr(self.context, "is_deep_validate", False))
