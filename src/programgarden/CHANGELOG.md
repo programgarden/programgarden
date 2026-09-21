@@ -4,6 +4,13 @@
 - Finance 1.10.7 corrects expiry-versus-delisting and status/dividend field guidance. Finance-only metadata patch; engine/core/community and trading behavior are unchanged.
 - Finance 1.10.6 preserves the complete CDPCQ04700 schema and private raw evidence, with sparse-field and internal-conversion guidance. This is a finance-only release; no engine version, dependency floor or trading behavior changes.
 
+## [1.41.2] - 2026-09-21
+
+### Fixed
+- Preserve the selected exchange in overseas-stock historical requests even when there are no holdings; NYSE symbols no longer fall back to NASDAQ.
+- Skip item-bound execution when the selected upstream list is explicitly empty, including SymbolFilter outputs. Preserve reporting consumers, condition gates, declared output ports and no-signal order-result rows.
+- No workflow definition or strategy-level duplicate-entry changes. Existing unresolved-template order protection remains enabled.
+
 ## [1.41.1] - 2026-09-21
 
 ### Fixed
