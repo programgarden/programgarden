@@ -88,6 +88,16 @@ def test_unknown_fields_are_retained_without_claiming_financial_meaning():
     assert response.block3[0].model_dump(exclude_unset=True) == {"NewBrokerField": "123"}
 
 
+@pytest.mark.parametrize("payload", [None, [], ["private fixture"], "private fixture", 0, False,
+                                      {"rsp_cd": 123}, {"rsp_msg": {"private": "fixture"}}])
+def test_malformed_envelope_cannot_raise_or_masquerade_as_empty_history(payload, caplog):
+    response = parse(payload)
+    assert response.error_msg == "Malformed CDPCQ04700 response envelope"
+    assert response.raw_payload == payload
+    assert "block3" not in response.model_fields_set
+    assert "private fixture" not in caplog.text
+
+
 def test_observed_transfer_shape_keeps_blank_currency_and_nonzero_foreign_named_amount():
     # Synthetic amounts; the shape was observed on an authorized transfer row.
     response = parse({"rsp_cd": "00136", "CDPCQ04700OutBlock3": [{

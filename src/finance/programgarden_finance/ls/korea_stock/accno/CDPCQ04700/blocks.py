@@ -582,14 +582,15 @@ class CDPCQ04700Response(BaseModel):
     rsp_msg: str = Field(default="", title="Response message")
     error_msg: Optional[str] = Field(default=None, title="Error message")
 
-    _raw_payload: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _raw_payload: Any = PrivateAttr(default_factory=dict)
     _raw_data: Optional[Response] = PrivateAttr(default=None)
 
     @property
-    def raw_payload(self) -> dict[str, Any]:
+    def raw_payload(self) -> Any:
         """Original JSON copy for presence/blank/zero checks; may contain private account data.
 
-        Excluded from model_dump/repr. Never print or publish without redaction.
+        May retain a malformed non-object envelope for diagnostics. Excluded
+        from model_dump/repr. Never print or publish without redaction.
         Actual currency coverage and deposit semantics still require observation.
         """
         return deepcopy(self._raw_payload)

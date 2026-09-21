@@ -58,13 +58,18 @@ class TrCDPCQ04700(TRAccnoAbstract):
         resp_headers: Optional[Dict[str, Any]],
         exc: Optional[Exception],
     ) -> CDPCQ04700Response:
-        resp_json = resp_json or {}
+        raw_payload = deepcopy(resp_json)
+        malformed_envelope = exc is None and not isinstance(resp_json, dict)
+        resp_json = resp_json if isinstance(resp_json, dict) else {}
+        for field in ("rsp_cd", "rsp_msg"):
+            if field in resp_json and not isinstance(resp_json[field], str):
+                malformed_envelope = True
 
         status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
         is_error_status = status is not None and status >= 400
 
         header = None
-        parse_error = None
+        parse_error = "Malformed CDPCQ04700 response envelope" if malformed_envelope else None
         if exc is None and resp_headers and not is_error_status:
             try:
                 header = CDPCQ04700ResponseHeader.model_validate(resp_headers)
@@ -110,12 +115,12 @@ class TrCDPCQ04700(TRAccnoAbstract):
         result = CDPCQ04700Response(
             header=header,
             **parsed_blocks,
-            rsp_cd=resp_json.get("rsp_cd", ""),
-            rsp_msg=resp_json.get("rsp_msg", ""),
+            rsp_cd=resp_json.get("rsp_cd", "") if isinstance(resp_json.get("rsp_cd", ""), str) else "",
+            rsp_msg=resp_json.get("rsp_msg", "") if isinstance(resp_json.get("rsp_msg", ""), str) else "",
             status_code=status,
             error_msg=error_msg,
         )
-        result._raw_payload = deepcopy(resp_json)
+        result._raw_payload = raw_payload
         if resp is not None:
             result.raw_data = resp
         return result
