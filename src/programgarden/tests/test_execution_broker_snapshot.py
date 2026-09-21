@@ -190,3 +190,44 @@ async def test_failed_broker_startup_remains_held(tmp_path, monkeypatch):
     assert context._startup_reconciled is False
     assert context._workflow_position_tracker.get_position_adjustments() == []
     context.notify_risk_event.assert_not_awaited()
+
+
+@pytest.mark.parametrize("failure", [None, "unknown_message", "rows_present", "missing_details",
+                                     "continuation", "cursor", "wrong_date", "wrong_currency",
+                                     "missing_echo_field", "rejection"])
+async def test_observed_empty_stock_startup_preserves_evidence_guards(tmp_path, monkeypatch, failure):
+    from programgarden.context import ExecutionContext
+    from programgarden.executor import BrokerNodeExecutor
+
+    def mutate(response, body):
+        response.rsp_cd = "02679"
+        response.rsp_msg = "조회내역이 없습니다."
+        if failure == "unknown_message": response.rsp_msg = "unverified response"
+        elif failure == "missing_details": del body["COSOQ00201OutBlock4"]
+        elif failure == "continuation": response.header.tr_cont = "Y"
+        elif failure == "cursor": response.header.tr_cont_key = "next"
+        elif failure == "wrong_date": response.block1.BaseDt = "20000101"
+        elif failure == "wrong_currency": response.block1.CrcyCode = "JPY"
+        elif failure == "missing_echo_field": response.block1.model_fields_set.remove("AstkBalTpCode")
+        elif failure == "rejection": response.rsp_cd = "99999"
+
+    balances = [{"ShtnIsuNo": "AAA", "AstkBalQty": 1}] if failure == "rows_present" else []
+    ls, calls = stock_client(balances=balances, mutate=mutate)
+    monkeypatch.setattr("programgarden.executor.ensure_ls_login", lambda *args, **kwargs: (ls, True, None))
+    context = ExecutionContext("job", workflow_id="strategy", storage_dir=str(tmp_path),
+                               execution_key="project:execution")
+    context.init_workflow_position_tracker("broker", "overseas_stock", "ls", False)
+    call = BrokerNodeExecutor()._reconcile_startup_account(
+        context=context, node_id="broker", product="overseas_stock", provider="ls",
+        appkey="test-key", appsecret="test-secret", paper_trading=False,
+    )
+    if failure:
+        with pytest.raises(StartupEvidenceUnavailable):
+            await call
+        assert not context._startup_reconciled
+        assert len(calls) == 1
+    else:
+        await call
+        assert context._startup_reconciled
+        assert context._startup_broker_snapshot.positions.quantities == {}
+        assert [name for name, _ in calls] == ["COSOQ00201", "COSAQ00102"]

@@ -189,3 +189,14 @@ per batch and six seconds at shutdown, before releasing the storage lease.
 Wiring errors do not prevent engine execution. The new route is
 `/ingest_position_adjustments`; deploy its migration/readers before publishing
 these runtime producers. No active runner has been upgraded.
+
+
+## Empty overseas-stock startup evidence (2026-09-21)
+
+A read-only live check observed COSOQ00201 code `02679` with the exact no-data
+message and explicit empty holdings. The broker-node startup adapter now accepts
+that response with the same strict terminal-page, original-block and query-echo
+requirements as the server preparation gate. Pending orders must still be read
+successfully before reconciliation authorizes execution. Unknown messages,
+contradictory rows and incomplete evidence remain blocked. This does not change
+user workflow definitions or provide a new strategy-level duplicate-entry guard.
