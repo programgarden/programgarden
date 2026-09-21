@@ -111,10 +111,10 @@ class WatchlistNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.watchlist.symbols }}"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.watchlist.symbols }}'},
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -122,7 +122,7 @@ class WatchlistNode(BaseNode):
                     {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -138,7 +138,7 @@ class WatchlistNode(BaseNode):
         },
         {
             "title": "Watchlist with exclusion filter before ordering",
-            "description": "WatchlistNode provides candidates; ExclusionListNode removes blacklisted symbols; remaining symbols go to an order node.",
+            "description": 'WatchlistNode provides candidates; ExclusionListNode removes blacklisted symbols; remaining symbols go to an order node. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "watchlist_exclusion_order",
                 "name": "Watchlist Exclusion Order",
@@ -147,9 +147,9 @@ class WatchlistNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "AMZN", "exchange": "NASDAQ"}]},
                     {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 100.0},
-                ],
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.exclusion.filtered }}'},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'order_type': 'limit', 'side': 'buy', 'order': {'symbol': '{{ nodes.split.item.symbol }}', 'exchange': '{{ nodes.split.item.exchange }}', 'quantity': 1, 'price': 100.0}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -157,7 +157,7 @@ class WatchlistNode(BaseNode):
                     {"from": "exclusion", "to": "split"},
                     {"from": "split", "to": "order"},
                     {"from": "broker", "to": "order"},
-                ],
+                {'from': 'order', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -879,7 +879,7 @@ class ExclusionListNode(BaseNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Static blacklist blocks order placement",
-            "description": "TSLA is statically blacklisted; ExclusionListNode filters it out from the watchlist; the remaining symbols proceed to the order node. TSLA order is automatically blocked.",
+            "description": 'TSLA is statically blacklisted; ExclusionListNode filters it out from the watchlist; the remaining symbols proceed to the order node. TSLA order is automatically blocked. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "exclusion_order_block",
                 "name": "Exclusion List Order Block",
@@ -888,9 +888,9 @@ class ExclusionListNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
                     {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility blacklist"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 150.0},
-                ],
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.exclusion.filtered }}'},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'order_type': 'limit', 'side': 'buy', 'order': {'symbol': '{{ nodes.split.item.symbol }}', 'exchange': '{{ nodes.split.item.exchange }}', 'quantity': 1, 'price': 150.0}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -898,7 +898,7 @@ class ExclusionListNode(BaseNode):
                     {"from": "exclusion", "to": "split"},
                     {"from": "split", "to": "order"},
                     {"from": "broker", "to": "order"},
-                ],
+                {'from': 'order', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

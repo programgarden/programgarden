@@ -107,7 +107,7 @@ class KoreaStockOpenOrdersNode(BaseNode):
         },
         {
             "title": "Order dedup guard for Korea stock",
-            "description": "Only place a new domestic stock order when there are no existing open orders.",
+            "description": 'Only place a new domestic stock order when there are no existing open orders. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea-stock-order-dedup",
                 "name": "Korea Stock Order Dedup Guard",
@@ -116,7 +116,7 @@ class KoreaStockOpenOrdersNode(BaseNode):
                     {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
                     {"id": "open_orders", "type": "KoreaStockOpenOrdersNode"},
                     {"id": "if_no_orders", "type": "IfNode", "left": "{{ nodes.open_orders.count }}", "operator": "==", "right": 0},
-                    {"id": "order", "type": "KoreaStockNewOrderNode", "symbol": "005930", "side": "buy", "order_type": "limit", "quantity": 1, "price": 75000},
+                    {'id': 'order', 'type': 'KoreaStockNewOrderNode', 'side': 'buy', 'order_type': 'limit', 'order': {'symbol': '005930', 'quantity': 1, 'price': 75000}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

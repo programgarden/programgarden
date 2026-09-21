@@ -424,16 +424,19 @@ class COSAQ00102OutBlock3(BaseModel):
         default="",
         title="주문처리유형명 (Order processing type name)",
         description="Display name of the order processing type as classified by LS.",
-        examples=["접수", "체결"],
+        examples=["접수완료", "취소완료"],
     )
     OrdTrxPtnCode: int = Field(
         default=0,
         title="주문처리유형코드 (Order processing type code)",
         description=(
             "Numeric code for the order processing type. Enum mapping not "
-            "declared in available source — consume as returned by LS."
+            "declared in available source — consume as returned by LS. "
+            "A 2026-09-16 read-only capture of 2026-08-19 orders returned 0 "
+            "for both normal and cancelled rows, with different OrdTrxPtnNm "
+            "values. This code alone does not establish order state."
         ),
-        examples=[0, 1, 2],
+        examples=[0],
     )
     MrcAbleQty: float = Field(
         default=0.0,
@@ -506,15 +509,18 @@ class COSAQ00102OutBlock3(BaseModel):
         title="정정취소구분코드 (Modify/cancel type code)",
         description=(
             "Modify/cancel classification code. Enum mapping not declared in "
-            "available source — consume as returned by LS."
+            "available source — consume as returned by LS. "
+            "A 2026-09-16 read-only capture of 2026-08-19 orders returned an "
+            "empty string for both normal and cancelled rows. Preserve the "
+            "raw code/name pair; an empty code is not proof of no cancellation."
         ),
-        examples=["0", "1", "2"],
+        examples=[""],
     )
     MrcTpNm: str = Field(
         default="",
         title="정정취소구분명 (Modify/cancel type name)",
         description="Display name of the modify/cancel classification.",
-        examples=["", "정정", "취소"],
+        examples=["정상", "취소"],
     )
     AllExecQty: float = Field(
         default=0.0,
@@ -564,7 +570,13 @@ class COSAQ00102OutBlock3(BaseModel):
     CnfQty: float = Field(
         default=0.0,
         title="확인수량 (Confirmed quantity)",
-        description="Confirmed quantity. Exact semantics not declared in available source.",
+        description=(
+            "Confirmed quantity. Exact semantics not declared in available source. "
+            "Four observed one-share unfilled-cancellation pairs had CnfQty=1 "
+            "on the cancel row and CnfQty=0 on its original row (history date "
+            "2026-08-19, captured 2026-09-16). This observation does not define "
+            "partial-fill, amendment or cumulative quantity semantics."
+        ),
         examples=[0, 100],
     )
     CrcyCode: str = Field(

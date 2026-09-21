@@ -44,6 +44,18 @@ from programgarden_core.models.connection_rule import (
 )
 
 
+# Cancellation acknowledgements are not terminal order outcomes.
+CANCEL_RESULT_FIELDS: List[Dict[str, str]] = [
+    {"name": "success", "type": "boolean", "description": "Whether the cancellation request was acknowledged"},
+    {"name": "status", "type": "string", "description": "accepted means request acknowledgement only"},
+    {"name": "confirmation_pending", "type": "boolean", "description": "True until separate broker completion evidence is verified"},
+    {"name": "order_id", "type": "string", "description": "Original target order number"},
+    {"name": "cancel_order_no", "type": "string", "description": "New cancellation request number"},
+    {"name": "product", "type": "string", "description": "Broker product"},
+    {"name": "error", "type": "string", "description": "Request failure reason when available"},
+]
+
+
 # =============================================================================
 # 베이스 클래스
 # =============================================================================
@@ -415,7 +427,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Signal-driven buy order via PositionSizingNode",
-            "description": "RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy.",
+            "description": 'RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_new_order_rsi_buy",
                 "name": "RSI Buy Order",
@@ -426,7 +438,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "fields": ["price"]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold_threshold": 30}},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": "{{ nodes.market.value.current_price }}", "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.value.price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
                     {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "limit", "order": "{{ nodes.sizing.order }}"},
                 ],
                 "edges": [
@@ -456,7 +468,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Basket sell order — auto-iterate over positions array",
-            "description": "Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold.",
+            "description": 'Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_basket_sell",
                 "name": "Basket Sell",
@@ -917,7 +929,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         "when_to_use": [
             "Cancel an existing unfilled or partially-filled overseas stock order",
             "Implement a time-based expiry: cancel open orders that have not filled within N minutes",
-            "Cancel all open orders on a stop-loss trigger before placing new protective orders",
+            "Cancel all open orders on a stop-loss trigger without submitting a replacement before confirmed completion",
         ],
         "when_not_to_use": [
             "When the order is already fully filled — the cancel will be rejected by the broker",
@@ -927,7 +939,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         "typical_scenarios": [
             "ScheduleNode (end-of-day) → OverseasStockOpenOrdersNode → OverseasStockCancelOrderNode (cancel-all EOD)",
             "OverseasStockRealOrderEventNode (timeout/no-fill) → OverseasStockCancelOrderNode (stale order cleanup)",
-            "IfNode (stop-loss triggered) → OverseasStockCancelOrderNode then OverseasStockNewOrderNode (cancel then replace)",
+            "IfNode (stop-loss triggered) → OverseasStockCancelOrderNode (request cancellation; verify completion separately)",
         ],
     }
     _features: ClassVar[List[str]] = [
@@ -990,48 +1002,35 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
                     }
                 ],
             },
-            "expected_output": "cancel_result port: {order_id, symbol, exchange, status='cancelled'}; cancelled_order_id port: string.",
+            "expected_output": "cancel_result: {success: true, status: accepted, confirmation_pending: true, order_id, cancel_order_no}; cancelled_order_id is a legacy alias for the target original order, not proof of cancellation.",
         },
-        {
-            "title": "Cancel a specific order then place a replacement",
-            "description": "Stop-loss triggers: cancel the original buy order and place a market sell to exit the position.",
-            "workflow_snippet": {
-                "id": "overseas_stock_cancel_and_replace",
-                "name": "Cancel and Replace Order",
-                "nodes": [
-                    {"id": "start", "type": "StartNode"},
-                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "open_orders", "type": "OverseasStockOpenOrdersNode"},
-                    {"id": "cancel", "type": "OverseasStockCancelOrderNode",
-                     "original_order_id": "{{ nodes.open_orders.open_orders[0].order_id }}",
-                     "symbol": "AAPL",
-                     "exchange": "NASDAQ"},
-                    {"id": "sell", "type": "OverseasStockNewOrderNode",
-                     "side": "sell",
-                     "order_type": "market",
-                     "order": {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 10}},
-                ],
-                "edges": [
-                    {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "open_orders"},
-                    {"from": "open_orders", "to": "cancel"},
-                    {"from": "cancel", "to": "sell"},
-                    {"from": "broker", "to": "cancel"},
-                    {"from": "broker", "to": "sell"},
-                ],
-                "credentials": [
-                    {
-                        "credential_id": "broker_cred",
-                        "type": "broker_ls_overseas_stock",
-                        "data": [
-                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
-                        ],
-                    }
-                ],
-            },
-            "expected_output": "cancel_result with status='cancelled', then sell result with status='accepted' market order.",
-        },
+        {'title': 'Request cancellation of an explicitly verified order',
+         'description': 'Replace the illustrative order number and symbol only after verifying the current account '
+                        'and workflow ownership. Stop after acknowledgement; no replacement order is submitted.',
+         'workflow_snippet': {'id': 'OverseasStockCancelOrderNode_explicit_cancel',
+                              'name': 'Explicit cancellation request',
+                              'nodes': [{'id': 'start', 'type': 'StartNode'},
+                                        {'id': 'broker',
+                                         'type': 'OverseasStockBrokerNode',
+                                         'credential_id': 'broker_cred'},
+                                        {'id': 'cancel',
+                                         'type': 'OverseasStockCancelOrderNode',
+                                         'original_order_id': '123456',
+                                         'symbol': 'AAPL',
+                                         'exchange': 'NASDAQ'}],
+                              'edges': [{'from': 'start', 'to': 'broker'}, {'from': 'broker', 'to': 'cancel'}],
+                              'credentials': [{'credential_id': 'broker_cred',
+                                               'type': 'broker_ls_overseas_stock',
+                                               'data': [{'key': 'appkey',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Key'},
+                                                        {'key': 'appsecret',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Secret'}]}]},
+         'expected_output': 'cancel_result.status=accepted and confirmation_pending=true. Preserve both order '
+                            'numbers and wait for matching broker completion evidence.'},
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
@@ -1040,19 +1039,24 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             "The broker connection is auto-injected via DAG traversal."
         ),
         "output_consumption": (
-            "Two ports: `cancel_result` (full cancellation confirmation dict) and `cancelled_order_id` (string). "
-            "Wire cancel_result to TableDisplayNode for audit logging, or use cancelled_order_id in downstream logic."
+            "cancel_result.success=true and status='accepted' mean the cancel request was acknowledged; "
+            "confirmation_pending=true means completion is not established. cancelled_order_id is a legacy "
+            "alias for the original target, not proof of cancellation. The auxiliary cancelled_order.status "
+            "is 'cancel_requested'. Match broker cancellation/fill evidence before any replacement order."
         ),
         "common_combinations": [
             "OverseasStockOpenOrdersNode → OverseasStockCancelOrderNode (cancel all open orders)",
-            "OverseasStockCancelOrderNode → OverseasStockNewOrderNode (cancel then replace pattern)",
             "ScheduleNode → OverseasStockOpenOrdersNode → OverseasStockCancelOrderNode (EOD cleanup)",
         ],
         "pitfalls": [
+            "A partial fill remains a position; cancel only the remaining quantity and never invent a sale or realized profit",
+            "Absence from open orders can mean a fill or a cancellation; require matching account, original order and completion evidence",
+            "Do not connect a replacement order directly to cancellation acknowledgement; wait for confirmed completion and refresh holdings",
+            "An account-wide open-order list can include manual/other-strategy orders; automated cleanup must filter explicit workflow ownership",
             "Cancelling an already-filled order returns a broker error; check order status via OpenOrdersNode before cancelling",
             "fallback.mode='error' (default) will halt the workflow on a failed cancel — set to 'skip' for best-effort cancel-all patterns",
             "The 5-second rate-limit guard means large cancel batches take at minimum 5s per order",
-            "LS can return no error while leaving the order uncancelled (e.g. out-of-hours), so do not trust a clean response alone — confirm cancellation by re-querying OpenOrdersNode afterward",
+            "A clean cancel response or a new cancel-order number proves acknowledgement only, never final cancellation",
         ],
     }
 
@@ -1073,7 +1077,7 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
             name="cancel_result",
             type="order_result",
             description="i18n:ports.cancel_result",
-            fields=ORDER_RESULT_FIELDS,
+            fields=CANCEL_RESULT_FIELDS,
         ),
         OutputPort(
             name="cancelled_order_id",
@@ -1082,9 +1086,9 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.1"
-    _updated_at: ClassVar[str] = "2026-06-01"
-    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
+    _version: ClassVar[str] = "1.0.2"
+    _updated_at: ClassVar[str] = "2026-09-16"
+    _change_note: ClassVar[Optional[str]] = "Distinguish cancellation acknowledgement from completion; remove unconfirmed replacement examples."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -1206,7 +1210,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Place a CME NQ futures buy order",
-            "description": "Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME.",
+            "description": 'Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_nq_buy",
                 "name": "NQ Futures Buy",
@@ -1238,7 +1242,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
         },
         {
             "title": "HKEX mini-futures basket order via auto-iterate",
-            "description": "Place orders for multiple HKEX futures contracts by auto-iterating over a signals array.",
+            "description": 'Place orders for multiple HKEX futures contracts by auto-iterating over a signals array. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_hkex_basket",
                 "name": "HKEX Futures Basket",
@@ -1749,48 +1753,35 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
                     }
                 ],
             },
-            "expected_output": "cancel_result port: {order_id, symbol, exchange, status='cancelled'}; cancelled_order_id port: string.",
+            "expected_output": "cancel_result: {success: true, status: accepted, confirmation_pending: true, order_id, cancel_order_no}; cancelled_order_id is a legacy alias for the target original order, not proof of cancellation.",
         },
-        {
-            "title": "Cancel a specific futures order and replace with new price",
-            "description": "Cancel an existing limit order and immediately place a new one at a revised price.",
-            "workflow_snippet": {
-                "id": "overseas_futures_cancel_and_replace",
-                "name": "Futures Cancel and Replace",
-                "nodes": [
-                    {"id": "start", "type": "StartNode"},
-                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "futures_cred", "paper_trading": False},
-                    {"id": "open_orders", "type": "OverseasFuturesOpenOrdersNode"},
-                    {"id": "cancel", "type": "OverseasFuturesCancelOrderNode",
-                     "original_order_id": "{{ nodes.open_orders.open_orders[0].order_id }}",
-                     "symbol": "NQM25",
-                     "exchange": "CME"},
-                    {"id": "new_order", "type": "OverseasFuturesNewOrderNode",
-                     "side": "buy",
-                     "order_type": "limit",
-                     "order": {"symbol": "NQM25", "exchange": "CME", "quantity": 1, "price": 21100.0}},
-                ],
-                "edges": [
-                    {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "open_orders"},
-                    {"from": "open_orders", "to": "cancel"},
-                    {"from": "cancel", "to": "new_order"},
-                    {"from": "broker", "to": "cancel"},
-                    {"from": "broker", "to": "new_order"},
-                ],
-                "credentials": [
-                    {
-                        "credential_id": "futures_cred",
-                        "type": "broker_ls_overseas_futureoption",
-                        "data": [
-                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
-                        ],
-                    }
-                ],
-            },
-            "expected_output": "cancel_result with status='cancelled', then new order result with status='accepted'.",
-        },
+        {'title': 'Request cancellation of an explicitly verified order',
+         'description': 'Replace the illustrative order number and symbol only after verifying the current account '
+                        'and workflow ownership. Stop after acknowledgement; no replacement order is submitted.',
+         'workflow_snippet': {'id': 'OverseasFuturesCancelOrderNode_explicit_cancel',
+                              'name': 'Explicit cancellation request',
+                              'nodes': [{'id': 'start', 'type': 'StartNode'},
+                                        {'id': 'broker',
+                                         'type': 'OverseasFuturesBrokerNode',
+                                         'credential_id': 'broker_cred'},
+                                        {'id': 'cancel',
+                                         'type': 'OverseasFuturesCancelOrderNode',
+                                         'original_order_id': '123456',
+                                         'symbol': 'OWNER_CONFIRMED_CONTRACT',
+                                         'exchange': 'CME'}],
+                              'edges': [{'from': 'start', 'to': 'broker'}, {'from': 'broker', 'to': 'cancel'}],
+                              'credentials': [{'credential_id': 'broker_cred',
+                                               'type': 'broker_ls_overseas_futureoption',
+                                               'data': [{'key': 'appkey',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Key'},
+                                                        {'key': 'appsecret',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Secret'}]}]},
+         'expected_output': 'cancel_result.status=accepted and confirmation_pending=true. Preserve both order '
+                            'numbers and wait for matching broker completion evidence.'},
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
@@ -1799,19 +1790,24 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             "The broker connection is auto-injected via DAG traversal from OverseasFuturesBrokerNode."
         ),
         "output_consumption": (
-            "Two ports: `cancel_result` (cancellation confirmation dict) and `cancelled_order_id` (string). "
-            "Chain cancel_result to TableDisplayNode for audit logging, or sequence cancelled_order_id into a new order node."
+            "cancel_result.success=true and status='accepted' mean the cancel request was acknowledged; "
+            "confirmation_pending=true means completion is not established. cancelled_order_id is a legacy "
+            "alias for the original target, not proof of cancellation. The auxiliary cancelled_order.status "
+            "is 'cancel_requested'. Match broker cancellation/fill evidence before any replacement order."
         ),
         "common_combinations": [
             "OverseasFuturesOpenOrdersNode → OverseasFuturesCancelOrderNode (cancel all open futures)",
-            "OverseasFuturesCancelOrderNode → OverseasFuturesNewOrderNode (cancel then replace pattern)",
             "ScheduleNode → OverseasFuturesOpenOrdersNode → OverseasFuturesCancelOrderNode (session-end cleanup)",
         ],
         "pitfalls": [
+            "A partial fill remains a position; cancel only the remaining quantity and never invent a sale or realized profit",
+            "Absence from open orders can mean a fill or a cancellation; require matching account, original order and completion evidence",
+            "Do not connect a replacement order directly to cancellation acknowledgement; wait for confirmed completion and refresh holdings",
+            "An account-wide open-order list can include manual/other-strategy orders; automated cleanup must filter explicit workflow ownership",
             "Cancelling an already-filled futures order returns a broker error — check order status first via OpenOrdersNode",
             "fallback.mode='error' (default) halts workflow on cancel failure — use 'skip' for best-effort cancel-all loops",
             "The 5-second rate-limit guard means a 10-order cancel batch takes at least 50 seconds",
-            "LS can return no error while leaving the futures order uncancelled (e.g. out-of-hours; trading hours vary by exchange CME/EUREX/SGX/HKEX), so confirm cancellation by re-querying OpenOrdersNode afterward rather than trusting a clean response",
+            "A clean cancel response or a new cancel-order number proves acknowledgement only, never final cancellation",
         ],
     }
 
@@ -1832,7 +1828,7 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
             name="cancel_result",
             type="order_result",
             description="i18n:ports.cancel_result",
-            fields=ORDER_RESULT_FIELDS,
+            fields=CANCEL_RESULT_FIELDS,
         ),
         OutputPort(
             name="cancelled_order_id",
@@ -1841,9 +1837,9 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.1"
-    _updated_at: ClassVar[str] = "2026-06-01"
-    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
+    _version: ClassVar[str] = "1.0.2"
+    _updated_at: ClassVar[str] = "2026-09-16"
+    _change_note: ClassVar[Optional[str]] = "Distinguish cancellation acknowledgement from completion; remove unconfirmed replacement examples."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -1965,7 +1961,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "RSI-driven buy order for Samsung Electronics",
-            "description": "RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode.",
+            "description": 'RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_new_order_rsi_buy",
                 "name": "Korea Stock RSI Buy",
@@ -2013,7 +2009,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Market sell order for all held Korean stocks",
-            "description": "Fetch account positions and auto-iterate to place a market sell for every held stock.",
+            "description": 'Fetch account positions and auto-iterate to place a market sell for every held stock. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_basket_sell",
                 "name": "Korea Stock Basket Sell",
@@ -2444,7 +2440,7 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
         "typical_scenarios": [
             "ScheduleNode (end-of-day) → KoreaStockOpenOrdersNode → KoreaStockCancelOrderNode (cancel-all)",
             "KoreaStockRealOrderEventNode (timeout) → KoreaStockCancelOrderNode (stale order cleanup)",
-            "IfNode (stop-loss triggered) → KoreaStockCancelOrderNode → KoreaStockNewOrderNode (cancel then exit)",
+            "IfNode (stop-loss triggered) → KoreaStockCancelOrderNode (request cancellation; verify completion separately)",
         ],
     }
     _features: ClassVar[List[str]] = [
@@ -2506,47 +2502,34 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
                     }
                 ],
             },
-            "expected_output": "cancel_result port: {order_id, symbol, status='cancelled'}; cancelled_order_id port: string.",
+            "expected_output": "cancel_result: {success: true, status: accepted, confirmation_pending: true, order_id, cancel_order_no}; cancelled_order_id is a legacy alias for the target original order, not proof of cancellation.",
         },
-        {
-            "title": "Cancel a specific order and place exit market order",
-            "description": "Stop-loss condition triggers: cancel the open limit buy and immediately place a market sell to exit.",
-            "workflow_snippet": {
-                "id": "korea_stock_cancel_and_exit",
-                "name": "Korea Stock Cancel and Exit",
-                "nodes": [
-                    {"id": "start", "type": "StartNode"},
-                    {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "kr_broker_cred"},
-                    {"id": "open_orders", "type": "KoreaStockOpenOrdersNode"},
-                    {"id": "cancel", "type": "KoreaStockCancelOrderNode",
-                     "original_order_id": "{{ nodes.open_orders.open_orders[0].order_id }}",
-                     "symbol": "005930"},
-                    {"id": "sell", "type": "KoreaStockNewOrderNode",
-                     "side": "sell",
-                     "order_type": "market",
-                     "order": {"symbol": "005930", "quantity": 10}},
-                ],
-                "edges": [
-                    {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "open_orders"},
-                    {"from": "open_orders", "to": "cancel"},
-                    {"from": "cancel", "to": "sell"},
-                    {"from": "broker", "to": "cancel"},
-                    {"from": "broker", "to": "sell"},
-                ],
-                "credentials": [
-                    {
-                        "credential_id": "kr_broker_cred",
-                        "type": "broker_ls_korea_stock",
-                        "data": [
-                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
-                        ],
-                    }
-                ],
-            },
-            "expected_output": "cancel_result with status='cancelled', then sell result with status='accepted' market order.",
-        },
+        {'title': 'Request cancellation of an explicitly verified order',
+         'description': 'Replace the illustrative order number and symbol only after verifying the current account '
+                        'and workflow ownership. Stop after acknowledgement; no replacement order is submitted.',
+         'workflow_snippet': {'id': 'KoreaStockCancelOrderNode_explicit_cancel',
+                              'name': 'Explicit cancellation request',
+                              'nodes': [{'id': 'start', 'type': 'StartNode'},
+                                        {'id': 'broker',
+                                         'type': 'KoreaStockBrokerNode',
+                                         'credential_id': 'broker_cred'},
+                                        {'id': 'cancel',
+                                         'type': 'KoreaStockCancelOrderNode',
+                                         'original_order_id': '123456',
+                                         'symbol': '005930'}],
+                              'edges': [{'from': 'start', 'to': 'broker'}, {'from': 'broker', 'to': 'cancel'}],
+                              'credentials': [{'credential_id': 'broker_cred',
+                                               'type': 'broker_ls_korea_stock',
+                                               'data': [{'key': 'appkey',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Key'},
+                                                        {'key': 'appsecret',
+                                                         'value': '',
+                                                         'type': 'password',
+                                                         'label': 'App Secret'}]}]},
+         'expected_output': 'cancel_result.status=accepted and confirmation_pending=true. Preserve both order '
+                            'numbers and wait for matching broker completion evidence.'},
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
@@ -2556,19 +2539,24 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
             "Requires KoreaStockBrokerNode upstream (auto-injected by executor)."
         ),
         "output_consumption": (
-            "Two ports: `cancel_result` (cancellation confirmation dict) and `cancelled_order_id` (string). "
-            "Chain cancel_result to TableDisplayNode for audit logging, or sequence into a new order node."
+            "cancel_result.success=true and status='accepted' mean the cancel request was acknowledged; "
+            "confirmation_pending=true means completion is not established. cancelled_order_id is a legacy "
+            "alias for the original target, not proof of cancellation. The auxiliary cancelled_order.status "
+            "is 'cancel_requested'. Match broker cancellation/fill evidence before any replacement order."
         ),
         "common_combinations": [
             "KoreaStockOpenOrdersNode → KoreaStockCancelOrderNode (cancel all open KR orders)",
-            "KoreaStockCancelOrderNode → KoreaStockNewOrderNode (cancel then replace pattern)",
             "ScheduleNode → KoreaStockOpenOrdersNode → KoreaStockCancelOrderNode (EOD cleanup)",
         ],
         "pitfalls": [
+            "A partial fill remains a position; cancel only the remaining quantity and never invent a sale or realized profit",
+            "Absence from open orders can mean a fill or a cancellation; require matching account, original order and completion evidence",
+            "Do not connect a replacement order directly to cancellation acknowledgement; wait for confirmed completion and refresh holdings",
+            "An account-wide open-order list can include manual/other-strategy orders; automated cleanup must filter explicit workflow ownership",
             "Cancelling an already-filled Korean stock order returns a KRX error — check status via OpenOrdersNode first",
             "Paper trading is NOT supported for Korean domestic stocks — do not configure KoreaStockBrokerNode in paper mode",
             "fallback.mode='error' (default) halts workflow on cancel failure — use 'skip' for best-effort cancel-all loops",
-            "LS can return no error while leaving the order uncancelled (e.g. outside KRX trading hours 09:00-15:30 KST), so confirm cancellation by re-querying OpenOrdersNode afterward rather than trusting a clean response",
+            "A clean cancel response or a new cancel-order number proves acknowledgement only, never final cancellation",
         ],
     }
 
@@ -2589,7 +2577,7 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
             name="cancel_result",
             type="order_result",
             description="i18n:ports.cancel_result",
-            fields=ORDER_RESULT_FIELDS,
+            fields=CANCEL_RESULT_FIELDS,
         ),
         OutputPort(
             name="cancelled_order_id",
@@ -2598,9 +2586,9 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.1"
-    _updated_at: ClassVar[str] = "2026-06-01"
-    _change_note: ClassVar[Optional[str]] = "Document out-of-hours cancel silent no-op risk in AI metadata."
+    _version: ClassVar[str] = "1.0.2"
+    _updated_at: ClassVar[str] = "2026-09-16"
+    _change_note: ClassVar[Optional[str]] = "Distinguish cancellation acknowledgement from completion; remove unconfirmed replacement examples."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

@@ -162,9 +162,10 @@ async def test_direct_rest_preserves_supplied_raw_amount_without_inventing_estim
                   PchsPrc=25000, OvrsDrvtNowPrc=25010, BalQty=1)
     if amount is not None:
         fields["AbrdFutsEvalPnlAmt"] = amount
+    from futures_response_fixtures import parsed_response
     row = CIDBQ01500OutBlock2(**fields)
     account = SimpleNamespace(
-        CIDBQ01500=lambda **kwargs: SimpleNamespace(req_async=AsyncMock(return_value=response([row]))),
+        CIDBQ01500=lambda **kwargs: SimpleNamespace(req_async=AsyncMock(return_value=parsed_response("CIDBQ01500", kwargs["body"], [row.model_dump(exclude_unset=True)]))),
         CIDBQ05300=lambda **kwargs: SimpleNamespace(req_async=AsyncMock(return_value=SimpleNamespace(block2=[], block3=None))),
     )
     ls = SimpleNamespace(overseas_futureoption=lambda: SimpleNamespace(accno=lambda: account))

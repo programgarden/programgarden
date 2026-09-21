@@ -180,7 +180,7 @@ class PositionSizingNode(BaseNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Fixed-percent sizing over a symbol set, then place orders",
-            "description": "ConditionNode finds oversold symbols; PositionSizingNode sizes each at 5% of balance via the plural `symbols` input and emits an `orders` list; NewOrderNode auto-iterates that list to place each buy.",
+            "description": 'ConditionNode finds oversold symbols; PositionSizingNode sizes each at 5% of balance via the plural `symbols` input and emits an `orders` list; NewOrderNode auto-iterates that list to place each buy. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "sizing-fixed-percent",
                 "name": "Fixed percent sizing",
@@ -220,15 +220,7 @@ class PositionSizingNode(BaseNode):
                         "symbols": "{{ nodes.rsi.passed_symbols }}",
                         "balance": "{{ nodes.account.balance }}",
                     },
-                    {
-                        "id": "order",
-                        "type": "OverseasStockNewOrderNode",
-                        "symbol": "{{ item.symbol }}",
-                        "exchange": "{{ item.exchange }}",
-                        "quantity": "{{ item.quantity }}",
-                        "price": "{{ item.price }}",
-                        "side": "buy",
-                    },
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'buy', 'order': {'symbol': '{{ item.symbol }}', 'exchange': '{{ item.exchange }}', 'quantity': '{{ item.quantity }}', 'price': '{{ item.price }}'}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

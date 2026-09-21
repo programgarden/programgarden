@@ -164,7 +164,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
-            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasFuturesOrderableQuantityNode,
             # Korea Stock (국내주식)
             KoreaStockBrokerNode,
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,
@@ -180,7 +180,7 @@ class NodeTypeRegistry:
             MarketStatusNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
-            ScheduleNode, TradingHoursFilterNode,
+            ScheduleNode, TradingHoursFilterNode, SessionGateNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
             OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
@@ -212,7 +212,7 @@ class NodeTypeRegistry:
             # Account - Futures (해외선물)
             OverseasFuturesAccountNode, OverseasFuturesRealAccountNode, OverseasFuturesRealOrderEventNode,
             # Open Orders (미체결 조회)
-            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode,
+            OverseasStockOpenOrdersNode, OverseasFuturesOpenOrdersNode, OverseasFuturesOrderableQuantityNode,
             # Korea Stock (국내주식)
             KoreaStockBrokerNode,
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,
@@ -229,7 +229,7 @@ class NodeTypeRegistry:
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             # Trigger
-            ScheduleNode, TradingHoursFilterNode,
+            ScheduleNode, TradingHoursFilterNode, SessionGateNode,
             # Condition
             ConditionNode, LogicNode,
             # Risk
@@ -342,7 +342,11 @@ class NodeTypeRegistry:
                 else:
                     init_kwargs[field_name] = "__schema__"
         
-        instance = node_class(**init_kwargs)
+        # Schema discovery uses placeholders, not executable configuration.
+        # Required fields with validators (timezones, non-empty windows, etc.)
+        # must still be discoverable before the caller supplies their values.
+        # Runtime construction/validation continues to use the normal model.
+        instance = node_class.model_construct(**init_kwargs)
         
         # Use instance.description if available (for i18n), otherwise use docstring
         description = instance.description if hasattr(instance, 'description') and instance.description else node_class.__doc__

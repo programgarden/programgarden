@@ -262,16 +262,33 @@ def emergency_close_all(job_id: str) -> Dict[str, Any]:
         >>> emergency_close_all("job-abc123")
         {"closed_positions": [...], "cancelled_orders": [...], ...}
     """
-    # TODO: Implement actual close
+    # Position liquidation is intentionally outside the current stop/cancel scope.
     return {
         "job_id": job_id,
         "closed_positions": [],
         "cancelled_orders": [],
-        "status": "emergency_closed",
+        "status": "not_implemented",
+        "error": "Emergency liquidation is not implemented; no position or order was changed.",
     }
 
 
-def cancel_all_orders(job_id: str) -> Dict[str, Any]:
+async def cancel_all_orders_async(job_id: str, *, executor=None) -> Dict[str, Any]:
+    """Use the owning executor; never search another client's jobs implicitly.
+
+    Managed callers pass ``pg.executor`` or use ``job.cancel_pending_orders``.
+    The legacy tools singleton is only the default for jobs created by these tools.
+    """
+    owner = executor if executor is not None else _get_executor()
+    job = owner.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job not found: {job_id}")
+    task = job._task
+    if task is None or task.get_loop() is not asyncio.get_running_loop():
+        raise RuntimeError("Pending cancellation requires the owning job event loop")
+    return await job.cancel_pending_orders()
+
+
+def cancel_all_orders(job_id: str, *, executor=None) -> Dict[str, Any]:
     """
     Cancel all pending orders
 
@@ -285,12 +302,23 @@ def cancel_all_orders(job_id: str) -> Dict[str, Any]:
         >>> cancel_all_orders("job-abc123")
         {"cancelled_orders": [...], "failed_orders": [...]}
     """
-    # TODO: Implement actual cancel
-    return {
-        "job_id": job_id,
-        "cancelled_orders": [],
-        "failed_orders": [],
-    }
+    owner = executor if executor is not None else _get_executor()
+    job = owner.get_job(job_id)
+    if job is None:
+        raise ValueError(f"Job not found: {job_id}")
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        task = job._task
+        if task is None or not task.get_loop().is_running():
+            raise RuntimeError("Pending cancellation requires the active job event loop") from None
+        future = asyncio.run_coroutine_threadsafe(job.cancel_pending_orders(), task.get_loop())
+        try:
+            return future.result(timeout=125)
+        except TimeoutError:
+            future.cancel()
+            raise
+    raise RuntimeError("Use await cancel_all_orders_async(job_id, executor=pg.executor) on the owning loop")
 
 
 def restore_job(
@@ -299,6 +327,7 @@ def restore_job(
     secrets: Optional[Dict[str, Any]] = None,
     listeners: Optional[List] = None,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     체크포인트에서 워크플로우 복원
@@ -333,6 +362,7 @@ def restore_job(
             secrets=secrets,
             listeners=listeners,
             storage_dir=storage_dir,
+            execution_key=execution_key,
         )
         return job.get_state()
 
@@ -343,6 +373,7 @@ def has_checkpoint(
     workflow_id: str,
     job_id: str,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> bool:
     """
     체크포인트 존재 여부 확인
@@ -362,7 +393,8 @@ def has_checkpoint(
     from programgarden.database.checkpoint_manager import CheckpointManager
 
     db_dir = _resolve_data_dir(storage_dir)
-    db_path = db_dir / f"{workflow_id}_workflow.db"
+    from programgarden.database.db_naming import engine_db_filename
+    db_path = db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key)
     if not db_path.exists():
         return False
 
@@ -374,6 +406,7 @@ def get_checkpoint_info(
     workflow_id: str,
     job_id: str,
     storage_dir: Optional[str] = None,
+    execution_key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     체크포인트 요약 정보 조회 (outputs 제외, 경량)
@@ -393,7 +426,8 @@ def get_checkpoint_info(
     from programgarden.database.checkpoint_manager import CheckpointManager
 
     db_dir = _resolve_data_dir(storage_dir)
-    db_path = db_dir / f"{workflow_id}_workflow.db"
+    from programgarden.database.db_naming import engine_db_filename
+    db_path = db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key)
     if not db_path.exists():
         return None
 

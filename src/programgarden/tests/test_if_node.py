@@ -254,8 +254,10 @@ class TestIfNodeEvaluateStatic:
         assert ev([1], "is_not_empty", None) is True
         assert ev("text", "is_not_empty", None) is True
 
-    def test_unknown_operator_returns_false(self):
-        assert IfNodeExecutor._evaluate(1, "unknown", 1) is False
+    @pytest.mark.parametrize("operator", ["unknown", "is_true", "is_false"])
+    def test_unsupported_operator_is_an_error(self, operator):
+        with pytest.raises(ValueError, match="Unsupported IfNode operator"):
+            IfNodeExecutor._evaluate(True, operator, True)
 
     def test_numeric_comparison_with_none_raises(self):
         """Phase 3: None numeric comparison no longer silently returns False."""

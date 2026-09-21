@@ -10,7 +10,9 @@ Workflow execution engine
 
 from typing import Optional, Dict, Any, List, Callable, Awaitable, Set, Tuple, Mapping
 from datetime import datetime
+from decimal import Decimal
 import asyncio
+import math
 import ast
 import copy
 import re
@@ -4467,6 +4469,15 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 paper_trading=paper_trading,
             )
 
+            # Scoped hosts opt into startup reconciliation. Do this before any
+            # history/background subscription or downstream order can mutate the
+            # ledger; scheduled cycles reuse the completed startup check.
+            if context.execution_key is not None and not context._startup_reconciled:
+                await self._reconcile_startup_account(
+                    context=context, node_id=node_id, product=product, provider=provider,
+                    appkey=appkey, appsecret=appsecret, paper_trading=paper_trading,
+                )
+
             # ========================================
             # 위험관리 추적기 초기화 (노드/플러그인 risk feature 수집)
             # risk_features를 선언한 노드/플러그인이 있으면 RiskTracker 자동 시작
@@ -4570,6 +4581,58 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "credential_id": credential_id,
             }
         }
+
+    async def _reconcile_startup_account(self, *, context, node_id, product, provider,
+                                         appkey, appsecret, paper_trading):
+        from .database.broker_snapshot import read_broker_snapshot
+        from .database.position_reconciliation import ReconciliationUnavailable
+        from programgarden_core.bases.listener import RiskEvent
+
+        tracker = context._workflow_position_tracker
+        if tracker is None or not appkey or not appsecret:
+            raise ReconciliationUnavailable("startup_account_identity_unavailable")
+        ls, success, _ = ensure_ls_login(
+            appkey, appsecret, paper_trading, context, node_id, product,
+            caller_name="execution_startup",
+        )
+        if not success:
+            raise ReconciliationUnavailable("startup_broker_login_failed")
+        recoveries = []
+        if product == "overseas_stock":
+            from .database.order_recovery import orders_needing_recovery
+            from .database.broker_order_totals import read_stock_order_outcomes
+            revision = tracker.fill_revision
+            unresolved = orders_needing_recovery(tracker)
+            if unresolved:
+                totals, cancellations = await asyncio.wait_for(
+                    read_stock_order_outcomes(ls, tracker, unresolved), timeout=60)
+                recoveries = await tracker.recover_order_totals(
+                    totals, cancellations=cancellations, expected_revision=revision)
+                await asyncio.sleep(2)
+        # Recovery has committed even if the following fresh account read fails.
+        # Report that actual change now; a retry must neither recover nor notify twice.
+        if any(Decimal(row["quantity"]) > 0 for row in recoveries):
+            await context.notify_risk_event(RiskEvent(
+                job_id=context.job_id, event_type="order_totals_recovered", severity="info",
+                details={"recoveries": recoveries, "basis": "broker_order_total",
+                         "is_estimated": True, "is_trade": False},
+            ))
+        revision = tracker.fill_revision
+        snapshot = await asyncio.wait_for(read_broker_snapshot(
+            ls, execution_key=context.execution_key, product=product, provider=provider,
+            trading_mode="paper" if paper_trading else "live",
+        ), timeout=60)
+        adjustments = await tracker.reconcile_from_broker(snapshot.positions, expected_revision=revision)
+        context._startup_broker_snapshot = snapshot
+        context.position_adjustments = adjustments
+        context.order_recoveries = tracker.get_order_recoveries()
+        context._startup_reconciled = True
+        if adjustments:
+            await context.notify_risk_event(RiskEvent(
+                job_id=context.job_id, event_type="position_reconciled", severity="info",
+                details={"adjustments": adjustments, "source": snapshot.positions.source,
+                         "reason": "broker_quantity_reduction", "is_trade": False},
+            ))
 
     def _collect_risk_features(self, context: ExecutionContext) -> set:
         """워크플로우 내 노드/플러그인의 risk feature 요구사항 수집.
@@ -6103,33 +6166,30 @@ class AccountNodeExecutor(NodeExecutorBase):
         - CIDBQ05300: 예탁자산 조회 (통화별, CIDBQ03000 상위호환)
         """
         from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from programgarden.futures_read_evidence import require_complete_rows, require_position_identity
 
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ05300.blocks import CIDBQ05300InBlock1
             from programgarden_finance.ls.overseas_futureoption.extension.calculator import compute_futures_pnl_rate
 
-            today = datetime.now().strftime("%Y%m%d")
+            today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
 
             # 1. CIDBQ01500: 보유 포지션 조회
+            position_request = CIDBQ01500InBlock1(
+                RecCnt=1, AcntTpCode="1", QryDt=today, BalTpCode="2", FcmAcntNo="",
+            )
             response = await ls.overseas_futureoption().accno().CIDBQ01500(
-                body=CIDBQ01500InBlock1(
-                    RecCnt=1,
-                    AcntTpCode="1",      # 1: 위탁
-                    QryDt=today,         # 조회일자
-                    BalTpCode="2",       # 1: 합산, 2: 건별 (건별이 더 안정적)
-                    FcmAcntNo=""
-                )
+                body=position_request,
             ).req_async()
-
-            # 응답 코드 확인 (00707: 조회할 내역 없음 - 정상)
-            if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
-                context.log("warning", f"CIDBQ01500 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+            position_rows = require_complete_rows(response, position_request, "CIDBQ01500")
 
             # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
             positions = []
             held_symbols = []
-            for item in (response.block2 or []):
+            for item in position_rows:
+                require_position_identity(item)
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
                 if not symbol:
                     continue
@@ -6186,21 +6246,16 @@ class AccountNodeExecutor(NodeExecutorBase):
             cidbq05300_failure_reason: Optional[str] = None
             balance_response = None
             try:
+                balance_request = CIDBQ05300InBlock1(RecCnt=1, OvrsAcntTpCode="1", CrcyCode="ALL")
                 balance_response = await ls.overseas_futureoption().accno().CIDBQ05300(
-                    body=CIDBQ05300InBlock1(
-                        RecCnt=1,
-                        OvrsAcntTpCode="1",
-                        CrcyCode="ALL"
-                    )
+                    body=balance_request,
                 ).req_async()
-
-                # Note: we deliberately do not gate on `error_msg` here.
-                # The LS finance client returns a real str for that field
-                # only on actual errors; checking it would also trip on
-                # MagicMock attribute auto-vivification in unit tests,
-                # which masks legitimate balance fetches.
-                # block2: 통화별 예수금 정보
-                for item in (balance_response.block2 or []):
+                balance_rows = require_complete_rows(balance_response, balance_request, "CIDBQ05300")
+                for item in balance_rows:
+                    required = {"CrcyCode", "AbrdFutsOrdAbleAmt", "OvrsFutsDps"}
+                    if (not required <= item.model_fields_set or not item.CrcyCode.strip()
+                            or not math.isfinite(item.AbrdFutsOrdAbleAmt) or not math.isfinite(item.OvrsFutsDps)):
+                        raise ValueError("CIDBQ05300 currency balance fields are unavailable")
                     currency = item.CrcyCode.strip() if item.CrcyCode else "USD"
                     orderable = float(item.AbrdFutsOrdAbleAmt) if item.AbrdFutsOrdAbleAmt else 0.0
                     deposit = float(item.OvrsFutsDps) if item.OvrsFutsDps else 0.0
@@ -6287,6 +6342,50 @@ class AccountNodeExecutor(NodeExecutorBase):
         if error:
             result["error"] = error
         return result
+
+
+class FuturesOrderableQuantityNodeExecutor(NodeExecutorBase):
+    """Read per-contract capacity; never place an order or replace failed evidence."""
+
+    async def execute(self, node_id, node_type, config, context, **kwargs):
+        from programgarden.futures_orderable import FuturesCapacityEvidenceError, build_orderable_request, read_orderable_quantity
+        config = evaluate_all_bindings(config, context, node_id)
+        unavailable = {"quantity": None, "verified": False, "error": None}
+        try:
+            request = build_orderable_request(config)
+            if context.is_deep_validate:
+                from programgarden import deep_fixtures as fixtures
+                return fixtures.apply_override(
+                    {"quantity": 1, "verified": True, "error": None},
+                    context.get_deep_fixture(node_id, node_type),
+                )
+            connection = config.get("connection")
+            if not isinstance(connection, dict) or connection.get("product") != "overseas_futures" or not connection.get("credential_id"):
+                raise FuturesCapacityEvidenceError("A matching futures broker connection is required")
+            try:
+                credential = exact_futures_credential(connection, context)
+            except ValueError as exc:
+                raise FuturesCapacityEvidenceError(str(exc)) from exc
+            if not credential or not credential.get("appkey") or not credential.get("appsecret"):
+                raise FuturesCapacityEvidenceError("The selected futures credential is unavailable")
+            ls, success, _ = ensure_ls_login(
+                credential["appkey"], credential["appsecret"], connection.get("paper_trading", False),
+                context, node_id, product="overseas_futures", caller_name="FuturesOrderableQuantityNode",
+            )
+            if not success:
+                raise FuturesCapacityEvidenceError("The selected futures broker login failed")
+            response = await asyncio.wait_for(
+                ls.overseas_futureoption().accno().CIDBQ01400(body=request).req_async(), timeout=20,
+            )
+            quantity = read_orderable_quantity(response, request)
+            return {"quantity": quantity, "verified": True, "error": None}
+        except (FuturesCapacityEvidenceError, asyncio.TimeoutError) as exc:
+            unavailable["error"] = str(exc) or "Futures capacity query timed out"
+        except Exception as exc:
+            # Broker exceptions can contain credentials/URLs. Return the class only.
+            unavailable["error"] = f"Futures capacity query failed ({type(exc).__name__})"
+        context.log("warning", unavailable["error"], node_id)
+        return unavailable
 
 
 class OpenOrdersNodeExecutor(NodeExecutorBase):
@@ -6530,32 +6629,27 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
     async def _ls_overseas_futures(self, ls, node_id: str, context: ExecutionContext) -> Dict[str, Any]:
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from programgarden.futures_read_evidence import require_complete_rows, require_pending_identity
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
 
 
-        today = datetime.now().strftime("%Y%m%d")
-
-        response = await ls.overseas_futureoption().accno().CIDBQ02400(
-            body=CIDBQ02400InBlock1(
-                RecCnt=1,
-                IsuCodeVal="",          # 빈값: 전체 종목
-                QrySrtDt=today,
-                QryEndDt=today,
-                ThdayTpCode="0",        # 0: 전체
-                OrdStatCode="2",        # 2: 미체결
-                BnsTpCode="0",          # 0: 전체
-                QryTpCode="2",          # 2: 역순
-                OrdPtnCode="00",        # 00: 전체
-                OvrsDrvtFnoTpCode="A"   # A: 전체
-            )
-        ).req_async()
-
-        # 응답 코드 확인
-        if response.rsp_cd and response.rsp_cd not in ["00000", "00136", "00707"]:
-            context.log("warning", f"CIDBQ02400 response: {response.rsp_cd} - {response.rsp_msg}", node_id)
+        today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+        request = CIDBQ02400InBlock1(
+            RecCnt=1, IsuCodeVal="", QrySrtDt=today, QryEndDt=today,
+            ThdayTpCode="1", OrdStatCode="2", BnsTpCode="0", QryTpCode="2",
+            OrdPtnCode="00", OvrsDrvtFnoTpCode="A",
+        )
+        response = await ls.overseas_futureoption().accno().CIDBQ02400(body=request).req_async()
+        try:
+            rows = require_complete_rows(response, request, "CIDBQ02400")
+            for row in rows:
+                require_pending_identity(row)
+        except ValueError as exc:
+            return self._empty_result(str(exc))
 
         open_orders = []
-        for item in response.block2 or []:
+        for item in rows:
             # 해외선물 주문번호는 OvrsFutsOrdNo
             order_id = str(item.OvrsFutsOrdNo) if hasattr(item, 'OvrsFutsOrdNo') and item.OvrsFutsOrdNo else ""
             if not order_id:
@@ -11572,6 +11666,12 @@ class IfNodeExecutor(NodeExecutorBase):
         their original lenient behavior because None is a meaningful
         operand there.
         """
+        from typing import get_args
+        from programgarden_core.nodes.infra import IfNode
+        if operator not in get_args(IfNode.model_fields["operator"].annotation):
+            # A generated `is_true` once passed a skipped-path dry run while
+            # silently disabling every valid entry. Reject unsupported syntax.
+            raise ValueError(f"Unsupported IfNode operator: {operator!r}")
         if operator in cls._NUMERIC_OPS and (left is None or right is None):
             raise ConditionEvaluationError(
                 f"IfNode received None operand on numeric comparison "
@@ -11715,7 +11815,10 @@ class MarketDataNodeExecutor(NodeExecutorBase):
             from programgarden import deep_fixtures as _df
             # 실경로와 **같은** symbols 를 쓴다. 예전엔 여기만 단수 symbol 폴백을 갖고 있어
             # deep_validate 는 초록인데 라이브만 다르게 도는 상태였다(게이트가 거짓말함).
-            fixture = _df.market_data_fixture(config, symbols)
+            fixture = _df.market_data_fixture(
+                config, symbols,
+                product="overseas_futures" if node_type == "OverseasFuturesMarketDataNode" else "overseas_stock",
+            )
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
@@ -11980,7 +12083,11 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                     response = api.market().o3105(body=body).req()
                     context.log("debug", f"o3105 response: {response}", node_id)
                     
-                    if response and response.block:
+                    if (response and response.status_code == 200 and not response.error_msg
+                            and response.rsp_cd == "00000" and response.block
+                            and {"Symbol", "TrdP"} <= response.block.model_fields_set
+                            and response.block.Symbol.strip() == symbol
+                            and math.isfinite(response.block.TrdP) and response.block.TrdP > 0):
                         out_block = response.block
                         from datetime import datetime
                         
@@ -11990,6 +12097,12 @@ class MarketDataNodeExecutor(NodeExecutorBase):
                             "exchange": exchange,
                             "symbol_name": out_block.SymbolNm or symbol,
                             "price": float(out_block.TrdP or 0),
+                            "tick_size": (
+                                float(out_block.UntPrc)
+                                if "UntPrc" in out_block.model_fields_set
+                                and math.isfinite(float(out_block.UntPrc)) and out_block.UntPrc > 0
+                                else None
+                            ),
                             # o3105 `YdiffP` 는 이미 부호를 포함한다(실측). 헬퍼는 멱등이라 값이 안 바뀌며,
                             # LS 가 언젠가 절댓값으로 바꿔 보내도 `YdiffSign` 으로 방어된다.
                             "change": _ls_signed_change(out_block.YdiffP, getattr(out_block, "YdiffSign", "")),
@@ -17084,7 +17197,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     FutsOrdTpCode="1", BnsTpCode="1" if side == "sell" else "2",
                     AbrdFutsOrdPtnCode=code, CrcyCode="", OvrsDrvtOrdPrc=price,
                     CndiOrdPrc=0.0, OrdQty=qty, PrdtCode="000000",
-                    DueYymm=config.get("expiry_month", ""), ExchCode=exchange,
+                    DueYymm=config.get("expiry_month") or CIDBT00100InBlock1.model_fields["DueYymm"].default,
+                    ExchCode=exchange,
                 ),
             )
             response = await order_api.req_async()
@@ -18606,7 +18720,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             # 거부가 정상 빈발 경로라 신규보다 더 아프다.
             block2 = getattr(response, "block2", None)
             cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 # 실측 취소 거부 코드(2026-08-19): 02259 = 그 원주문번호가 없음,
@@ -18641,13 +18755,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     # 취소는 그 자체로 새 주문번호를 받는다 — 원주문번호와 구분해 남긴다.
                     "cancel_order_no": cancel_ord_no,
@@ -18658,7 +18774,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": exchange,
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
             
@@ -18729,7 +18845,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             cancel_ord_no = (
                 str(getattr(block2, "OvrsFutsOrdNo", "") or "").strip() if block2 else ""
             )
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 reason = (
@@ -18753,13 +18869,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Futures order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Futures cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     "cancel_order_no": cancel_ord_no,
                     "product": "overseas_futures",
@@ -18769,7 +18887,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": exchange_code,
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
             
@@ -18895,7 +19013,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
             # 발급되는 취소주문번호이고, 0/빈 값이면 접수되지 않은 것이다.
             block2 = getattr(response, "block2", None)
             cancel_ord_no = str(getattr(block2, "OrdNo", "") or "").strip() if block2 else ""
-            if not cancel_ord_no or cancel_ord_no == "0":
+            if not cancel_ord_no.isdigit() or int(cancel_ord_no) <= 0:
                 rsp_cd = getattr(response, "rsp_cd", "") or ""
                 rsp_msg = getattr(response, "rsp_msg", "") or ""
                 reason = (
@@ -18919,13 +19037,15 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
 
             context.log(
                 "info",
-                f"Korea stock order cancelled: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
+                f"Korea stock cancel request accepted: {symbol} order_id={order_id} cancel_order_no={cancel_ord_no}",
                 node_id
             )
 
             return {
                 "cancel_result": {
                     "success": True,
+                    "status": "accepted",
+                    "confirmation_pending": True,
                     "order_id": order_id,
                     "cancel_order_no": cancel_ord_no,
                     "product": "korea_stock",
@@ -18935,7 +19055,7 @@ class CancelOrderNodeExecutor(NodeExecutorBase):
                     "symbol": symbol,
                     "exchange": "KRX",
                     "order_id": order_id,
-                    "status": "cancelled",
+                    "status": "cancel_requested",
                 },
             }
 
@@ -20444,6 +20564,7 @@ class WorkflowExecutor:
             "OverseasFuturesAccountNode": AccountNodeExecutor(),
             "OverseasStockOpenOrdersNode": OpenOrdersNodeExecutor(),  # 미체결 조회
             "OverseasFuturesOpenOrdersNode": OpenOrdersNodeExecutor(),
+            "OverseasFuturesOrderableQuantityNode": FuturesOrderableQuantityNodeExecutor(),
             "RealAccountNode": RealAccountNodeExecutor(),  # 실시간 WebSocket
             "OverseasStockRealAccountNode": RealAccountNodeExecutor(),
             "OverseasFuturesRealAccountNode": RealAccountNodeExecutor(),
@@ -20562,6 +20683,7 @@ class WorkflowExecutor:
         listeners: Optional[List[ExecutionListener]] = None,
         resource_limits: Optional["ResourceLimits"] = None,
         storage_dir: Optional[str] = None,
+        execution_key: Optional[str] = None,
     ) -> "WorkflowJob":
         """
         Execute workflow
@@ -20575,6 +20697,10 @@ class WorkflowExecutor:
             resource_limits: Resource limits (CPU, RAM, workers). None = auto-detect
             storage_dir: DB/파일 저장 디렉토리. None = /app/data 기본값 (로컬에서 권한 없으면 ./app/data 로 폴백)
         """
+        from programgarden.database.db_naming import engine_db_filename
+        # Validate before allocating resources or opening any database.
+        engine_db_filename(workflow_id="validation", job_id="validation", execution_key=execution_key)
+
         # Compile (structural + registry validation).
         resolved, validation = self.compile(
             definition,
@@ -20644,6 +20770,7 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            execution_key=execution_key,
             ls_token_provider=self.ls_token_provider,
             order_lifecycle_handler=self.order_lifecycle_handler,
         )
@@ -20907,6 +21034,7 @@ class WorkflowExecutor:
         listeners: Optional[List[ExecutionListener]] = None,
         resource_limits: Optional["ResourceLimits"] = None,
         storage_dir: Optional[str] = None,
+        execution_key: Optional[str] = None,
     ) -> "WorkflowJob":
         """체크포인트에서 워크플로우 복원.
 
@@ -20928,6 +21056,10 @@ class WorkflowExecutor:
         from programgarden.database.checkpoint_manager import CheckpointManager
         from datetime import timezone as _tz
 
+        from programgarden.database.db_naming import engine_db_filename
+        # Validate before allocating resources or opening any database.
+        engine_db_filename(workflow_id="validation", job_id="validation", execution_key=execution_key)
+
         # 1. Compile — match execute() before restoring runs.
         resolved, validation = self.compile(
             definition,
@@ -20940,7 +21072,7 @@ class WorkflowExecutor:
         workflow_id = resolved.workflow_id
         from programgarden.tools.job_tools import _resolve_data_dir
         db_dir = _resolve_data_dir(storage_dir)
-        db_path = str(db_dir / f"{workflow_id}_workflow.db")
+        db_path = str(db_dir / engine_db_filename(workflow_id=workflow_id, job_id=job_id, execution_key=execution_key))
 
         mgr = CheckpointManager(db_path)
         checkpoint = mgr.load_checkpoint(job_id)
@@ -20993,6 +21125,7 @@ class WorkflowExecutor:
             workflow_edges=resolved.edges,
             workflow_nodes=resolved.nodes,
             storage_dir=storage_dir,
+            execution_key=execution_key,
             ls_token_provider=self.ls_token_provider,
             order_lifecycle_handler=self.order_lifecycle_handler,
         )
@@ -21684,8 +21817,10 @@ class WorkflowJob:
                 break
 
             # Wait if paused
-            while self.context.is_paused:
+            while self.context.is_paused and self.context.is_running:
                 await asyncio.sleep(0.1)
+            if not self.context.is_running:
+                return
 
             node = self.workflow.nodes.get(node_id)
             if not node:
@@ -21699,6 +21834,16 @@ class WorkflowJob:
                     node_id=node_id,
                     node_type=node.node_type,
                     state=NodeState.COMPLETED,
+                )
+                continue
+
+            # === IfNode: 비활성 브랜치 스킵 ===
+            if node_id in if_skipped_nodes:
+                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.SKIPPED,
                 )
                 continue
 
@@ -21716,16 +21861,6 @@ class WorkflowJob:
             # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
             if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
                 _safe_print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
-                continue
-
-            # === IfNode: 비활성 브랜치 스킵 ===
-            if node_id in if_skipped_nodes:
-                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
-                await self.context.notify_node_state(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    state=NodeState.SKIPPED,
-                )
                 continue
 
             _safe_print(f"  ▶ Executing node: {node_id} ({node.node_type})")
@@ -22130,7 +22265,7 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "KoreaStockAccountNode", "KoreaStockRealAccountNode",
-        "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "SQLiteNode", "HTTPRequestNode", "SessionGateNode",  # 데이터 노드
         "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
@@ -22844,6 +22979,24 @@ class WorkflowJob:
         parallel = config.get("parallel", False)
         delay_ms = config.get("delay_ms", 0)
         continue_on_error = config.get("continue_on_error", True)
+        # Branch expressions share ExecutionContext outputs. Until contexts
+        # are isolated per parallel item, an await can replace item A's gate
+        # evidence with item B's data. Serialize guarded/order branches even
+        # when parallel was requested; do not race an authorization decision.
+        guarded_branch = any(
+            self.workflow.nodes[n].node_type == "IfNode"
+            or self.workflow.nodes[n].node_type.endswith(
+                ("NewOrderNode", "ModifyOrderNode", "CancelOrderNode")
+            )
+            for n in branch_order if n in self.workflow.nodes
+        )
+        if parallel and guarded_branch:
+            parallel = False
+            self.context.log(
+                "warning",
+                "SplitNode guarded/order branches execute sequentially to preserve per-item decisions.",
+                split_id,
+            )
 
         # Resolve the array to split — the single source of truth for this
         # branch: per-item item/index/total AND the items/_array output ports
@@ -23046,10 +23199,25 @@ class WorkflowJob:
         # 종목들이 한 노드를 공유하면 대기시간까지 공유돼 한 번에 한 종목만 통과한다.
         branch_scope = f"{split_id}#{index}"
 
+        # Routing decisions belong to this item, never the preceding item.
+        if_skipped_nodes: Set[str] = set()
+        terminal_nodes = {
+            edge.from_node_id for edge in self.workflow.edges
+            if edge.from_node_id in branch_order
+            and self.workflow.nodes.get(edge.to_node_id)
+            and self.workflow.nodes[edge.to_node_id].node_type == "AggregateNode"
+        }
+
         # Execute each branch node
         for node_id in branch_order:
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+            if node_id in if_skipped_nodes:
+                # Do not expose a previous item's gated output through a later
+                # expression or collect it as this item's result.
+                self.context._outputs.pop(node_id, None)
+                self.context._outputs.pop(f"_input_{node_id}", None)
                 continue
 
             is_realtime = node.node_type in REALTIME_NODE_TYPES
@@ -23103,6 +23271,10 @@ class WorkflowJob:
                 order_invocation_id=f"split:{branch_scope}",
                 order_iteration_index=index,
             )
+
+            if node.node_type == "IfNode" and outputs:
+                taken = outputs.pop("_if_branch", "true")
+                if_skipped_nodes.update(self._compute_if_skip_nodes(node_id, taken))
 
             # Store outputs
             for port_name, value in outputs.items():
@@ -23175,7 +23347,7 @@ class WorkflowJob:
         # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
         # skip 하여 "실시간 체결가" 표에 가격 없는/이질적인 행이 끼지 않게 한다. branch
         # 노드가 아예 없으면(bare Split→Aggregate) item 을 그대로 수집한다(정상 패턴).
-        if branch_order and last_had_public is False:
+        if branch_order and (last_had_public is False or (terminal_nodes and terminal_nodes <= if_skipped_nodes)):
             return _SKIP_BRANCH_ITEM
 
         return result
@@ -23434,8 +23606,10 @@ class WorkflowJob:
                 continue
             
             # Wait if paused
-            while self.context.is_paused:
+            while self.context.is_paused and self.context.is_running:
                 await asyncio.sleep(0.1)
+            if not self.context.is_running:
+                return
             
             if event.type == "realtime_update":
                 self.stats["realtime_updates"] += 1
@@ -23869,8 +24043,57 @@ class WorkflowJob:
 
     async def resume(self) -> None:
         """Resume execution"""
+        if getattr(self, "_cancellation_requires_restart", False):
+            raise RuntimeError("Restart with fresh account verification after pending-order cancellation")
         self.status = "running"
         self.context.resume()
+
+    async def cancel_pending_orders(self) -> Dict[str, Any]:
+        """Cancel only verified owned stock orders while strategy execution is paused.
+
+        This is an explicit action, never an automatic side effect of stop().
+        Broker responses are not assumed terminal. Restart must verify the account
+        again before any strategy order can be resumed.
+        """
+        from .database.owned_order_cancellation import cancel_owned_pending_orders
+        from .database.position_reconciliation import ReconciliationUnavailable
+
+        if getattr(self, "_owned_cancellation_active", False):
+            raise ReconciliationUnavailable("cancellation_already_in_progress")
+
+        def quiescent():
+            return (self.status == "paused" and self.context.is_paused
+                    and not self.context.is_shutdown
+                    and all(state != NodeState.RUNNING for state in self._node_states.values()))
+
+        tracker = self.context._workflow_position_tracker
+        if (self.context.is_dry_run or tracker is None or not tracker.execution_key
+                or tracker.product != "overseas_stock" or not quiescent()):
+            raise ReconciliationUnavailable("cancellation_requires_paused_owned_stock_execution")
+        credential = self.context.get_credential(broker_credential_key(tracker.product))
+        if (not isinstance(credential, dict) or not credential.get("appkey")
+                or not credential.get("appsecret")
+                or bool(credential.get("paper_trading", False)) != (tracker.trading_mode == "paper")):
+            raise ReconciliationUnavailable("cancellation_credential_scope_unavailable")
+        self._owned_cancellation_active = True
+        self._cancellation_requires_restart = True
+        try:
+            node_id = self.context._workflow_broker_node_id or "owned_cancellation"
+            ls, success, _ = ensure_ls_login(
+                credential["appkey"], credential["appsecret"], tracker.trading_mode == "paper",
+                self.context, node_id, tracker.product, caller_name="owned_cancellation")
+            if not success:
+                raise ReconciliationUnavailable("cancellation_broker_login_failed")
+
+            async def send(target):
+                return await CancelOrderNodeExecutor()._cancel_overseas_stock(
+                    ls, target["order_no"], target["symbol"], target["exchange"], {}, self.context, node_id)
+
+            result = await asyncio.wait_for(cancel_owned_pending_orders(
+                ls, tracker, send, can_send=quiescent), timeout=120)
+            return {"job_id": self.job_id, **result, "restart_required": True}
+        finally:
+            self._owned_cancellation_active = False
 
     async def _cleanup_broker_fill_subscriptions(self) -> None:
         """Stop all broker-owned work before cleaning up the remaining nodes."""
@@ -24221,7 +24444,7 @@ class WorkflowJob:
         """CheckpointManager 싱글톤 반환 (지연 로딩)."""
         if self._checkpoint_mgr is None:
             from programgarden.database.checkpoint_manager import CheckpointManager
-            db_filename = f"{self.workflow.workflow_id}_workflow.db"
+            db_filename = self.context.engine_db_filename
             db_path = self.context._resolve_db_path(db_filename)
             self._checkpoint_mgr = CheckpointManager(db_path)
         return self._checkpoint_mgr
@@ -24483,6 +24706,23 @@ class WorkflowJob:
             return None
 
         ls = entry["ls"]
+        if tracker.execution_key:
+            from .database.order_recovery import orders_needing_recovery
+            from .database.broker_order_totals import read_stock_order_totals
+            unresolved = orders_needing_recovery(tracker)
+            if not unresolved:
+                return {"recovered_orders": 0}
+            revision = tracker.fill_revision
+            totals = await asyncio.wait_for(read_stock_order_totals(ls, tracker, unresolved), timeout=60)
+            recovered = await tracker.recover_order_totals(totals, expected_revision=revision)
+            if any(Decimal(row["quantity"]) > 0 for row in recovered):
+                from programgarden_core.bases.listener import RiskEvent
+                await self.context.notify_risk_event(RiskEvent(
+                    job_id=self.job_id, event_type="order_totals_recovered", severity="info",
+                    details={"recoveries": recovered, "basis": "broker_order_total",
+                             "is_estimated": True, "is_trade": False},
+                ))
+            return {"recovered_orders": len(recovered)}
         node_id = "fill_reconciler"
         # 🔴 체결 조회는 `NewOrderNodeExecutor` 의 메서드다 — WorkflowJob 의 것이 아니다.
         #    `self._query_...` 로 부르면 AttributeError 로 매 주기 죽는다(2026-09-14 실관측).

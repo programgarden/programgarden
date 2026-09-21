@@ -1,3 +1,26 @@
+## [1.31.0] - 2026-09-21
+
+### Added
+- SessionGateNode evaluates explicit IANA local windows, DST, overnight opening weekdays and closed dates immediately. Enforce its boolean through IfNode; it does not query exchange holiday/market status.
+- Timezone database dependency for hosts without a system zoneinfo database.
+
+### Fixed
+- Schema discovery constructs metadata without validating placeholder runtime values; executable nodes retain full field validation.
+- Repair AI-facing Split/Aggregate examples, explicit array and order bindings, quote field names and table columns.
+- Complete futures capacity node descriptions and two read-only examples. Mark order components as incomplete strategy demonstrations.
+
+## [1.30.0] - 2026-09-16
+
+## [1.30.1] - 2026-09-16
+
+### Fixed
+- Describe cancellation outputs as broker acknowledgement with confirmation pending.
+- Remove metadata examples that treated acceptance as completed cancellation.
+
+### Added
+- OverseasFuturesOrderableQuantityNode reads contract/side/price-specific capacity without placing an order.
+- Futures REST quote schema exposes nullable observed tick_size, with matching English/Korean node labels.
+
 ## [1.28.3] - 2026-09-15
 
 ## [1.29.0] - 2026-09-15

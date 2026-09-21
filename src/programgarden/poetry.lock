@@ -2610,34 +2610,35 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "1.29.0"
+version = "1.31.0"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.29.0-py3-none-any.whl", hash = "sha256:1774f83dde6b3dc65c33f09e66501c585438d5bc578bcb5f12889a94d385555b"},
-    {file = "programgarden_core-1.29.0.tar.gz", hash = "sha256:8e089cef67f0a86dc82c2b90d69204e89043d98e2c2cbb4de7840dec0e0c6ca8"},
+    {file = "programgarden_core-1.31.0-py3-none-any.whl", hash = "sha256:1cf546e821ed9dea4d8bef5aa76307ca48360726abca865cdfc8a494376664e0"},
+    {file = "programgarden_core-1.31.0.tar.gz", hash = "sha256:461b6c4c51a8f1139249b44d6f7ec428c2eb51f9dd72c42774b2c202be679f0a"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.0.0,<3.0.0"
+tzdata = ">=2025.2,<2026.0"
 
 [[package]]
 name = "programgarden-finance"
-version = "1.10.2"
+version = "1.10.5"
 description = "프로그램 동산 운영진이 관리하는 증권사 데이터 오픈소스"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_finance-1.10.2-py3-none-any.whl", hash = "sha256:58545332b08b39a5e90ee9855117493bc1082e3eac7002b423892de56180016a"},
-    {file = "programgarden_finance-1.10.2.tar.gz", hash = "sha256:889598fe41e8811f2307d3735e9092963ce3e798794717084be382ad75a433b2"},
+    {file = "programgarden_finance-1.10.5-py3-none-any.whl", hash = "sha256:77b7d9d6f6068a1f047899e2c133c0fd1777a6aedba300475dc826d818338424"},
+    {file = "programgarden_finance-1.10.5.tar.gz", hash = "sha256:cece934cff42b89e1c9aa31a86f6eda76e99a82eef33ce615395c87f803abaa5"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.10.0,<4.0.0"
-programgarden-core = ">=1.29.0,<2.0.0"
+programgarden-core = ">=1.30.1,<2.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 python-dotenv = ">=1.1.1,<2.0.0"
 redis = ">=6.4.0,<7.0.0"
@@ -4179,4 +4180,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "d77a8c313eb5abc0fa91237ce4234467eb16ba38423d02aab64ed92b5b85784c"
+content-hash = "e3e080a70c2941ac074b287150db21d25aa8c01f4d1cf4e09e5186a5aae424dd"

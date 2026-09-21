@@ -147,7 +147,7 @@ def real_market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) ->
     }
 
 
-def market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict[str, Any]:
+def market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None, *, product: str = "overseas_stock") -> Dict[str, Any]:
     """MarketDataNode (REST current-price) deep fixture.
 
     Real shape: ``{"values": [{symbol, exchange, price, change, change_pct,
@@ -173,6 +173,9 @@ def market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict
                 "eps": 5.0,
             }
         )
+    if product == "overseas_futures":
+        for value in values:
+            value["tick_size"] = 1.0
     return {"values": values}
 
 

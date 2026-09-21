@@ -1,3 +1,58 @@
+## [1.41.0] - 2026-09-21
+
+### Added
+- Native immediate SessionGateNode support without automatic array iteration.
+
+### Fixed
+- Apply IfNode routing inside Split branches, keeping decisions and skipped outputs local to each item. Preserve collection of an active alternative when its sibling is skipped. A false outer gate now skips Split execution before its special handler.
+- Serialize Split branches containing IfNode or order nodes even if parallel=true was requested, preventing shared-context item/gate races; emit an explicit warning. Other parallel branches retain existing behavior.
+- Reject non-JSON/nonfinite CodeNode inputs before subprocess dispatch, including a bound array helper accidentally passed without parentheses. Preserve subprocess credential isolation.
+- Correct AI-facing core examples and metadata so generated workflows reference actual output fields and pair Split with Aggregate.
+
+### Dependencies
+- Require programgarden-core ^1.31.0; finance ^1.10.5 and community ^1.15.3 remain unchanged.
+
+### Scope
+- Session windows do not establish exchange holiday/halts or guarantee execution. Persistent order reservations belong to application examples and must use account-isolated durable storage.
+
+## [1.40.1] - 2026-09-16
+### Fixed
+- Preserve editor node labels (`customLabel`) and dimensions (`size`) during strict deep validation. Unknown execution settings and misspelled metadata keys still fail validation.
+- Synchronize the root project version with the published engine package.
+### Dependencies
+- Core ^1.30.1, finance ^1.10.5 and community ^1.15.3 remain unchanged.
+
+## [1.40.0] - 2026-09-16
+### Added
+- Opt-in managed execution storage with verified legacy SQLite/WAL adoption and exclusive project/execution leases.
+- Fresh broker reconciliation before restart, trim-only owned-position adjustments and immutable acknowledged audit delivery.
+- Verified overseas-stock original-order total recovery with estimated-money provenance and exclusion from individual-fill/win counts.
+- Explicit owned-stock cancellation: exact ledger ownership, durable single-attempt journal, pause/drain control and bounded terminal confirmation.
+### Fixed
+- Separate broker cancellation acknowledgement from completion across all three products; ordinary stop never sends cancellation requests.
+- Deduplicate late precise fills against order-total recovery and retain unknown partial-cancellation gaps as restart blockers.
+- Stop paused jobs without executing queued strategy nodes; route managed cancellation through the caller's exact executor/event loop.
+### Dependencies
+- Require core ^1.30.1, finance ^1.10.5 and community ^1.15.3.
+### Scope
+- Managed hosts opt into execution identity. Existing standalone storage and active deployed runners are not rewritten by package publication.
+- Futures/domestic bulk cancellation awaits verified terminal evidence. Emergency market liquidation is excluded.
+
+## [1.39.1] - 2026-09-16
+### Fixed
+- Futures orderable quantity resolves credentials from the selected workflow broker, using the same exact-account contract as order submission. Valid inline credentials and broker-scoped secrets now work; unrelated direct/product secret slots cannot substitute another account.
+- Cover the real execution context and ambiguous, incompatible, missing or mode-mismatched credentials. A bounded paper-account preflight reaches the intercepted order boundary with verified capacity; it does not establish order acceptance or fills.
+
+## [1.39.0] - 2026-09-16
+### Added
+- Read-only OverseasFuturesOrderableQuantityNode using observed CIDBQ01400 quantity and matching request echo; zero capacity is normal and missing capacity remains unavailable.
+- Expose o3105 UntPrc as nullable futures quote tick_size; reject mismatched/missing quote identity or price.
+### Fixed
+- Futures position, asset and pending reads reject failed, missing and continuation responses instead of allowing an empty-account entry. Current-day pending queries use the example's same-day mode and Korea time.
+- Unsupported IfNode operators, including generated is_true, now fail validation/execution instead of silently selecting the false branch.
+### Dependencies
+- Requires programgarden-core ^1.30.0 and programgarden-finance ^1.10.3; community remains ^1.15.3.
+
 ## [1.38.2] - 2026-09-15
 
 ### Fixed

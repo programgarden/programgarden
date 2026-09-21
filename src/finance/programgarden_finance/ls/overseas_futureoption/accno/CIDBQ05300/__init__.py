@@ -74,6 +74,10 @@ class TrCIDBQ05300(TRAccnoAbstract):
             rsp_msg=resp_json.get("rsp_msg", ""),
             error_msg=error_msg,
         )
+        # A parser default is not an observed empty list. Preserve presence for
+        # fail-closed account and duplicate-order guards.
+        if "CIDBQ05300OutBlock2" not in resp_json or exc is not None or is_error_status:
+            result.model_fields_set.discard("block2")
         result.raw_data = resp
         return result
 
