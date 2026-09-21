@@ -300,10 +300,13 @@ class G3190OutBlock1(BaseModel):
     )
     expire_date: str = Field(
         default="",
-        title="만기일자 (Expiry / delisting date)",
+        title="만기일자 (Expiry date)",
         description=(
-            "Expiry / delisting date in YYYYMMDD format. Empty for issues "
-            "without a defined expiry."
+            "Expiry date, labelled only as expiry in the LS guide. It is not "
+            "documented as a delisting date. Do not infer delisting, an effective "
+            "delisting timestamp, or eligibility from this field or a missing "
+            "master row. Preserve the returned value; blank/sentinel values "
+            "do not establish listing status."
         ),
         examples=["", "99991231"],
     )
@@ -312,9 +315,11 @@ class G3190OutBlock1(BaseModel):
         title="거래정지여부 (Trading-suspend flag)",
         description=(
             "Trading-suspend flag. Code-set not enumerated in available "
-            "source; consume as returned by LS."
+            "source; consume as returned by LS. A master snapshot does not "
+            "establish the historical halt/resumption time. Blank/missing "
+            "values do not establish normal trading."
         ),
-        examples=["", "Y", "N"],
+        examples=[""],
     )
     bymd: str = Field(
         default="",

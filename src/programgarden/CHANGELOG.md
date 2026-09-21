@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### SDK maintenance
+- Finance 1.10.7 corrects expiry-versus-delisting and status/dividend field guidance. Finance-only metadata patch; engine/core/community and trading behavior are unchanged.
 - Finance 1.10.6 preserves the complete CDPCQ04700 schema and private raw evidence, with sparse-field and internal-conversion guidance. This is a finance-only release; no engine version, dependency floor or trading behavior changes.
 
 ## [1.41.0] - 2026-09-21

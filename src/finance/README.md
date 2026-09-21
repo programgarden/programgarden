@@ -22,6 +22,11 @@ Programgarden Finance는 AI 시대에 맞춰 파이썬을 모르는 투자자도
 
 ## 설치
 
+The [US equity eligibility contract](docs/us_equity_eligibility_contract.md)
+distinguishes documented expiry from delisting, raw status flags from effective
+halt events, and account dividend evidence from sparse field labels. These
+limits also appear in field metadata consumed by chatbot/tool schemas.
+
 Stock account tracking retains a separate, complete COSOQ00201 valuation snapshot
 with gains, losses and net PnL by currency. This uses the existing balance refresh;
 broker amounts remain separate from mutable tick estimates and realized trades.
