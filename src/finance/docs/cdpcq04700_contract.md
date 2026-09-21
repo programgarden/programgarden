@@ -89,6 +89,36 @@ Inspect existing authorized transfer/conversion records before requesting a
 new controlled transfer. Recheck raw amount, currency, reversal state and account
 identity; a summary report alone does not establish those fields.
 
+## Directly rechecked sparse responses (September 21, 2026)
+
+Two read-only requests on the same authorized live account checked a known
+transfer day (`QryTp=1`) and a bounded currency-conversion period (`QryTp=4`).
+Both used asset class `00`, echoed all seven query fields, returned `00136`,
+and ended with `tr_cont=N` and an empty continuation key. No token issuance,
+orders or deposits were performed by these two captures. The SDK preserved
+all returned fields without a parse error. Amounts and account identities are
+omitted here; the regression fixture uses synthetic values.
+
+- The transfer row had summary code `1777`, normal cancellation status, an
+  explicit transaction number and **blank `CrcyCode`**. `TrdAmt` and `AdjstAmt`
+  were both explicitly zero. The unprefixed deposit-balance increase exactly
+  matched `OutBlock5.MnyinAmt` **and `FcurrTrdAmt`**. Both foreign balances were
+  zero. Thus even a positive field named `FcurrTrdAmt` does not establish USD;
+  do not silently substitute zero from the generic transaction/settled fields.
+- Two conversion rows had code `2923`, `CrcyCode=USD`, a withdrawal display
+  label, decreasing domestic balances and **increasing USD balances**. The USD
+  increase matched `FcurrTrdAmt`; `FcurrAdjstAmt` was zero.
+- A third row returned within the conversion query had code `1512`, explicit
+  USD, an incoming label, positive exchange rate and a USD balance increase
+  matching `FcurrTrdAmt`. Its domestic balance did not change. The raw row alone
+  therefore does not identify or reconcile the originating counter-leg.
+
+These observations establish these rows, not a universal summary-code map or
+complete lifetime funding history. Terminal continuation covers the requested
+mode and date range; a conversion-only scan excludes other modes. Connecting
+the transfer to later currency conversions requires the intervening ledger.
+Keep whole-account external transfers separate from flows into a USD-only scope.
+
 ## Bounded diagnostic example
 
 `example/korea_stock/run_CDPCQ04700.py` uses an explicit private token file with

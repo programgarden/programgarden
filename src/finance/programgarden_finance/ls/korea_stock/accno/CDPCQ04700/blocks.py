@@ -473,7 +473,9 @@ class CDPCQ04700OutBlock3(_ResponseBlock):
     FcurrAmt: Decimal | Literal[""] | None = Field(default=None, title="외화금액",
         description="Foreign-currency amount; the field alone does not establish an external cash deposit.")
     FcurrTrdAmt: Decimal | Literal[""] | None = Field(default=None, title="외화거래금액",
-        description="Foreign-currency transaction amount; distinguish trades, transfers and currency exchange.")
+        description=("Reported amount under the foreign-transaction field name. Also observed populated "
+                     "on a transfer with blank currency and zero foreign balances. Never infer USD from "
+                     "this field name; reconcile explicit currency, classification and balance changes."))
     FcurrDps: Decimal | Literal[""] | None = Field(default=None, title="외화예수금",
         description="Foreign-currency deposit balance, not a cash-transfer event.")
     FcurrDpsBfbalAmt: Decimal | Literal[""] | None = Field(default=None, title="외화예수금전잔금액",

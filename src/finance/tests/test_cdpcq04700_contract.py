@@ -88,6 +88,37 @@ def test_unknown_fields_are_retained_without_claiming_financial_meaning():
     assert response.block3[0].model_dump(exclude_unset=True) == {"NewBrokerField": "123"}
 
 
+def test_observed_transfer_shape_keeps_blank_currency_and_nonzero_foreign_named_amount():
+    # Synthetic amounts; the shape was observed on an authorized transfer row.
+    response = parse({"rsp_cd": "00136", "CDPCQ04700OutBlock3": [{
+        "TrdDt": "20260115", "TrdNo": 1, "SmryNo": "1777", "CancTpNm": "normal",
+        "CrcyCode": "", "TrdAmt": 0, "AdjstAmt": 0,
+        "DpsBfbalAmt": 10000, "DpsCrbalAmt": 35000,
+        "FcurrTrdAmt": "25000.0000", "FcurrDpsBfbalAmt": 0, "FcurrDps": 0,
+    }], "CDPCQ04700OutBlock5": {"MnyinAmt": 25000, "MnyoutAmt": 0}})
+    assert response.error_msg is None
+    row = response.block3[0]
+    assert row.CrcyCode == "" and "CrcyCode" in row.model_fields_set
+    assert row.TrdAmt == row.AdjstAmt == 0
+    assert row.FcurrTrdAmt == row.DpsCrbalAmt - row.DpsBfbalAmt == response.block5.MnyinAmt
+    assert row.FcurrDpsBfbalAmt == row.FcurrDps == 0
+
+
+def test_conversion_direction_is_not_overwritten_by_display_label():
+    # The SDK must preserve conflicting labels and the actual balance values.
+    response = parse({"CDPCQ04700OutBlock3": [{
+        "SmryNo": "2923", "TpCodeNm": "withdrawal", "CrcyCode": "USD",
+        "DpsBfbalAmt": 20000, "DpsCrbalAmt": 18000,
+        "FcurrDpsBfbalAmt": "4.25", "FcurrDps": "5.75",
+        "FcurrTrdAmt": "1.50", "FcurrAdjstAmt": 0,
+    }]})
+    row = response.block3[0]
+    assert row.TpCodeNm == "withdrawal" and row.CrcyCode == "USD"
+    assert row.DpsCrbalAmt < row.DpsBfbalAmt
+    assert row.FcurrDps - row.FcurrDpsBfbalAmt == row.FcurrTrdAmt == Decimal("1.50")
+    assert row.FcurrAdjstAmt == 0
+
+
 def test_malformed_header_keeps_raw_response_and_error_logs_exclude_account_data(caplog):
     request = CDPCQ04700.CDPCQ04700Request(body={
         "CDPCQ04700InBlock1": CDPCQ04700.CDPCQ04700InBlock1()})
