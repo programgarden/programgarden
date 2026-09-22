@@ -161,13 +161,19 @@ class ReplayExecutor(WorkflowExecutor):
                     record = record.get("items",{}).get(str(item["exchange"])+":"+str(item["symbol"]))
                 if not isinstance(record,dict) or "output" not in record or "contract" not in record:
                     raise ContractViolation(node_id,"No matching per-item I/O fixture/contract","REPLAY_FIXTURE_REQUIRED")
+                if "order_events" in record:
+                    if self.orders is None or not node_type.endswith(("OpenOrdersNode", "RealOrderEventNode")):
+                        raise ContractViolation(node_id,"Completion evidence requires an existing request and broker observation node")
+                    self.orders.apply_events(record["order_events"], node_type)
                 output = deepcopy(record["output"])
                 check_contract(output, record["contract"], f"{node_id}.output")
+                if self.orders is not None and node_type.endswith("OpenOrdersNode"):
+                    self.orders.check_open_orders(output, node_type)
             elif node_type in ORDER_NODES:
                 if self.orders is None:
                     self.orders = ReplayOrders(self.fixture)
                 output = self.orders.execute(node_id,node_type,config,context)
-                observed = deepcopy(self.orders.book.orders[output["order_id"]])
+                observed = deepcopy(self.orders.last_observation)
                 self.outcome.order_observations.append({"node_id":node_id,**observed})
             elif node_type == "SQLiteNode":
                 from programgarden.replay_sqlite import execute_sqlite
@@ -249,6 +255,15 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
         context.start()
         try:
             await asyncio.wait_for(job._execute_main_flow(), timeout=timeout)
+        except Exception as exc:
+            outcome.errors.append(exc.as_dict() if isinstance(exc, ContractViolation) else {
+                "code": "REPLAY_EXECUTION_FAILED", "message": type(exc).__name__ + ": " + str(exc)})
+        finally:
+            context.stop()
+        # Capture partial state even if a later contract, mapping or timeout
+        # interrupts the chain. Failure evidence must retain earlier intents,
+        # fills and outstanding reservations rather than return an empty book.
+        try:
             outcome.outputs = {node: context.get_all_outputs(node) for node in resolved.nodes}
             states = job.get_state()["nodes"]
             outcome.skipped = [node for node, state in states.items() if state.get("state") == "skipped"]
@@ -270,9 +285,7 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
             finite_json(outcome.outputs)
         except Exception as exc:
             outcome.errors.append(exc.as_dict() if isinstance(exc, ContractViolation) else {
-                "code": "REPLAY_EXECUTION_FAILED", "message": type(exc).__name__ + ": " + str(exc)})
-        finally:
-            context.stop()
+                "code": "REPLAY_EVIDENCE_FAILED", "message": type(exc).__name__ + ": " + str(exc)})
     if node_under_test is not None:
         outcome.setup_executed = [node for node in outcome.executed if node != node_under_test]
         outcome.executed = [node for node in outcome.executed if node == node_under_test]

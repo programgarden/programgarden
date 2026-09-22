@@ -20,8 +20,14 @@ executor remains separate. A replay result does not authorize a broker order.
   Futures require explicit margin and multiplier; profit calculations are only
   the fixture model, not broker verification or performance evidence.
 - `programgarden.replay_order_adapter.ReplayOrders`: shares the live new-order
-  normalizer and result envelope; never invokes a broker transport. Special
-  auction order types and modify/cancel graph adapters remain unsupported.
+  normalizer and modification-target resolver; never invokes a broker transport.
+  All three products have new/modify/cancel graph adapters. A change response
+  acknowledges a request, not its completion. Only subsequent matching fixture
+  evidence at a broker-observation node applies cancellation/replacement. Open-order
+  snapshots cannot hide remaining orders or disagree with their quantities/market.
+  Partial-fill replacement quantity semantics and special auction types remain
+  unsupported rather than guessed. Partial fills followed by cancellation are
+  supported, including fills racing with cancellation acknowledgements.
 - `programgarden.replay_sqlite.execute_sqlite`: uses real SQLite reservation
   writes/reads in fresh disposable storage. Standalone node validation executes
   ancestor setup in the same workspace; cumulative validation starts fresh.
@@ -49,9 +55,13 @@ an editable plugin change or numpy/pandas change cannot reuse old proof.
 The host persists leased
 claims and checks returned identities. Final replay reloads the saved graph and
 requires independent expected-output assertions; it is separate from publication.
+Order graphs additionally require `expected_simulation` contracts over cash,
+reserved cash, positions, orders and zero live submissions. The receiving host
+rechecks these assertions; a correct-looking node result with a wrong account
+state cannot become READY. Failed chains retain earlier intents and book state.
 
 This is an unreleased foundation. Trusted strategy-specific fixtures, complete
-contract coverage, modify/cancel adapters, public
+contract coverage, remaining broker-specific lifecycle semantics, public
 entry-path gates, queue semantics and AI tool integration remain in progress.
 No new package version has been published and no incremental gate is enabled in
 production. Do not describe a passing fixture as "error-free live trading".

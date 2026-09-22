@@ -61,6 +61,16 @@ async def test_positive_and_negative_suites_both_run_through_each_build_gate():
             "order_result":{"type":"object","required":["success"],"properties":{
                 "success":{"type":"boolean","const":expected_success}}}}}}
         fixture["must_execute"]=["order"]
+        fixture["expected_simulation"]={"type":"object",
+            "required":["cash","reserved_cash","positions","orders","live_order_count"],"properties":{
+                "cash":{"type":"number","const":800 if expected_success else 1000},
+                "reserved_cash":{"type":"number","const":200 if fixture is unknown else 0},
+                "positions":{"type":"object","const":{"NASDAQ:A":2} if expected_success else {}},
+                "orders":{"type":"object","required":["SIM-1"],"properties":{
+                    "SIM-1":{"type":"object","required":["status","filled_quantity"],"properties":{
+                        "status":{"type":"string","const":"filled" if expected_success else "unknown" if fixture is unknown else "rejected"},
+                        "filled_quantity":{"type":"integer","const":2 if expected_success else 0}}}}},
+                "live_order_count":{"type":"integer","const":0}}}
     ws=BuildWorkspace("order-task",1,{**graph,"nodes":[],"edges":[]},[positive,rejected,unknown])
     for node in graph["nodes"]:
         ws.add_node(node,[e for e in graph["edges"] if e["to"]==node["id"]],expected_revision=ws.revision)

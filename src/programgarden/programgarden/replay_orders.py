@@ -44,11 +44,15 @@ class SimulationBook:
         self.intent_keys: dict[str, str] = {}
         self.events: dict[str, str] = {}
         self.transitions: list[dict[str, Any]] = []
+        self.operations: dict[str, dict[str, Any]] = {}
+        self.operation_keys: dict[str, str] = {}
 
     def snapshot(self):
         return {"cash": float(self.cash), "currency": self.currency,
                 "positions": deepcopy(self.positions), "entry_prices": deepcopy(self.entry_prices),
                 "orders": deepcopy(self.orders),
+                "operations": deepcopy(self.operations),
+                "reserved_cash": float(self._reserved_cash()),
                 "transitions": deepcopy(self.transitions), "live_order_count": 0}
 
     def submit(self, intent: dict[str, Any], *, key: str, response: str = "accepted",
@@ -98,13 +102,15 @@ class SimulationBook:
         max_age = number(instrument["max_age_seconds"], "max_age_seconds")
         age = Decimal(str((self.as_of - observed).total_seconds()))
         active = [o for o in self.orders.values() if o["symbol_key"] == symbol and o["status"] in ("accepted", "partial_fill", "unknown")]
+        pending_change = any(op["symbol_key"] == symbol and op["status"] in ("accepted", "unknown")
+                             for op in self.operations.values())
         reason = None
         if instrument["currency"] != self.currency: reason = "currency_mismatch"
         elif not instrument["tradeable"]: reason = "instrument_not_tradeable"
         elif not instrument["session_open"]: reason = "market_closed"
         elif age < 0 or age > max_age: reason = "stale_market_data"
         elif price % tick: reason = "invalid_price_tick"
-        elif active: reason = "pending_or_unknown_order"
+        elif active or pending_change: reason = "pending_or_unknown_order"
         elif held and (not futures and intent["side"] == "buy" or futures and not closing): reason = "position_already_held"
         elif closing and intent["quantity"] > abs(held): reason = "position_reversal_not_supported"
         elif not closing and (futures or intent["side"] == "buy") and cost + self._exposure() > self.max_investment: reason = "max_investment_exceeded"
@@ -137,9 +143,124 @@ class SimulationBook:
         return value
 
     def _reserved_cash(self):
-        return sum((Decimal(str(o["unit_cost"])) * (o["intent"]["quantity"] - o["filled_quantity"])
+        reserved = sum((Decimal(str(o["unit_cost"])) * (o["intent"]["quantity"] - o["filled_quantity"])
                     for o in self.orders.values() if (o["intent"]["side"] == "buy" or o["futures"]) and not o["closing"]
                     and o["status"] in ("accepted", "partial_fill", "unknown")), Decimal(0))
+        # A timed-out replacement can have reached the broker. Keep the larger
+        # of original/replacement exposure until matching evidence reconciles it.
+        for op in self.operations.values():
+            if op["status"] not in ("accepted", "unknown"):
+                continue
+            original = self.orders[op["original_order_id"]]
+            original_reserve = Decimal(str(original["unit_cost"])) * (
+                original["intent"]["quantity"]-original["filled_quantity"])
+            reserved += max(Decimal(0), Decimal(str(op.get("replacement_reserve", 0)))-original_reserve)
+        return reserved
+
+    def request_change(self, action: str, order_id: str, *, key: str,
+                       response: str, replacement: dict[str, Any] | None = None):
+        """Record an acknowledged/unknown request without inventing completion.
+
+        Replacement quantities are supported only before any fill. Partial-fill
+        replacement quantity semantics need a separate broker-specific contract;
+        this simulator does not guess whether a wire quantity means total or open.
+        """
+        check_contract(key, {"type":"string", "minLength":1, "maxLength":200}, "operation_key")
+        check_contract(action, {"type":"string", "enum":["modify", "cancel"]}, "action")
+        check_contract(response, {"type":"string", "enum":["accepted", "rejected", "timeout"]}, "response")
+        payload = self._event_payload([action, order_id, replacement])
+        if key in self.operation_keys:
+            operation = self.operations[self.operation_keys[key]]
+            if operation["payload"] != payload:
+                raise ContractViolation("operation_key", "An operation key cannot change its target or payload")
+            return {**deepcopy(operation), "duplicate":True}
+        order = self.orders.get(order_id)
+        if order is None:
+            raise ContractViolation("original_order_id", "The target must exist in this simulation's order book")
+        replacement_reserve = Decimal(0)
+        reason = None
+        if order["status"] not in ("accepted", "partial_fill"):
+            reason = "original_order_not_open"
+        elif order.get("pending_operation"):
+            reason = "operation_pending_or_unknown"
+        if action == "modify":
+            if order["filled_quantity"]:
+                raise ContractViolation("replacement", "Partial-fill replacement quantity semantics are unsupported", "REPLAY_CAPABILITY_BLOCKED")
+            if replacement is None:
+                raise ContractViolation("replacement", "An explicit resolved replacement intent is required")
+            check_contract(replacement, {"type":"object", "required":["quantity", "price"],
+                "additionalProperties":False, "properties":{
+                    "quantity":{"type":"integer", "minimum":1},
+                    "price":{"type":"number", "minimum":0}}}, "replacement")
+            number(replacement["price"], "replacement.price", positive=True)
+            if order["intent"]["order_type"] != "limit":
+                raise ContractViolation("replacement", "Only limit-to-limit replacement has a replay contract", "REPLAY_CAPABILITY_BLOCKED")
+            # Reuse the same risk implementation on a disposable probe book.
+            # Remove the original reservation only in that probe. The actual
+            # original stays reserved until confirmation arrives.
+            probe = deepcopy(self)
+            probe.orders[order_id]["status"] = "replaced"
+            intended = {**order["intent"], **replacement}
+            candidate = probe.submit(intended, key="replacement-risk-check", response="accepted")
+            reason = reason or candidate["reason"]
+            if (order["intent"]["side"] == "buy" or order["futures"]) and not order["closing"]:
+                replacement_reserve = Decimal(str(candidate["unit_cost"])) * replacement["quantity"]
+        elif replacement is not None:
+            raise ContractViolation("replacement", "A cancel request cannot change quantity or price")
+        reason = reason or ("simulated_broker_rejection" if response == "rejected" else None)
+        request_id = f"SIM-CHANGE-{len(self.operations) + 1}"
+        operation = {"request_id":request_id, "action":action, "original_order_id":order_id,
+            "symbol_key":order["symbol_key"], "status":"rejected" if reason else ("unknown" if response == "timeout" else "accepted"),
+            "reason":reason or ("order_outcome_unknown" if response == "timeout" else None),
+            "replacement":deepcopy(replacement), "payload":payload,
+            "replacement_reserve":float(replacement_reserve), "filled_quantity":order["filled_quantity"],
+            "replacement_order_id":f"SIM-REPLACE-{len(self.operations) + 1}" if action == "modify" else None}
+        self.operations[request_id] = operation
+        self.operation_keys[key] = request_id
+        if not reason:
+            order["pending_operation"] = request_id
+        self.transitions.append({"order_id":order_id, "request_id":request_id,
+            "event":action+"_request", "status":operation["status"]})
+        return deepcopy(operation)
+
+    def confirm_change(self, request_id: str, *, event_id: str, applied: bool):
+        """Apply explicit matching fixture evidence, including UNKNOWN recovery."""
+        check_contract(applied, {"type":"boolean"}, "applied")
+        payload = self._event_payload(["confirm_change", request_id, applied])
+        if self._duplicate(event_id, payload):
+            return deepcopy(self.operations[request_id])
+        operation = self.operations.get(request_id)
+        if operation is None or operation["status"] not in ("accepted", "unknown"):
+            raise ContractViolation("request_id", "Confirmation needs an outstanding matching request")
+        order = self.orders[operation["original_order_id"]]
+        if order.get("pending_operation") != request_id:
+            raise ContractViolation("request_id", "The original order has a different pending operation")
+        if applied:
+            if order["status"] not in ("accepted", "partial_fill"):
+                raise ContractViolation("confirmation", "An already terminal order cannot be cancelled or replaced")
+            if operation["action"] == "modify":
+                if order["filled_quantity"]:
+                    raise ContractViolation("confirmation", "A fill raced with replacement; quantity semantics need review", "REPLAY_CAPABILITY_BLOCKED")
+                child = deepcopy(order)
+                child.pop("pending_operation", None)
+                child.update(order_id=operation["replacement_order_id"], status="accepted", reason=None)
+                child["intent"].update(operation["replacement"])
+                child["fill_price"] = operation["replacement"]["price"]
+                if not child["futures"]:
+                    child["unit_cost"] = operation["replacement"]["price"]
+                self.orders[child["order_id"]] = child
+                order["status"] = "replaced"
+            else:
+                order["status"] = "cancelled"
+            operation["status"] = "confirmed"
+        else:
+            operation["status"] = "rejected"
+            operation["reason"] = "simulated_completion_rejection"
+        order.pop("pending_operation")
+        self.events[event_id] = payload
+        self.transitions.append({"order_id":order["order_id"], "request_id":request_id,
+            "event":operation["action"]+"_confirmation", "status":operation["status"]})
+        return deepcopy(operation)
 
     def fill(self, order_id: str, quantity: int, *, event_id: str):
         payload = self._event_payload(["fill", order_id, quantity])
@@ -187,6 +308,8 @@ class SimulationBook:
         order = self.orders[order_id]
         if order["status"] not in ("accepted", "partial_fill"):
             raise ContractViolation("cancel", "Only reconciled open orders can be cancelled")
+        if order.get("pending_operation"):
+            raise ContractViolation("cancel", "Use matching request confirmation for a pending operation")
         order["status"] = "cancelled"
         self.events[event_id] = payload
         self.transitions.append({"order_id": order_id, "event": "cancel", "status": "cancelled"})

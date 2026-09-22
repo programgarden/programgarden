@@ -8,6 +8,30 @@ from collections import Counter
 
 from programgarden.replay_contracts import ContractViolation, check_contract
 from programgarden.validation_replay import content_hash
+from programgarden.replay_order_adapter import ORDER_NODES
+
+
+def check_final_expectations(result, fixture, graph):
+    """Final acceptance asserts outputs and financial state, not just no error."""
+    expected = fixture.get("expected")
+    if not isinstance(expected,dict) or not expected:
+        raise ContractViolation("expected", "Final replay requires independent expected-result assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+    for node_id, schema in expected.items():
+        check_contract(result.outputs.get(node_id), schema, f"{node_id}.expected")
+    for node_id in fixture.get("must_execute", []):
+        if node_id not in result.executed:
+            raise ContractViolation(node_id, "Required path was not reached")
+    if any(node["type"] in ORDER_NODES for node in graph["nodes"]):
+        schema = fixture.get("expected_simulation")
+        required = {"cash", "reserved_cash", "positions", "orders", "live_order_count"}
+        if not isinstance(schema,dict):
+            raise ContractViolation("expected_simulation", "Order graphs require financial-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+        check_contract(result.simulation, schema, "expected_simulation")
+        if (not required <= set(schema.get("required",[]))
+                or not required <= schema.get("properties",{}).keys()):
+            raise ContractViolation("expected_simulation", "Order graphs require independent cash, reservation, position and order-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+        if result.simulation.get("live_order_count") != 0:
+            raise ContractViolation("live_order_count", "Replay must never submit live orders")
 
 
 def assess_scenario(result, fixture, graph):
@@ -19,7 +43,7 @@ def assess_scenario(result, fixture, graph):
             "symbol_key":{"type":"string","minLength":1},
             "status":{"type":"string","enum":["rejected","unknown"]},
             "reason":{"type":["string","null"]},
-            "filled_quantity":{"type":"integer","const":0}}}},"expected_order_failures")
+            "filled_quantity":{"type":"integer","minimum":0}}}},"expected_order_failures")
     node_ids={node["id"] for node in graph["nodes"]}
     relevant=[failure for failure in expected if failure["node_id"] in node_ids]
     observed=[{key:order[key] for key in ("node_id","symbol_key","status","reason","filled_quantity")}

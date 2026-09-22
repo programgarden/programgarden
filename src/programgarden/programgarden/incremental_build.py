@@ -18,9 +18,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from programgarden.replay_contracts import ContractViolation, check_contract, finite_json
+from programgarden.replay_contracts import ContractViolation, finite_json
 from programgarden.validation_replay import content_hash, replay, VALIDATOR_VERSION, CONTRACT_VERSION
-from programgarden.replay_scenarios import scenario_receipt
+from programgarden.replay_scenarios import check_final_expectations, scenario_receipt
 
 
 class BuildGateError(ValueError):
@@ -319,13 +319,7 @@ class BuildWorkspace:
             assessed = scenario_receipt(result,fixture,graph)
             if assessed["scenario_passed"]:
                 try:
-                    if not fixture.get("expected"):
-                        raise ContractViolation("expected", "Final replay requires independent expected-result assertions", "REPLAY_EXPECTATIONS_REQUIRED")
-                    for node_id, schema in fixture.get("expected", {}).items():
-                        check_contract(result.outputs.get(node_id), schema, f"{node_id}.expected")
-                    for node_id in fixture.get("must_execute", []):
-                        if node_id not in result.executed:
-                            raise ContractViolation(node_id, "Required path was not reached")
+                    check_final_expectations(result,fixture,graph)
                 except ContractViolation as exc:
                     assessed["scenario_passed"] = False
                     assessed["scenario_errors"].append(exc.as_dict())
