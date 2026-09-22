@@ -19,6 +19,10 @@ executor remains separate. A replay result does not authorize a broker order.
   passes. External I/O requires exact fixtures, including per-symbol fixtures
   when iterating. Strict node input models and explicit output contracts reject
   coercion, missing fields and nonfinite values.
+- `programgarden.replay_sources.source_contract_catalog`: native raw-source
+  envelopes for private scenario preparation, including the actual SDK response
+  schemas. This does not run transport or fabricate provider observations. The
+  parser still executes and independently asserted outputs still determine PASS.
 - `programgarden.replay_orders.SimulationBook`: fixture-only cash, positions,
   reserved orders, partial fills, cancellation and UNKNOWN reconciliation.
   Futures require explicit margin and multiplier; profit calculations are only

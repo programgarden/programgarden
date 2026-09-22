@@ -1,6 +1,8 @@
 ## Unreleased
 
 ### Added
+- Describe native raw-source fixture envelopes and SDK field contracts for
+  independent scenario preparation; no live provider call or PASS implication.
 - Validate independently prepared assertion schemas before candidate execution.
 - Revision-checked node removal and native-schema header edits invalidate old
   replay proof without discarding validation attempt history or task identity.

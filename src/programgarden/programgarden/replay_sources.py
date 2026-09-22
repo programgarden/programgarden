@@ -14,6 +14,64 @@ SOURCE_NODES = frozenset({"FileReaderNode", "FearGreedIndexNode", "MarketUnivers
     "FuturesContractNode", "ScreenerNode", "OverseasFuturesOrderableQuantityNode"})
 
 
+def source_contract_catalog():
+    """Describe parser inputs to private scenario authors without running I/O.
+
+    SDK schemas document available fields, not a promise that a live response
+    fills them. This catalog is not an expected node result or a PASS receipt.
+    The parser and independently written assertions remain authoritative.
+    """
+    from programgarden_finance.ls.overseas_futureoption.market.o3101.blocks import O3101OutBlock
+    from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01400.blocks import CIDBQ01400Response
+    from programgarden_finance.ls.overseas_stock.market.g3101.blocks import G3101OutBlock
+    from programgarden.executor import MarketUniverseNodeExecutor
+    stock = {"type": "object", "properties": {
+        "symbol": {"type": "string"}, "name": {"type": "string"}, "symbols": {
+            "type": "array", "items": {"type": "object", "properties": {
+                "google": {"type": "string"}, "currency": {"type": "string"}}}}}}
+    return {
+        "FearGreedIndexNode": {"source_schema": {"type": "object", "required": ["fear_and_greed"],
+            "properties": {"fear_and_greed": {"type": "object", "required": ["score"], "properties": {
+                "score": {"type": "number", "minimum": 0, "maximum": 100},
+                "previous_close": {"type": "number"}}}}},
+            "notes": "Native parser maps score to value/label and reads previous_close. Synthetic inputs only."},
+        "FileReaderNode": {"source_schema": {"type": "object", "properties": {"files": {
+            "type": "object", "additionalProperties": {"type": "string"}}}},
+            "notes": "files maps each requested relative upload path to base64 encoded bytes. The native "
+                     "format parser reads those bytes; do not supply parsed data. Inline file_data uses "
+                     "native configuration. Absolute paths and parent traversal are forbidden."},
+        "MarketUniverseNode": {"source_schema": {"type": "object", "required": ["index", "stocks"],
+            "properties": {"index": {"type": "string"}, "stocks": {"type": "array", "items": stock}}},
+            "index_mapping": dict(MarketUniverseNodeExecutor.INDEX_MAPPING),
+            "notes": "index must match the resolved universe. rows are pytickersymbols provider records; "
+                     "symbols[].google uses VENUE:TICKER and currency identifies the USD listing."},
+        "FuturesContractNode": {"source_schema": {"type": "object", "required": ["rows"],
+            "properties": {"rows": {"type": "array", "items": O3101OutBlock.model_json_schema()}}},
+            "required_row_fields": ["Symbol", "BscGdsCd", "ExchCd", "LstngYr", "LstngM"],
+            "notes": "Supply raw o3101 model fields, including explicit contract identity/month. "
+                     "Native expiry/exchange/front-next selection runs at as_of; do not preselect results."},
+        "OverseasFuturesOrderableQuantityNode": {"source_schema": CIDBQ01400Response.model_json_schema(),
+            "notes": "Use the SDK response envelope (block1, block2, status_code, rsp_cd, error_msg), "
+                     "not LS wire block names. status_code=200, error_msg absent and rsp_cd=00000 or00136 "
+                     "are supported success evidence. block1 must explicitly echo every generated request "
+                     "field with matching values; the echoed price is a decimal string. "
+                     "block2.OrdAbleQty must be explicitly provided, integer and nonnegative."},
+        "ScreenerNode": {"source_schema": {"type": "object", "properties": {
+            "quotes": {"type": "object", "additionalProperties": {"type": "object", "properties": {
+                **{key: {"type": "number"} for key in ("regularMarketPrice", "currentPrice", "previousClose",
+                    "marketCap", "averageVolume")},
+                **{key: {"type": "string"} for key in ("sector", "exchange", "shortName", "longName")}}}},
+            "g3101": {"type": "object", "additionalProperties": G3101OutBlock.model_json_schema()},
+            "index": {"type": "string"}, "stocks": {"type": "array", "items": stock}}},
+            "notes": "For yfinance, quotes is keyed by actual lookup ticker (domestic .KS/.KQ suffix), "
+                     "with native info field names. For LS, g3101 is keyed by keysymbol; raw rows require "
+                     "symbol, keysymbol, exchcd, price and volume. Explicit watchlists need all lookups; "
+                     "market search additionally needs index=S&P 500 and raw stocks rows. LS quotes do "
+                     "not provide market cap/sector: those filters need independently supplied upstream "
+                     "evidence, otherwise validation must fail. Native filtering/sorting must run."},
+    }
+
+
 class _ComputationContext:
     """Use live computation guards while the worker retains its kernel boundary."""
     is_dry_run = False
