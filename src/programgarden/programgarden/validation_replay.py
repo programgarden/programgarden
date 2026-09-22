@@ -20,13 +20,16 @@ from programgarden.context import ExecutionContext
 from programgarden.executor import WorkflowExecutor, WorkflowJob, CodeNodeError
 from programgarden.replay_order_adapter import ORDER_NODES, ReplayOrders
 from programgarden.replay_contracts import CONTRACT_VERSION, ContractViolation, check_contract, finite_json
+from programgarden.replay_sources import SOURCE_NODES
 
-VALIDATOR_VERSION = "incremental-replay-2"
+VALIDATOR_VERSION = "incremental-replay-3"
 COMPUTATION_NODES = frozenset({
     "StartNode", "WatchlistNode", "SymbolFilterNode", "ExclusionListNode",
     "ConditionNode", "LogicNode", "IfNode", "CodeNode", "PositionSizingNode",
     "PortfolioNode", "BenchmarkCompareNode", "BacktestEngineNode",
-    "SplitNode", "AggregateNode",
+    "SplitNode", "AggregateNode", "ThrottleNode",
+    "FieldMappingNode", "PerformanceReportNode", "TableDisplayNode", "LineChartNode",
+    "MultiLineChartNode", "CandlestickChartNode", "BarChartNode", "SummaryDisplayNode",
 })
 # Fixtures replace I/O boundaries, never calculation nodes or arbitrary unknown
 # implementations. Add an external type only with its explicit contract tests.
@@ -35,6 +38,7 @@ FIXTURE_NODES = frozenset({
     for product in ("OverseasStock", "OverseasFutures", "KoreaStock")
     for kind in ("Broker", "Account", "RealAccount", "MarketData", "HistoricalData",
                  "Fundamental", "SymbolQuery", "OpenOrders", "RealMarketData", "RealOrderEvent")
+    if not (product == "OverseasFutures" and kind == "Fundamental")
 }) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "MarketStatusNode", "CurrencyRateNode", "TelegramNode"}
 
 
@@ -63,6 +67,7 @@ class ReplayResult:
     order_observations: list[dict[str, Any]] = field(default_factory=list)
     setup_executed: list[str] = field(default_factory=list)
     node_under_test: str | None = None
+    events: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ReplayContext(ExecutionContext):
@@ -92,12 +97,23 @@ class ReplayJob(WorkflowJob):
     async def _auto_iterate_pacing_sleep(self, node_id, node_type):
         return None
 
-    async def _apply_rate_limit_guard(self, node_id, node_type, config):
-        return None
+    def _rate_limit_now(self):
+        from programgarden.replay_triggers import fixture_instant
+        return fixture_instant(self.context, "rate_limit")
 
     def _guard_whole_array_reevaluation(self, node_id, node_type, config, item, total):
         # Do not silently narrow input to make a replay succeed. The real I/O
         # adapter selects its per-item fixture; computation retains actual input.
+        return config
+
+    def _auto_inject_connection(self, node_id, node, config):
+        config = super()._auto_inject_connection(node_id, node, config)
+        if node.node_type == "ScreenerNode":
+            from programgarden.executor import ScreenerNodeExecutor
+            connection, _ = ScreenerNodeExecutor.resolve_connection(
+                self.context, node_id, config.get("market", "auto"), config.get("connection"))
+            if connection:
+                config = {**config, "connection": connection}
         return config
 
     def _resolve_config_expressions(self, config, node_id=None):
@@ -163,10 +179,15 @@ class ReplayExecutor(WorkflowExecutor):
                 check_contract(output, record["contract"], f"{node_id}.output")
                 if self.orders is not None and node_type.endswith("OpenOrdersNode"):
                     self.orders.check_open_orders(output, node_type)
+            elif node_type in SOURCE_NODES:
+                from programgarden.replay_sources import execute_source
+                output = await execute_source(validated_node, config, self.fixture, context)
             elif node_type in ORDER_NODES:
                 if self.orders is None:
                     self.orders = ReplayOrders(self.fixture)
-                output = self.orders.execute(node_id,node_type,config,context)
+                output = self.orders.execute(node_id,node_type,config,context,
+                    invocation_id=kwargs.get("order_invocation_id", "main"),
+                    iteration_index=kwargs.get("order_iteration_index"))
                 observed = deepcopy(self.orders.last_observation)
                 self.outcome.order_observations.append({"node_id":node_id,**observed})
             elif node_type == "SessionGateNode":
@@ -261,8 +282,14 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
         job = ReplayJob(outcome.run_id, resolved, context, runner)
         context.set_workflow_job(job)
         context.start()
+        async def run_all():
+            await job._execute_main_flow()
+            if fixture.get("events") and not outcome.errors:
+                from programgarden.replay_events import replay_events
+                await replay_events(job, runner, fixture, outcome)
+
         try:
-            await asyncio.wait_for(job._execute_main_flow(), timeout=timeout)
+            await asyncio.wait_for(run_all(), timeout=timeout)
         except Exception as exc:
             outcome.errors.append(exc.as_dict() if isinstance(exc, ContractViolation) else {
                 "code": "REPLAY_EXECUTION_FAILED", "message": type(exc).__name__ + ": " + str(exc)})

@@ -107,7 +107,7 @@ async def test_multi_symbol_io_uses_exact_item_without_squared_duplication():
     fixture["nodes"]["broker"] = recording("OverseasStockBrokerNode", {}, broker["output"], broker["contract"], as_of=AS_OF)
     for symbol in symbols:
         row = fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]]
-        fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]] = recording("OverseasStockMarketDataNode", {"symbols":symbols}, row["output"], row["contract"], as_of=AS_OF, item=symbol)
+        fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]] = recording("OverseasStockMarketDataNode", {"symbols":symbols,"connection":broker["output"]["connection"]}, row["output"], row["contract"], as_of=AS_OF, item=symbol)
     result=await replay(definition,fixture)
     assert result.passed,result.errors
     assert result.outputs["count"]["result"]==2

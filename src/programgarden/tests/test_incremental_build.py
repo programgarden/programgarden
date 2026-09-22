@@ -74,6 +74,21 @@ async def test_failed_node_blocks_next_dependency_and_repair_reopens_it():
 
 
 @pytest.mark.asyncio
+async def test_wrong_numeric_result_fails_before_a_dependent_node_can_be_added():
+    ws = workspace()
+    await append(ws, {"id": "start", "type": "StartNode"})
+    bad = await append(ws, code("sum", "99"), "start")
+    assert not bad["passed"]
+    assert ws.states["sum"] == "FAILED"
+    assert bad["errors"][0]["code"] == "REPLAY_CONTRACT_FAILED"
+    with pytest.raises(BuildGateError, match="Verify every upstream"):
+        ws.add_node(code("consumer", "data", "{{ nodes.sum.result }}"),
+                    [{"from": "sum", "to": "consumer"}], expected_revision=ws.revision)
+    ws.repair_node(code("sum", "3"), expected_revision=ws.revision)
+    assert (await ws.run_pending("sum", expected_revision=ws.revision))["passed"]
+
+
+@pytest.mark.asyncio
 async def test_change_invalidates_descendants_and_old_pass_cannot_finalize():
     ws=workspace()
     await append(ws,{"id":"start","type":"StartNode"})

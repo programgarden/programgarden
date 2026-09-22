@@ -7,8 +7,6 @@ acceptance/fill semantics are explicit scenario assumptions, never observations.
 from __future__ import annotations
 
 from copy import deepcopy
-import hashlib
-import json
 
 from programgarden.executor import ModifyOrderNodeExecutor, NewOrderNodeExecutor, resolve_overseas_stock_order_market
 from programgarden.replay_contracts import ContractViolation, check_contract
@@ -57,8 +55,9 @@ class ReplayOrders:
         self.modify_normalizer = ModifyOrderNodeExecutor()
         self.last_observation = None
         self.operation_nodes = {}
+        self.submissions = 0
 
-    def execute(self, node_id, node_type, config, context):
+    def execute(self, node_id, node_type, config, context, *, invocation_id="main", iteration_index=None):
         if not node_type.endswith("NewOrderNode"):
             return self._change(node_id, node_type, config)
         raw = config.get("order")
@@ -96,7 +95,18 @@ class ReplayOrders:
         record = self.responses.get(node_id)
         if not isinstance(record,dict) or "response" not in record:
             raise ContractViolation(node_id,"An explicit order-response scenario is required","REPLAY_FIXTURE_REQUIRED")
-        key = node_id + ":" + hashlib.sha256(json.dumps(intent,sort_keys=True,allow_nan=False).encode()).hexdigest()
+        # Do not grant stock workflows an idempotency guard they did not enable.
+        # Live futures use invocation identity; stocks without the optional
+        # durable registry submit again, which the scenario must detect.
+        self.submissions += 1
+        if expected_product == "overseas_futures":
+            from programgarden.order_lifecycle import operation_key
+            if iteration_index is None:
+                iteration_index = context._iteration_index if context._iteration_item is not None else -1
+            key = operation_key(context.job_id, node_id,
+                getattr(context._workflow_job, "_order_cycle", 0), iteration_index, invocation_id)
+        else:
+            key = f"{node_id}:submission:{self.submissions}"
         order = self.book.submit(intent,key=key,response=record["response"],filled_quantity=record.get("filled_quantity",0))
         self.last_observation = deepcopy(order)
         known_accepted = order["status"] in ("accepted","partial_fill","filled")
@@ -142,7 +152,8 @@ class ReplayOrders:
         record = self.responses.get(node_id)
         if not isinstance(record, dict) or "response" not in record:
             raise ContractViolation(node_id, "An explicit change-response fixture is required", "REPLAY_FIXTURE_REQUIRED")
-        key = node_id + ":" + hashlib.sha256(json.dumps([action, original_id, replacement],sort_keys=True,allow_nan=False).encode()).hexdigest()
+        self.submissions += 1
+        key = f"{node_id}:change:{self.submissions}"
         operation = self.book.request_change(action, original_id, key=key,
             response=record["response"], replacement=replacement)
         self.operation_nodes[(node_id, original["symbol_key"])] = operation["request_id"]

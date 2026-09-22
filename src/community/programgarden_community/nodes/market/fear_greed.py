@@ -294,7 +294,10 @@ class FearGreedIndexNode(BaseNode):
 
         data = await _fetch_json_with_fallback(urls, self.timeout_seconds)
 
-        # 응답 파싱
+        return self.parse_response(data)
+
+    def parse_response(self, data):
+        """Normalize a provider response independently of network transport."""
         fng = data.get("fear_and_greed", {})
         score = fng.get("score", 0)
         rating = fng.get("rating", "")

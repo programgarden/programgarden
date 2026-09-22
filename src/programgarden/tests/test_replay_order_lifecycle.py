@@ -140,7 +140,7 @@ def lifecycle(product="OverseasStock",*,action="cancel",partial=False,confirm=Tr
                 "event_id":"fixture-completion", "applied":True}]}
     if confirm:
         record = fixture["nodes"]["observed"]
-        fixture["nodes"]["observed"] = recording(product+"OpenOrdersNode", {}, record["output"], record["contract"], as_of=fixture["broker"]["as_of"], order_events=record["order_events"])
+        fixture["nodes"]["observed"] = recording(product+"OpenOrdersNode", {"connection":fixture["nodes"]["broker"]["output"]["connection"]}, record["output"], record["contract"], as_of=fixture["broker"]["as_of"], order_events=record["order_events"])
     return graph,fixture
 
 

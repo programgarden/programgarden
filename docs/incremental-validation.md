@@ -125,3 +125,82 @@ or override a configured order quantity. Live execution behavior is unchanged.
 The regression exercises quote-to-LS-fundamentals data flow without broker calls.
 Provider fixtures do not establish live data availability. The removed FMP node
 is rejected at admission; its provider-specific replay adapter is also removed.
+
+## Native parser and computation coverage (September 23, unreleased)
+
+FieldMapping, the six display envelopes and PerformanceReport execute their native
+implementations. PerformanceReport requires the actual quantstats extra in the
+locked worker and coordinator; a missing extra fails validation. A rendered
+display envelope does not assert browser rendering. The report regression checks
+the actual -18.18% drawdown of a fixed equity series, including in the private
+worker integration suite.
+
+`replay_sources` separates raw source records from asserted node outputs. FileReader
+parses recorded bytes through its native parser without reading host files. FearGreed
+normalization, index constituent exchange selection, futures expiry/month selection,
+Yahoo screener predicates and CIDBQ01400 echo/capacity checks use native code. The
+record binds the request, item and clock. Missing source data blocks; it is never
+replaced with a generated successful node result. LS-backed screener enrichment
+uses raw g3101 SDK blocks and the same native filter logic. Provider availability,
+user file presence and real account capacity are not certified by simulation.
+
+Throttle uses the fixture clock and real cooldown/pending state, including
+pass_first=false. A regression exposed a live scheduler defect: initial and Split
+traversals ignored its waiting result. Those traversals now block dependent nodes
+and joins while preserving independent branches. The event traversal now applies
+the same guards rather than stopping unrelated branches. Legacy dry-run
+pass-through remains outside replay.
+
+Every registered node type now has an explicit dispatch boundary. This inventory
+does not mean every configuration, temporal event sequence or broker lifecycle is
+supported. Unsupported semantics remain blocking. The combined engine regression
+suite passes 310 checks; no conversational accuracy percentage follows from it.
+
+### LS quote and account identity correction (unreleased)
+
+The Screener transport now builds the complete SDK g3101 request (`delaygb`,
+`keysymbol`, `exchcd`, `symbol`) using the existing exchange mapping. It rejects
+unknown exchanges, wrong response identities, missing credentials/data and
+unsupported filters instead of dropping conditions. A successful query with no
+matching symbols returns an empty list. Raw/master mixed input enriches missing
+observations individually. Repeated quote reads within one invocation are avoided.
+
+Replay request identity retains the selected non-secret broker connection,
+including credential reference, product, paper mode and broker node ID. Changing
+that identity cannot reuse a recorded account/market observation. No secret values
+are accepted in connection recordings. These are local changes, not a package or
+production release. The targeted engine sweep passes312 tests; the smaller
+LS/request-binding sweep passes97 (overlapping cases, not accuracy percentages).
+
+### Recurring events and retained state (unreleased)
+
+Validator3 accepts at most32 recorded events per scenario. They enter the native
+event loop after the actual initial traversal. SQLite, cooldowns, positions,
+reservations and order history remain in the same disposable job. Each new replay
+still starts with fresh storage. Recorded schedule ticks must match the configured
+cron/timezone/count; this checks delivery consequences, not wall-clock delivery.
+Realtime records bind source identity, request and time. The native scheduler
+chooses downstream nodes; recordings cannot specify a bypass target or replace
+cash/positions. Quotes advance independently and old quotes can fail freshness.
+
+Final checks require independent assertions and path coverage for every recorded
+event, including intermediate results. Order graphs additionally require financial
+state assertions at each event. The host repeats these checks on the worker result.
+Existing value assertions also run during node/chain validation as soon as their
+node is reached; a schema-valid incorrect number cannot become VERIFIED merely
+because finalization has not happened yet. Unreached paths still require explicit
+positive coverage rather than a manufactured execution result.
+Provider availability, websocket subscription and TradingHours wait/resume remain
+outside this recorded-event contract. There is no implied live authorization.
+
+Native recurring traversal previously ignored If branch results and pre-executed
+Split before its upstream guard. It also retained input ports from a prior event.
+The corrected traversal applies guards before branches, clears stale inputs and
+outputs, and preserves independent branches after a failed/throttled source.
+Rate-limit evaluation uses the same native policy with an explicit replay clock.
+
+The stock order adapter no longer invents implicit idempotency by hashing only
+node/intent. Repeated submissions are visible and can fail the independent risk
+scenario. Futures use the native cycle/invocation identity. Replay does not claim
+coverage of a deployment's optional durable stock-idempotency registry; that
+execution-profile binding remains a separate release requirement.

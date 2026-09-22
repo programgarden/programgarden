@@ -11,6 +11,18 @@ from programgarden.validation_replay import content_hash
 from programgarden.replay_order_adapter import ORDER_NODES
 
 
+def check_financial_expectations(simulation, schema):
+    required = {"cash", "reserved_cash", "positions", "orders", "live_order_count"}
+    if not isinstance(schema, dict):
+        raise ContractViolation("expected_simulation", "Order graphs require financial-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+    check_contract(simulation, schema, "expected_simulation")
+    if (not required <= set(schema.get("required", []))
+            or not required <= schema.get("properties", {}).keys()):
+        raise ContractViolation("expected_simulation", "Order graphs require independent cash, reservation, position and order-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+    if simulation.get("live_order_count") != 0:
+        raise ContractViolation("live_order_count", "Replay must never submit live orders")
+
+
 def check_final_expectations(result, fixture, graph):
     """Final acceptance asserts outputs and financial state, not just no error."""
     expected = fixture.get("expected")
@@ -21,17 +33,27 @@ def check_final_expectations(result, fixture, graph):
     for node_id in fixture.get("must_execute", []):
         if node_id not in result.executed:
             raise ContractViolation(node_id, "Required path was not reached")
-    if any(node["type"] in ORDER_NODES for node in graph["nodes"]):
-        schema = fixture.get("expected_simulation")
-        required = {"cash", "reserved_cash", "positions", "orders", "live_order_count"}
-        if not isinstance(schema,dict):
-            raise ContractViolation("expected_simulation", "Order graphs require financial-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
-        check_contract(result.simulation, schema, "expected_simulation")
-        if (not required <= set(schema.get("required",[]))
-                or not required <= schema.get("properties",{}).keys()):
-            raise ContractViolation("expected_simulation", "Order graphs require independent cash, reservation, position and order-state assertions", "REPLAY_EXPECTATIONS_REQUIRED")
-        if result.simulation.get("live_order_count") != 0:
-            raise ContractViolation("live_order_count", "Replay must never submit live orders")
+    from programgarden.replay_events import checked_events
+    events = checked_events(fixture)
+    if len(events) != len(result.events):
+        raise ContractViolation("events", "Every declared final replay event must be observed")
+    has_orders = any(node["type"] in ORDER_NODES for node in graph["nodes"])
+    for index, (event, observed) in enumerate(zip(events, result.events)):
+        if (observed.get("index") != index or any(observed.get(key) != event[key]
+                for key in ("as_of", "type", "source_node_id"))):
+            raise ContractViolation("events", "Event evidence does not match the recorded timeline")
+        assertions = event.get("expected")
+        if not isinstance(assertions, dict) or not assertions or not event.get("must_execute"):
+            raise ContractViolation("events", "Each final event requires independent results and path coverage",
+                                    "REPLAY_EXPECTATIONS_REQUIRED")
+        for node_id, schema in assertions.items():
+            check_contract(observed["outputs"].get(node_id), schema, f"events.{index}.{node_id}")
+        if not set(event["must_execute"]) <= set(observed["executed"]):
+            raise ContractViolation("events", "Required event path was not reached")
+        if has_orders:
+            check_financial_expectations(observed["simulation"], event.get("expected_simulation"))
+    if has_orders:
+        check_financial_expectations(result.simulation, fixture.get("expected_simulation"))
 
 
 def assess_scenario(result, fixture, graph):
@@ -77,6 +99,22 @@ def scenario_receipt(result, fixture, graph):
     try:
         passed=assess_scenario(result,fixture,graph)
         errors=[] if passed else [{"code":"REPLAY_SCENARIO_FAILED", "message":"Observed outcome differs from the fixture expectation"}]
+        if passed:
+            # Use existing independent value assertions as soon as their node is
+            # actually executed. Waiting for finalization would mark a numerically
+            # wrong (but schema-valid) dependency VERIFIED in the meantime.
+            reached = set(result.executed) | set(result.setup_executed)
+            for node_id, schema in fixture.get("expected", {}).items():
+                if node_id in reached:
+                    check_contract(result.outputs.get(node_id), schema, f"{node_id}.expected")
+            declared = fixture.get("events", [])
+            for event in result.events:
+                index = event["index"]
+                if type(index) is not int or not 0 <= index < len(declared):
+                    raise ContractViolation("events", "Unknown event evidence")
+                for node_id, schema in declared[index].get("expected", {}).items():
+                    if node_id in event["executed"]:
+                        check_contract(event["outputs"].get(node_id), schema, f"events.{index}.{node_id}.expected")
     except ContractViolation as exc:
         passed,errors=False,[exc.as_dict()]
     return {"scenario_passed":passed,"scenario_errors":errors}

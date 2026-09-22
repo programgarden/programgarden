@@ -86,3 +86,30 @@ def test_recording_copies_inputs_and_checks_output_contract():
     assert fixture == original
     with pytest.raises(ContractViolation):
         recording("HTTPRequestNode", HTTP, {"response": {}}, CONTRACT, as_of=AS_OF)
+
+
+@pytest.mark.parametrize("change", [{"credential_id": "other-account"}, {"product": "korea_stock"},
+                                  {"paper_trading": True}, {"broker_node_id": "another-broker"}])
+def test_bound_request_preserves_broker_identity(change):
+    connection = {"provider": "ls-sec.co.kr", "product": "overseas_stock", "credential_id": "first",
+                  "paper_trading": False, "broker_node_id": "broker"}
+    request = {"connection": connection}
+    assert request_identity("OverseasStockAccountNode", request) != request_identity(
+        "OverseasStockAccountNode", {"connection": {**connection, **change}})
+
+
+def test_recording_rejects_connection_secrets():
+    with pytest.raises(ContractViolation, match="non-secret"):
+        request_identity("OverseasStockAccountNode", {"connection": {"appkey": "do-not-store"}})
+
+
+@pytest.mark.asyncio
+async def test_changed_injected_broker_identity_cannot_reuse_an_observation():
+    from tests.test_replay_sources import stock_screener, raw_quote
+    node = {"id": "screen", "type": "ScreenerNode", "data_source": "ls", "price_min": 10.0,
+            "symbols": [{"symbol": "A", "exchange": "NYSE"}]}
+    graph, data = stock_screener(node, {"g3101": {"81A": raw_quote("A", 11)}})
+    data["nodes"]["broker"]["output"]["connection"]["credential_id"] = "different-account"
+    result = await replay(graph, data)
+    assert not result.passed
+    assert any(e["code"] == "REPLAY_FIXTURE_MISMATCH" for e in result.errors)

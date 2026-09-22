@@ -33,6 +33,17 @@ def request_identity(node_type, config):
     if set(config) - set(node_class.model_fields) - {"connection"} - _SCHEDULER_FIELDS - _PRESENTATION_FIELDS:
         raise ContractViolation("request", "Unknown recording request fields", "REPLAY_FIXTURE_INVALID")
     result = node.model_dump(mode="json", exclude=_PRESENTATION_FIELDS | _SCHEDULER_FIELDS | {"connection"})
+    connection = config.get("connection")
+    if connection:
+        allowed = {"provider", "product", "paper_trading", "broker_node_id", "credential_id"}
+        if not isinstance(connection, dict) or set(connection) - allowed:
+            raise ContractViolation("request.connection", "Only explicit non-secret broker identity is allowed",
+                                    "REPLAY_FIXTURE_INVALID")
+        for key, value in connection.items():
+            if (key == "paper_trading" and type(value) is not bool
+                    or key != "paper_trading" and (not isinstance(value, str) or not value)):
+                raise ContractViolation("request.connection", "Invalid broker identity", "REPLAY_FIXTURE_INVALID")
+        result["connection"] = deepcopy(connection)
     return result
 
 
@@ -49,6 +60,15 @@ def recording(node_type, config, output, contract, *, as_of, item=None, order_ev
               "item": deepcopy(item), "output": deepcopy(output), "contract": deepcopy(contract)}
     if order_events is not None:
         result["order_events"] = deepcopy(order_events)
+    return result
+
+
+def source_recording(node_type, config, source, contract, *, as_of, item=None):
+    """Bind raw I/O inputs; the native parser still computes the node output."""
+    result = recording(node_type, config, source, contract, as_of=as_of, item=item)
+    result["kind"] = "raw_source"
+    result["source"] = result.pop("output")
+    result["source_contract"] = result.pop("contract")
     return result
 
 
