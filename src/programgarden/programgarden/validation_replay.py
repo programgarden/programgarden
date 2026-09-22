@@ -131,6 +131,14 @@ class ReplayExecutor(WorkflowExecutor):
         try:
             from programgarden_core import NodeTypeRegistry
             from pydantic import ValidationError
+            if node_type == "FundamentalDataNode":
+                # Match DefaultNodeExecutor's recursive binding boundary before
+                # validating the resolved input. The scheduler only resolves
+                # list leaves, so nested symbol entries still contain item paths.
+                from programgarden.executor import evaluate_all_bindings
+                config = evaluate_all_bindings(config, context, node_id)
+                if context.get_deep_unresolved_bindings():
+                    raise ContractViolation(node_id, "Unresolved external-node input binding")
             node_class = NodeTypeRegistry().get(node_type)
             if node_class is None:
                 raise ContractViolation(node_id,"Unknown node type")
@@ -151,14 +159,8 @@ class ReplayExecutor(WorkflowExecutor):
             if "input" in rules:
                 check_contract(config, rules["input"], f"{node_id}.input")
             if node_type in FIXTURE_NODES:
-                record = self.fixture.get("nodes", {}).get(node_id)
-                if not isinstance(record, dict):
-                    raise ContractViolation(node_id, "An explicit I/O fixture and contract are required", "REPLAY_FIXTURE_REQUIRED")
-                if context._iteration_total:
-                    item = context._iteration_item
-                    if not isinstance(item,dict) or not item.get("symbol") or not item.get("exchange"):
-                        raise ContractViolation(node_id,"An iterated I/O fixture needs explicit symbol/exchange identity","REPLAY_FIXTURE_REQUIRED")
-                    record = record.get("items",{}).get(str(item["exchange"])+":"+str(item["symbol"]))
+                from programgarden.replay_external import external_record
+                record = external_record(self.fixture, node_id, node_type, context)
                 if not isinstance(record,dict) or "output" not in record or "contract" not in record:
                     raise ContractViolation(node_id,"No matching per-item I/O fixture/contract","REPLAY_FIXTURE_REQUIRED")
                 if "order_events" in record:
@@ -169,6 +171,10 @@ class ReplayExecutor(WorkflowExecutor):
                 check_contract(output, record["contract"], f"{node_id}.output")
                 if self.orders is not None and node_type.endswith("OpenOrdersNode"):
                     self.orders.check_open_orders(output, node_type)
+            elif node_type == "FundamentalDataNode":
+                from programgarden.replay_external import external_record, replay_fundamental
+                output = await replay_fundamental(node_id, config, context,
+                    external_record(self.fixture, node_id, node_type, context))
             elif node_type in ORDER_NODES:
                 if self.orders is None:
                     self.orders = ReplayOrders(self.fixture)

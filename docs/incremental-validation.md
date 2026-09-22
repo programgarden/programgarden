@@ -61,6 +61,17 @@ before replacing the stored suite. Focused session/workspace tests: 27 passed.
 
 ## Evidence and remaining release gates
 
+FMP replay runs the actual `FundamentalDataNode` request construction and response
+normalization with an offline transport replacement. Each trusted recording binds
+the exact endpoint, symbol list and query parameters to a response contract;
+missing, extra or mismatched requests fail. Recursive item bindings use the same
+boundary as the live default executor. Whole-array reevaluation is not silently
+narrowed to make a fixture pass. Profile and key-metric tests cover actual field
+normalization, missing valuation data and multiple symbols. These are scenario
+assumptions, not evidence of API-key validity, subscription rights or current
+provider availability. Domestic per-symbol fixtures use KRX identity when the
+actual domestic input schema contains only a symbol.
+
 Each validation records task/plan/workflow identity, graph/node/fixture hashes,
 engine/source versions, run IDs, mode and results. Source identity covers all
 engine/core/community/finance Python files and calculation dependency versions;
