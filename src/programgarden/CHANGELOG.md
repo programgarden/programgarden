@@ -1,5 +1,15 @@
 ## Unreleased
 
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Preserve strict CodeNode output validation and configured per-symbol inputs during simulated iteration. Invalid legacy FMP graphs receive actionable replacement guidance.
+
+
 ### SDK maintenance
 - Finance 1.10.7 corrects expiry-versus-delisting and status/dividend field guidance. Finance-only metadata patch; engine/core/community and trading behavior are unchanged.
 - Finance 1.10.6 preserves the complete CDPCQ04700 schema and private raw evidence, with sparse-field and internal-conversion guidance. This is a finance-only release; no engine version, dependency floor or trading behavior changes.
@@ -2360,7 +2370,7 @@ LS 브로커 필드 의미를 오너가 확인해준 사실(체결번호·AP처�
 - feat: ScreenerNode sector 정규화 (대소문자, 띄어쓰기 무시)
 - feat: 노드 스키마 ENUM 필드를 STRING 타입으로 변경 (expression 바인딩 지원)
 
-## [2.0.0] - 2026-01-06
+## [2.0.1] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 아키텍처로 전면 재설계
 - feat: Python 3.12 최소 버전으로 상향

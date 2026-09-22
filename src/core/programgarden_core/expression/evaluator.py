@@ -149,6 +149,21 @@ class DateNamespace:
         'iso': '%Y-%m-%d',
     }
 
+    def __init__(self, *, as_of: Optional[str] = None):
+        """Optionally pin replay helpers to an explicit timezone-aware instant.
+
+        Live callers omit as_of and retain their existing local-clock behavior.
+        The execution host, never a model-supplied node setting, owns this clock.
+        """
+        self._as_of = None
+        if as_of is not None:
+            self._as_of = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+            if self._as_of.tzinfo is None or self._as_of.utcoffset() is None:
+                raise ValueError("Replay as_of must include its timezone")
+
+    def _today(self) -> date:
+        return self._as_of.date() if self._as_of is not None else date.today()
+
     def _format_date(self, d: date, fmt: Optional[str] = None) -> str:
         """날짜를 지정된 포맷으로 변환"""
         if fmt is None:
@@ -159,40 +174,40 @@ class DateNamespace:
 
     def today(self, format: Optional[str] = None) -> str:
         """오늘 날짜"""
-        return self._format_date(date.today(), format)
+        return self._format_date(self._today(), format)
 
     def now(self) -> str:
         """현재 시간 (ISO 형식)"""
-        return datetime.now().isoformat()[:19]
+        return self._as_of.isoformat(timespec="seconds") if self._as_of is not None else datetime.now().isoformat()[:19]
 
     def ago(self, days: int, format: Optional[str] = None) -> str:
         """n일 전"""
-        d = date.today() - timedelta(days=int(days))
+        d = self._today() - timedelta(days=int(days))
         return self._format_date(d, format)
 
     def later(self, days: int, format: Optional[str] = None) -> str:
         """n일 후"""
-        d = date.today() + timedelta(days=int(days))
+        d = self._today() + timedelta(days=int(days))
         return self._format_date(d, format)
 
     def months_ago(self, months: int, format: Optional[str] = None) -> str:
         """n개월 전 (30일 기준)"""
-        d = date.today() - timedelta(days=int(months) * 30)
+        d = self._today() - timedelta(days=int(months) * 30)
         return self._format_date(d, format)
 
     def year_start(self, format: Optional[str] = None) -> str:
         """연초 (1월 1일)"""
-        d = date(date.today().year, 1, 1)
+        d = date(self._today().year, 1, 1)
         return self._format_date(d, format)
 
     def year_end(self, format: Optional[str] = None) -> str:
         """연말 (12월 31일)"""
-        d = date(date.today().year, 12, 31)
+        d = date(self._today().year, 12, 31)
         return self._format_date(d, format)
 
     def month_start(self, format: Optional[str] = None) -> str:
         """월초"""
-        d = date.today().replace(day=1)
+        d = self._today().replace(day=1)
         return self._format_date(d, format)
 
 

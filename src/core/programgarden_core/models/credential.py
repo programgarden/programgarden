@@ -91,16 +91,6 @@ class Credential(BaseModel):
 # Built-in credential type schemas
 # 디자인(레이아웃, 간격, 스타일) 요소는 포함하지 않음 - 클라이언트 개발자가 직접 구현
 BUILTIN_CREDENTIAL_SCHEMAS: Dict[str, CredentialTypeSchema] = {
-    "fmp_api": CredentialTypeSchema(
-        type_id="fmp_api",
-        name="FMP 재무 데이터 API",
-        description="증권사 계좌와 별도로 등록하는 Financial Modeling Prep 재무 데이터 API 키",
-        widget_schema={"fields": [
-            {"key": "name", "type": "text", "label": "인증정보 이름", "required": True},
-            {"key": "api_key", "type": "password", "label": "FMP API 키", "required": True,
-             "description": "https://site.financialmodelingprep.com/developer/docs/dashboard 에서 발급"},
-        ]},
-    ),
     # ============================================================
     # LS증권 해외주식 (overseas_stock) - 모의투자 미지원
     # ============================================================

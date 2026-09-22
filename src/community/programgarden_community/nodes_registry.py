@@ -47,11 +47,10 @@ def register_all_nodes() -> None:
             pass
 
     # === Market Nodes ===
-    from programgarden_community.nodes.market import FearGreedIndexNode, FundamentalDataNode
+    from programgarden_community.nodes.market import FearGreedIndexNode
 
     market_nodes = [
         FearGreedIndexNode,
-        FundamentalDataNode,
     ]
 
     for node_class in market_nodes:
@@ -115,12 +114,6 @@ def get_community_node_list() -> list:
             "category": "market",
             "description": "CNN Fear & Greed Index (0=Extreme Fear, 100=Extreme Greed)",
             "requires_credential": False,
-        },
-        {
-            "type": "FundamentalDataNode",
-            "category": "market",
-            "description": "Financial data via FMP API (profile, income statement, balance sheet, key metrics)",
-            "requires_credential": True,
         },
         {
             "type": "FileReaderNode",

@@ -1,5 +1,15 @@
 ## [1.31.1] - 2026-09-22
 
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Correct LS overseas fundamental field guidance and preserve explicit replay-clock support.
+
+
 ### Fixed
 - Add fmp_api and the platform telegram_bot alias with native field contracts. Clarify key-free FMP drafts and the limits of offline validation.
 
@@ -984,7 +994,7 @@ Ships together with the `programgarden` 1.30.0 runtime (executor hard errors + R
 ### Removed
 - remove(nodes): `WatchlistNode`의 `product` 필드 제거 (connection에서 자동 감지)
 
-## [2.0.0] - 2026-01-06
+## [2.0.1] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 핵심 타입으로 전면 재설계
 - feat: Python 3.12 최소 버전으로 상향

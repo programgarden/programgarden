@@ -193,7 +193,14 @@ class WorkflowResolver:
                     f"Unknown node type '{node_type}'",
                     location=ErrorLocation(node_id=node_id, node_type=node_type),
                     available_values=suggest_close_match(node_type or "", known_types),
-                    suggestion="Pick a node type from the registered list.",
+                    suggestion=(
+                        "FundamentalDataNode (FMP) was removed. For LS overseas-stock PER/EPS, "
+                        "use OverseasStockFundamentalNode and rebind its value/values outputs. "
+                        "It does not supply financial statements or cash-flow history; "
+                        "do not silently substitute missing data."
+                        if node_type == "FundamentalDataNode" else
+                        "Pick a node type from the registered list."
+                    ),
                 )
             )
 
@@ -1075,6 +1082,18 @@ class WorkflowResolver:
             if node.get("type") != "CodeNode":
                 continue
             node_id = node.get("id")
+
+            # A mapping-shaped declaration was previously silently ignored by
+            # the executor, wrapping a named result twice and disabling signals.
+            from programgarden.replay_contracts import ContractViolation, check_codenode_ports
+            try:
+                check_codenode_ports(node.get("outputs", []))
+            except ContractViolation as exc:
+                result.add(build_error(
+                    ErrorCode.INVALID_FIELD_TYPE, str(exc),
+                    location=ErrorLocation(node_id=node_id, node_type="CodeNode", field_path="outputs"),
+                    suggestion="Use a list such as [{\"name\":\"result\",\"type\":\"object\"}], or omit outputs for one whole-result port.",
+                ))
 
             # 1. credential_id ban
             if node.get("credential_id"):

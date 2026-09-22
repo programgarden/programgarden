@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden"
-version = "1.41.3"
+version = "2.0.1"
 license = "AGPL-3.0-or-later"
 description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
 readme = "README.md"
@@ -17,7 +17,7 @@ packages = [
 exclude = ["examples", "tests", "**/__pycache__"]
 
 [tool.poetry.dependencies]
-pydantic = ">=2.0.0,<3.0.0"
+pydantic = ">=2.0.1,<3.0.0"
 croniter = "^6.0.0"
 python-dotenv = "^1.1.0"
 tzdata = "^2025.2"
@@ -36,9 +36,9 @@ litellm = ">=1.40.0"
 # 로 통째 실패한다(1.35.1 의 조용한 TypeError 보다 강한 모듈 로드 실패).
 # (1.26.0 이후로도 context.py 는 WorkflowPnLEvent(**event_data) 에 personal_metrics
 #  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
-programgarden-core = "^1.31.0"
-programgarden-finance = "^1.10.5"
-programgarden-community = "^1.15.3"
+programgarden-core = "^2.0.1"
+programgarden-finance = "^2.0.1"
+programgarden-community = "^2.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -50,5 +50,5 @@ uvicorn = "^0.40.0"
 
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.1,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

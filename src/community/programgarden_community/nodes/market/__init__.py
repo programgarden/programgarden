@@ -5,9 +5,7 @@ ProgramGarden Community - Market 노드
 """
 
 from programgarden_community.nodes.market.fear_greed import FearGreedIndexNode
-from programgarden_community.nodes.market.fmp import FundamentalDataNode
 
 __all__ = [
     "FearGreedIndexNode",
-    "FundamentalDataNode",
 ]

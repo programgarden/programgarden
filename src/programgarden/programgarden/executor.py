@@ -20452,6 +20452,9 @@ class CodeNodeExecutor(NodeExecutorBase):
             "iteration_total": int(getattr(context, "_iteration_total", 0) or 0),
             "risk": {},
         }
+        validation_as_of = getattr(context, "validation_as_of", None)
+        if validation_as_of is not None:
+            snap["validation_as_of"] = validation_as_of
         try:
             rt = context.risk_tracker
             if rt is not None and hasattr(rt, "get_all_hwm"):
@@ -20528,6 +20531,30 @@ class CodeNodeExecutor(NodeExecutorBase):
             )
 
         value = env.get("value")
+
+        if context.is_deep_validate or getattr(context, "is_replay_validation", False):
+            from programgarden.replay_contracts import ContractViolation, check_contract, check_codenode_ports
+            ports = config.get("outputs", [])
+            try:
+                check_codenode_ports(ports)
+                for index, port in enumerate(ports):
+                    name = port["name"]
+                    if isinstance(value, dict):
+                        if name not in value:
+                            raise ContractViolation(f"{node_id}.{name}", "Declared output is absent")
+                        item = value[name]
+                    elif len(ports) == 1:
+                        # The existing single-port scalar mapping is explicit
+                        # public behavior; validate its value without coercion.
+                        item = value
+                    else:
+                        raise ContractViolation(node_id, "Multiple declared ports require a result object")
+                    if port.get("type", "any") != "any":
+                        check_contract(item, {"type":port["type"]}, f"{node_id}.{name}")
+            except ContractViolation as exc:
+                raise CodeNodeError(ErrorCode.CODE_NODE_EXEC_ERROR, str(exc),
+                    suggestion="Return every declared output with its declared JSON type; do not substitute missing values with zero.",
+                    details=exc.as_dict()) from exc
 
         # Map return → declared ports. No declared ports → whole value on result.
         if not declared:
@@ -22841,7 +22868,8 @@ class WorkflowJob:
             value = item_config.get(port)
             if not isinstance(value, list) or len(value) != total:
                 continue
-            if not any(self._same_symbol_entry(entry, current_item) for entry in value):
+            matching = [entry for entry in value if self._same_symbol_entry(entry, current_item)]
+            if not matching:
                 continue
             simulated = bool(getattr(self.context, "is_dry_run", False))
             self.context.log(
@@ -22855,7 +22883,11 @@ class WorkflowJob:
             if simulated:
                 if narrowed is None:
                     narrowed = dict(item_config)
-                narrowed[port] = [current_item]
+                # Preserve the configured projection and quantity. The upstream
+                # item can contain quotes or other numeric fields that are not
+                # inputs to this node (e.g. a symbol-only market-data contract).
+                # Substituting that raw item changed valid bindings in validation.
+                narrowed[port] = [matching[0]]
         return narrowed if narrowed is not None else item_config
 
     def _merge_iterate_results(self, results: list) -> Dict[str, Any]:
