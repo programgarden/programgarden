@@ -1473,6 +1473,11 @@ flowchart LR
 
 **출력**: `passed` (통과 여부), `blocked` (차단 여부)
 
+The `passed` port and default edges run only when `passed=true`. Outside the
+window the node waits; timeout sets `blocked=true` and selects only an explicit
+`blocked` edge. Use SessionGateNode with IfNode for an immediate closed-window
+decision. Job shutdown still prevents further execution.
+
 > **주의**: 거래시간 외에 워크플로우를 시작하면 이 노드에서 **멈춰서 대기**합니다. ScheduleNode과 조합하여 거래시간 내에만 실행되도록 설정하는 것을 권장합니다.
 
 ---

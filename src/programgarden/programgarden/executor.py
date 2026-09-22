@@ -21951,6 +21951,7 @@ class WorkflowJob:
                 # IfNode: 스킵 노드 계산 후 내부 키 제거
                 if node.node_type == "ThrottleNode" and outputs.get("_throttled"):
                     if_skipped_nodes.update(self._dependent_descendants(node_id))
+                if_skipped_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
                 if node.node_type == "IfNode" and outputs:
                     taken = outputs.pop("_if_branch", "true")
                     new_skips = self._compute_if_skip_nodes(node_id, taken)
@@ -22791,6 +22792,29 @@ class WorkflowJob:
                     pending.append(edge.to_node_id)
         return blocked
 
+    def _time_gate_skips(self, node_id: str, node_type: str, outputs: Dict[str, Any]) -> Set[str]:
+        """A refused time trigger cannot flow through the default trading edge.
+
+        TradingHours has an explicit alternative blocked port. Only that branch
+        may run on timeout; an unrelated input cannot bypass the refused gate
+        at a required join. A merge reached by its selected alternative remains
+        possible, matching the node's published two-branch contract.
+        """
+        if node_type == "ScheduleNode" and outputs.get("trigger") is False:
+            return self._dependent_descendants(node_id)
+        if node_type != "TradingHoursFilterNode":
+            return set()
+        passed = outputs.get("passed") is True
+        inactive, active = set(), set()
+        for edge in self.workflow.edges:
+            if edge.from_node_id != node_id or not edge.is_dag_edge:
+                continue
+            port = edge.from_port or "passed"
+            selected = port == ("passed" if passed else "blocked")
+            reachable = {edge.to_node_id} | self._dependent_descendants(edge.to_node_id)
+            (active if selected else inactive).update(reachable)
+        return inactive - active
+
     def _compute_if_skip_nodes(self, if_node_id: str, taken_branch: str) -> Set[str]:
         """IfNode 실행 결과에 따라 스킵할 노드 집합 계산 (캐스케이딩)
 
@@ -23265,6 +23289,7 @@ class WorkflowJob:
 
             if node.node_type == "ThrottleNode" and outputs.get("_throttled"):
                 if_skipped_nodes.update(self._dependent_descendants(node_id))
+            if_skipped_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
             if node.node_type == "IfNode" and outputs:
                 taken = outputs.pop("_if_branch", "true")
                 if_skipped_nodes.update(self._compute_if_skip_nodes(node_id, taken))
@@ -23998,6 +24023,7 @@ class WorkflowJob:
                     gated_nodes.update(self._dependent_descendants(node_id))
                     continue
 
+                gated_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
                 if node.node_type == "IfNode" and outputs:
                     gated_nodes.update(self._compute_if_skip_nodes(node_id, outputs.pop("_if_branch", "true")))
 

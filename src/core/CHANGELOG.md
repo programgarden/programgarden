@@ -1,5 +1,11 @@
 ## [1.31.1] - 2026-09-22
 
+## Unreleased
+
+### Fixed
+- Return the declared TradingHoursFilterNode `blocked` output consistently.
+  Clarify waiting, timeout and immediate SessionGate alternatives in the schema.
+
 ## [2.0.1] - 2026-09-22
 
 ### Removed

@@ -1,5 +1,10 @@
 ## Unreleased
 
+### Fixed
+- Enforce disabled schedules and trading-hours decisions in startup, Split and
+  realtime traversals. A timed-out time filter cannot run its trading branch;
+  explicit blocked branches and independent work remain distinct.
+
 ## [2.0.1] - 2026-09-22
 
 ### Removed

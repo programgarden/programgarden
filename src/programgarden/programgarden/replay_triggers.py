@@ -65,4 +65,4 @@ def trading_hours(node, context):
     if not node._is_trading_hours(as_of=instant):
         raise ContractViolation(node.id, "Trading-hours node would wait at the fixture instant",
                                 "REPLAY_TIME_WAIT_BLOCKED")
-    return {"passed": True}
+    return {"passed": True, "blocked": False}

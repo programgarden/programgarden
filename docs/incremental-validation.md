@@ -193,6 +193,19 @@ positive coverage rather than a manufactured execution result.
 Provider availability, websocket subscription and TradingHours wait/resume remain
 outside this recorded-event contract. There is no implied live authorization.
 
+### Native time-gate traversal correction (unreleased)
+
+Startup, per-item Split and realtime traversals now honor disabled Schedule
+triggers and TradingHours decisions. Default/`passed` edges cannot run on timeout;
+explicit `blocked` edges cannot run after an in-window pass. A selected branch
+can still reach a common merge, while an unrelated parent does not bypass a
+refused required gate. The core node returns its declared `blocked` boolean.
+Twelve native regression cases failed against the original executor/core and
+passed with the correction. The broader focused suite passed90 checks, with six
+additional merge-order cases included. Tests have no broker/network/message
+nodes. Positive-duration waiting in replay is still BLOCKED, not simulated by
+forcing a pass. No package publication or rollout is implied.
+
 Native recurring traversal previously ignored If branch results and pre-executed
 Split before its upstream guard. It also retained input ports from a prior event.
 The corrected traversal applies guards before branches, clears stale inputs and

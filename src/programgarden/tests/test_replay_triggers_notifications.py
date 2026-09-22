@@ -45,6 +45,7 @@ async def test_disabled_schedule_does_not_become_a_live_trigger():
                                  "enabled": False}), {"as_of": AS_OF})
     assert result.passed, result.errors
     assert result.outputs["clock"]["trigger"] is False
+    assert "calc" not in result.executed
 
 
 @pytest.mark.asyncio
