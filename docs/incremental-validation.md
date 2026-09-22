@@ -85,6 +85,37 @@ entry-path gates, queue semantics and AI tool integration remain in progress.
 No new package version has been published and no incremental gate is enabled in
 production. Do not describe a passing fixture as "error-free live trading".
 
+## Request-bound replay (September 23, unreleased)
+
+`replay_external.request_identity` normalizes native schema defaults and retains
+every executable request field. Recordings bind the resolved request, iteration
+item and shared timezone-aware clock. Changing a URL, HTTP method/body, symbol,
+date range, interval or paper mode cannot reuse a recording under the same node
+ID. Unknown request fields fail explicitly. The trusted `recording` constructor
+checks an output contract but does not establish fixture provenance; callers
+must provide independently reviewed inputs/expectations.
+
+Validator identity is now `incremental-replay-2`. Runtime identity also includes
+`croniter` and `pytz` versions, preventing time-library changes from reusing proof.
+
+Schedule replay executes the actual startup executor, cancelling and draining
+its timer before any scheduled event runs. The immediate initial trigger is
+preserved even away from a cron tick. This verifies a single startup traversal,
+not recurring event delivery. Missing clocks and invalid timezones/safety limits
+block validation.
+
+TradingHoursFilter replay shares the live predicate with an explicit aware
+instant. Live's inclusive minute boundary is retained; an out-of-window fixture
+reports `REPLAY_TIME_WAIT_BLOCKED`, because the actual node waits rather than
+taking an immediate blocked branch. Temporal wait/resume replay is not supported.
+Malformed times/days now raise instead of failing open; overnight windows require
+SessionGateNode. The live default remains wall-clock based.
+
+Telegram uses request-bound external response fixtures without invoking its
+network implementation. A fixture's `sent=true` is simulated evidence, never
+delivery verification or authorization. Credential linkage and actual delivery
+remain separate checks.
+
 ## Existing deep-validation projection correction
 
 The public executor's simulated array narrowing now selects the matching entry

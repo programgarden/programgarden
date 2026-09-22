@@ -21,7 +21,7 @@ from programgarden.executor import WorkflowExecutor, WorkflowJob, CodeNodeError
 from programgarden.replay_order_adapter import ORDER_NODES, ReplayOrders
 from programgarden.replay_contracts import CONTRACT_VERSION, ContractViolation, check_contract, finite_json
 
-VALIDATOR_VERSION = "incremental-replay-1"
+VALIDATOR_VERSION = "incremental-replay-2"
 COMPUTATION_NODES = frozenset({
     "StartNode", "WatchlistNode", "SymbolFilterNode", "ExclusionListNode",
     "ConditionNode", "LogicNode", "IfNode", "CodeNode", "PositionSizingNode",
@@ -35,7 +35,7 @@ FIXTURE_NODES = frozenset({
     for product in ("OverseasStock", "OverseasFutures", "KoreaStock")
     for kind in ("Broker", "Account", "RealAccount", "MarketData", "HistoricalData",
                  "Fundamental", "SymbolQuery", "OpenOrders", "RealMarketData", "RealOrderEvent")
-}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "MarketStatusNode", "CurrencyRateNode"}
+}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "MarketStatusNode", "CurrencyRateNode", "TelegramNode"}
 
 
 def content_hash(value: Any) -> str:
@@ -152,7 +152,7 @@ class ReplayExecutor(WorkflowExecutor):
                 check_contract(config, rules["input"], f"{node_id}.input")
             if node_type in FIXTURE_NODES:
                 from programgarden.replay_external import external_record
-                record = external_record(self.fixture, node_id, node_type, context)
+                record = external_record(self.fixture, node_id, node_type, config, context)
                 if not isinstance(record,dict) or "output" not in record or "contract" not in record:
                     raise ContractViolation(node_id,"No matching per-item I/O fixture/contract","REPLAY_FIXTURE_REQUIRED")
                 if "order_events" in record:
@@ -177,6 +177,12 @@ class ReplayExecutor(WorkflowExecutor):
                 # Reuse the live node's pure decision, never its wall clock or
                 # a manufactured allow result. Every branch shares this instant.
                 output = validated_node.evaluate_at(datetime.fromisoformat(instant.replace("Z", "+00:00")))
+            elif node_type == "ScheduleNode":
+                from programgarden.replay_triggers import schedule_startup
+                output = await schedule_startup(validated_node, config, context)
+            elif node_type == "TradingHoursFilterNode":
+                from programgarden.replay_triggers import trading_hours
+                output = trading_hours(validated_node, context)
             elif node_type == "SQLiteNode":
                 from programgarden.replay_sqlite import execute_sqlite
                 output = await execute_sqlite(node_id, config, context)

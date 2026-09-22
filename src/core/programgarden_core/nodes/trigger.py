@@ -468,31 +468,34 @@ class TradingHoursFilterNode(BaseNode):
             ),
         }
 
-    def _is_trading_hours(self) -> bool:
-        """Check if current time is within trading hours"""
+    def _is_trading_hours(self, *, as_of: Optional[datetime] = None) -> bool:
+        """Use the live window predicate with an optional aware replay instant."""
+        if as_of is not None and (as_of.tzinfo is None or as_of.utcoffset() is None):
+            raise ValueError("Trading-hours instant must include a timezone")
         try:
             import pytz
         except ImportError:
-            # pytz 없으면 UTC 기준으로 체크
-            now = datetime.utcnow()
-            tz = None
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self.timezone)
         else:
             tz = pytz.timezone(self.timezone)
-            now = datetime.now(tz)
+        now = as_of.astimezone(tz) if as_of is not None else datetime.now(tz)
         
         # 요일 체크
         day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-        active_weekdays = [day_map[d.lower()] for d in self.days if d.lower() in day_map]
+        if not self.days or any(d.lower() not in day_map for d in self.days):
+            raise ValueError("Trading days must use explicit weekday names")
+        active_weekdays = [day_map[d.lower()] for d in self.days]
+        # Reject malformed windows even on an inactive weekday.
+        import re
+        if any(not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) for value in (self.start, self.end)):
+            raise ValueError("Trading-hours window requires HH:MM times")
+        start_h, start_m = map(int, self.start.split(":"))
+        end_h, end_m = map(int, self.end.split(":"))
+        if (end_h, end_m) < (start_h, start_m):
+            raise ValueError("Use SessionGateNode for an overnight window")
         if now.weekday() not in active_weekdays:
             return False
-        
-        # 시간 체크
-        try:
-            start_h, start_m = map(int, self.start.split(":"))
-            end_h, end_m = map(int, self.end.split(":"))
-        except ValueError:
-            # 파싱 실패 시 통과
-            return True
         
         current_minutes = now.hour * 60 + now.minute
         start_minutes = start_h * 60 + start_m

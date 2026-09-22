@@ -43,7 +43,7 @@ def runtime_identity() -> str:
                            for path in sorted(root.rglob("*.py"))}
     packages = {}
     for name in ("programgarden", "programgarden-core", "programgarden-community", "programgarden-finance",
-                 "pydantic", "pydantic-core", "numpy", "pandas", "scipy", "tzdata", "aiosqlite",
+                 "pydantic", "pydantic-core", "numpy", "pandas", "scipy", "tzdata", "pytz", "croniter", "aiosqlite",
                  "pyportfolioopt", "quantstats", "scikit-learn", "statsmodels"):
         try:
             packages[name] = importlib.metadata.version(name)

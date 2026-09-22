@@ -1,6 +1,7 @@
 """Request acknowledgement is separate from matching completion evidence."""
 import pytest
 
+from programgarden.replay_external import recording
 from programgarden.incremental_build import BuildWorkspace
 from programgarden.replay_contracts import ContractViolation
 from programgarden.replay_scenarios import assess_scenario
@@ -137,6 +138,9 @@ def lifecycle(product="OverseasStock",*,action="cancel",partial=False,confirm=Tr
             "contract":{"type":"object","required":["open_orders","count"]},
             "order_events":[{"request_node":action,"symbol_key":config["exchange"]+":"+config["symbol"],
                 "event_id":"fixture-completion", "applied":True}]}
+    if confirm:
+        record = fixture["nodes"]["observed"]
+        fixture["nodes"]["observed"] = recording(product+"OpenOrdersNode", {}, record["output"], record["contract"], as_of=fixture["broker"]["as_of"], order_events=record["order_events"])
     return graph,fixture
 
 

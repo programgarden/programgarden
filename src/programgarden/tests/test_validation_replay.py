@@ -1,6 +1,9 @@
 """Run actual CodeNode and If/filter semantics without a broker or model."""
 import pytest
 from programgarden.validation_replay import replay
+from programgarden.replay_external import recording, request_identity
+
+AS_OF = "2026-09-22T14:00:00Z"
 
 
 def workflow(*nodes):
@@ -61,7 +64,7 @@ async def test_unsupported_external_node_is_blocked_instead_of_contacted():
 @pytest.mark.asyncio
 async def test_fixture_is_checked_and_never_merged_with_invented_defaults():
     definition=workflow({"id":"http","type":"HTTPRequestNode","method":"GET","url":"https://invalid.example/quote"})
-    result=await replay(definition,{"nodes":{"http":{"output":{"response":{"price":1}},
+    result=await replay(definition,{"as_of":AS_OF,"nodes":{"http":{"request":request_identity("HTTPRequestNode", {"method":"GET","url":"https://invalid.example/quote"}), "as_of":AS_OF,"item":None,"output":{"response":{"price":1}},
         "contract":{"type":"object","required":["response"],"properties":{
             "response":{"type":"object","required":["close_price"]}}}}}})
     assert not result.passed
@@ -93,13 +96,18 @@ async def test_multi_symbol_io_uses_exact_item_without_squared_duplication():
         {"id":"watch","type":"WatchlistNode","symbols":symbols},
         {"id":"quotes","type":"OverseasStockMarketDataNode","symbols":"{{ nodes.watch.symbols }}"},
         code("count","len(data)",data="{{ nodes.quotes.values }}"))
-    fixture={"nodes":{"broker":{"output":{"connection":{"product":"overseas_stock"}},
+    fixture={"as_of":AS_OF,"nodes":{"broker":{"output":{"connection":{"product":"overseas_stock"}},
         "contract":{"type":"object","required":["connection"]}},"quotes":{"items":{}}}}
     for index,symbol in enumerate(symbols):
         value={**symbol,"price":100+index}
         fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]]={
             "output":{"value":value,"values":[value]},
             "contract":{"type":"object","required":["value","values"]}}
+    broker = fixture["nodes"]["broker"]
+    fixture["nodes"]["broker"] = recording("OverseasStockBrokerNode", {}, broker["output"], broker["contract"], as_of=AS_OF)
+    for symbol in symbols:
+        row = fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]]
+        fixture["nodes"]["quotes"]["items"]["NYSE:"+symbol["symbol"]] = recording("OverseasStockMarketDataNode", {"symbols":symbols}, row["output"], row["contract"], as_of=AS_OF, item=symbol)
     result=await replay(definition,fixture)
     assert result.passed,result.errors
     assert result.outputs["count"]["result"]==2

@@ -2,6 +2,7 @@
 from copy import deepcopy
 import pytest
 from programgarden.validation_replay import replay
+from programgarden.replay_external import recording
 
 AS_OF="2026-09-22T14:00:00Z"
 
@@ -16,6 +17,8 @@ def case(product="OverseasStock",side="buy"):
         "instruments":{"NASDAQ:A":{"product":"overseas_stock","currency":"USD","price":100,
             "as_of":AS_OF,"session_open":True,"tradeable":True,"tick_size":0.01,"max_age_seconds":60}}},
         "orders":{"order":{"response":"filled"}}}
+    record = fixture["nodes"]["broker"]
+    fixture["nodes"]["broker"] = recording(product+"BrokerNode", {}, record["output"], record["contract"], as_of=AS_OF)
     return graph,fixture
 
 
