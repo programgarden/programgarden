@@ -73,7 +73,7 @@ class _SandboxedContext:
             DateNamespace, FinanceNamespace, StatsNamespace,
             FormatNamespace, ListNamespace,
         )
-        self.date = DateNamespace()
+        self.date = DateNamespace(as_of=snapshot.get("validation_as_of"))
         self.finance = FinanceNamespace()
         self.stats = StatsNamespace()
         self.format = FormatNamespace()

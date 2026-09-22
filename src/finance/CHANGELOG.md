@@ -1,5 +1,15 @@
 ## [1.10.7] - 2026-09-21
 
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Compatibility release for programgarden-core 2.0; LS TR implementations and requests are unchanged.
+
+
 ### Fixed
 - Correct g3190 expiry metadata: the documented expiry date does not establish delisting or its effective timestamp.
 - Clarify that g3190/g3104 status flags lack an authoritative code map/event time; missing values do not mean normal trading.
@@ -168,7 +178,7 @@
 
 ### Changed
 - TestPyPI supplemental source 블록 제거 — 배포 시에만 추가하는 값인데 커밋된 채 남아
-  있었다. 그 인덱스의 `programgarden-core` 최신이 테스트 잔재 `2.0.0` 이라, `poetry lock`
+  있었다. 그 인덱스의 `programgarden-core` 최신이 테스트 잔재 `2.0.1` 이라, `poetry lock`
   이 이를 보조 인덱스로 참조하면 **엉뚱한 버전이 딸려올 수 있다.**
 
 ## [1.9.0] - 2026-08-19

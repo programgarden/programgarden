@@ -43,7 +43,7 @@ poetry add programgarden-core
 | analysis | 2 | BacktestEngineNode, BenchmarkCompareNode |
 | ai | 2 | LLMModelNode, AIAgentNode |
 
-> Community adds five nodes: TelegramNode, FearGreedIndexNode, FundamentalDataNode, FileReaderNode and PerformanceReportNode, for 78 total.
+> Community adds four nodes: TelegramNode, FearGreedIndexNode, FileReaderNode and PerformanceReportNode, for 77 total.
 
 ## 사용 예시
 
