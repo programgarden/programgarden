@@ -119,6 +119,8 @@ class BuildWorkspace:
     max_attempts: int = 6
 
     def __post_init__(self):
+        if not isinstance(self.fixtures, list) or len(self.fixtures) > 16 or any(not isinstance(f, dict) for f in self.fixtures):
+            raise BuildGateError("BUILD_FIXTURE_INVALID", "Fixtures must be a bounded array of scenario objects")
         # Never retain aliases to a caller's snapshot or a previously loaded
         # revision. The worker owns this mutable working state.
         for key in ("graph", "fixtures", "states", "evidence", "attempts"):
@@ -227,10 +229,15 @@ class BuildWorkspace:
 
     def replace_fixtures(self, fixtures: list[dict[str, Any]], *, expected_revision: int):
         self._revision(expected_revision)
+        if not isinstance(fixtures, list) or len(fixtures) > 16 or any(not isinstance(f, dict) for f in fixtures):
+            raise BuildGateError("BUILD_FIXTURE_INVALID", "Fixtures must be a bounded array of scenario objects")
+        finite_json(fixtures, "fixtures")
+        if content_hash(self.fixtures) == content_hash(fixtures):
+            return
         self.fixtures = deepcopy(fixtures)
         self.states = {n: "STALE" for n in self.states}
         self.evidence.clear()
-        self.status = "STALE"
+        self.status = "STALE" if fixtures else "BLOCKED"
         self.revision += 1
 
     async def run_pending(self, node_id: str, *, expected_revision: int, timeout: float = 30):

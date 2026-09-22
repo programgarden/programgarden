@@ -46,6 +46,19 @@ The worker enforces network denial, removes inherited credentials/descriptors,
 limits resources, and terminates the process group on timeout or cancellation.
 Unsupported nodes, absent fixtures and unsupported contracts block verification.
 
+## Clock and fixture replacement
+
+SessionGateNode replay evaluates the real node's pure session decision at the
+fixture's explicit timezone-aware instant. Missing clocks block validation;
+regular-session boundaries, weekends, daylight saving time and explicit closures
+remain observable in actual downstream branches. No wall-clock or forced-allow
+result is used.
+
+Trusted fixture replacement invalidates node evidence without resetting the graph
+or retry ledger. An identical suite is an idempotent resume; an empty replacement
+is BLOCKED. Malformed, oversized or nonfinite fixture collections are rejected
+before replacing the stored suite. Focused session/workspace tests: 27 passed.
+
 ## Evidence and remaining release gates
 
 Each validation records task/plan/workflow identity, graph/node/fixture hashes,

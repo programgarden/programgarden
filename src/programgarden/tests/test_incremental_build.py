@@ -11,6 +11,26 @@ def workspace():
                                "properties":{"result":{"type":"number","const":3}}}}}])
 
 
+@pytest.mark.parametrize("fixtures", [None, {}, "invalid", [None], [{}] * 17])
+def test_invalid_fixture_replacement_is_atomic(fixtures):
+    from dataclasses import asdict
+    ws = workspace()
+    before = asdict(ws)
+    with pytest.raises(BuildGateError, match="bounded array"):
+        ws.replace_fixtures(fixtures, expected_revision=ws.revision)
+    assert asdict(ws) == before
+    with pytest.raises(BuildGateError, match="bounded array"):
+        BuildWorkspace("task", 1, {"nodes": [], "edges": []}, fixtures)
+
+
+def test_identical_fixture_resume_preserves_revision_and_evidence():
+    from dataclasses import asdict
+    ws = workspace()
+    before = asdict(ws)
+    ws.replace_fixtures(deepcopy(ws.fixtures), expected_revision=ws.revision)
+    assert asdict(ws) == before
+
+
 def code(node_id, expression, data=None):
     return {"id":node_id,"type":"CodeNode","outputs":[{"name":"result","type":"number"}],
             "code":f"def execute(data, params, context):\n return {{'result': {expression}}}",

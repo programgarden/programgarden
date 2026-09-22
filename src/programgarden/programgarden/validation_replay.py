@@ -143,7 +143,7 @@ class ReplayExecutor(WorkflowExecutor):
             try:
                 # JSON-mode strict validation permits schema enums/date strings
                 # while refusing numeric/string/boolean coercion at the boundary.
-                node_class.model_validate_json(json.dumps(candidate,allow_nan=False),strict=True)
+                validated_node = node_class.model_validate_json(json.dumps(candidate,allow_nan=False),strict=True)
             except ValidationError as exc:
                 first = exc.errors(include_input=False,include_url=False)[0]
                 raise ContractViolation(f"{node_id}.input."+".".join(map(str,first["loc"])),first["msg"]) from exc
@@ -175,6 +175,14 @@ class ReplayExecutor(WorkflowExecutor):
                 output = self.orders.execute(node_id,node_type,config,context)
                 observed = deepcopy(self.orders.last_observation)
                 self.outcome.order_observations.append({"node_id":node_id,**observed})
+            elif node_type == "SessionGateNode":
+                from datetime import datetime
+                instant = context.validation_as_of
+                if instant is None:
+                    raise ContractViolation(node_id, "Session verification requires an explicit fixture clock", "REPLAY_FIXTURE_REQUIRED")
+                # Reuse the live node's pure decision, never its wall clock or
+                # a manufactured allow result. Every branch shares this instant.
+                output = validated_node.evaluate_at(datetime.fromisoformat(instant.replace("Z", "+00:00")))
             elif node_type == "SQLiteNode":
                 from programgarden.replay_sqlite import execute_sqlite
                 output = await execute_sqlite(node_id, config, context)
