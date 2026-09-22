@@ -20452,6 +20452,9 @@ class CodeNodeExecutor(NodeExecutorBase):
             "iteration_total": int(getattr(context, "_iteration_total", 0) or 0),
             "risk": {},
         }
+        validation_as_of = getattr(context, "validation_as_of", None)
+        if validation_as_of is not None:
+            snap["validation_as_of"] = validation_as_of
         try:
             rt = context.risk_tracker
             if rt is not None and hasattr(rt, "get_all_hwm"):
@@ -20528,6 +20531,30 @@ class CodeNodeExecutor(NodeExecutorBase):
             )
 
         value = env.get("value")
+
+        if context.is_deep_validate or getattr(context, "is_replay_validation", False):
+            from programgarden.replay_contracts import ContractViolation, check_contract, check_codenode_ports
+            ports = config.get("outputs", [])
+            try:
+                check_codenode_ports(ports)
+                for index, port in enumerate(ports):
+                    name = port["name"]
+                    if isinstance(value, dict):
+                        if name not in value:
+                            raise ContractViolation(f"{node_id}.{name}", "Declared output is absent")
+                        item = value[name]
+                    elif len(ports) == 1:
+                        # The existing single-port scalar mapping is explicit
+                        # public behavior; validate its value without coercion.
+                        item = value
+                    else:
+                        raise ContractViolation(node_id, "Multiple declared ports require a result object")
+                    if port.get("type", "any") != "any":
+                        check_contract(item, {"type":port["type"]}, f"{node_id}.{name}")
+            except ContractViolation as exc:
+                raise CodeNodeError(ErrorCode.CODE_NODE_EXEC_ERROR, str(exc),
+                    suggestion="Return every declared output with its declared JSON type; do not substitute missing values with zero.",
+                    details=exc.as_dict()) from exc
 
         # Map return → declared ports. No declared ports → whole value on result.
         if not declared:

@@ -443,3 +443,20 @@ class TestEvaluateFieldsListSemantics:
         assert out == {"orders": [{"p": "{{ nodes.mkt.price }}"}]}
         # dict item 은 표현식이 아니므로 on_error 도 호출되지 않는다.
         assert recorded == []
+
+
+class TestReplayDateNamespace:
+    def test_fixed_clock_preserves_explicit_timezone_and_calendar_date(self):
+        ns = DateNamespace(as_of="2026-01-01T00:15:00+09:00")
+        assert ns.today()=="2026-01-01"
+        assert ns.now()=="2026-01-01T00:15:00+09:00"
+        assert ns.ago(1)=="2025-12-31"
+        assert ns.later(1)=="2026-01-02"
+        assert ns.months_ago(1)=="2025-12-02"
+        assert ns.year_start()=="2026-01-01"
+        assert ns.year_end()=="2026-12-31"
+        assert ns.month_start()=="2026-01-01"
+
+    @pytest.mark.parametrize("value", ["2026-01-01", "2026-01-01T00:00:00", "invalid"])
+    def test_fixed_clock_requires_a_real_timezone_aware_timestamp(self,value):
+        with pytest.raises(ValueError): DateNamespace(as_of=value)
