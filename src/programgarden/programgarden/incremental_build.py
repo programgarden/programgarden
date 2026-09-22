@@ -219,6 +219,54 @@ class BuildWorkspace:
         self._invalidate({node_id})
         self.revision += 1
 
+    def remove_node(self, node_id: str, *, expected_revision: int):
+        self._revision(expected_revision)
+        if node_id not in self.states:
+            raise BuildGateError("BUILD_NODE_NOT_FOUND", "Select an existing node for removal")
+        self.graph["nodes"] = [n for n in self.graph["nodes"] if n["id"] != node_id]
+        self.graph["edges"] = [e for e in self.graph.get("edges", [])
+                               if node_id not in {e["from"].split(".")[0], e["to"].split(".")[0]}]
+        self.states.pop(node_id)
+        self.evidence.pop(node_id, None)
+        # Removal can change roots, iteration and implicit broker inheritance.
+        # Recheck the entire remaining graph instead of guessing affected paths.
+        self._invalidate(set(self.states))
+        # Retain attempts, including the removed ID: remove/re-add is not a reset.
+        self.revision += 1
+
+    def update_header(self, changes: dict[str, Any], *, expected_revision: int):
+        self._revision(expected_revision)
+        allowed = {"name", "description", "version", "inputs", "resource_limits", "notes", "tags"}
+        if not isinstance(changes, dict) or not changes or set(changes) - allowed:
+            raise BuildGateError("BUILD_HEADER_SCOPE", "Edit only workflow metadata, inputs or resource limits")
+        from pydantic import ValidationError
+        from programgarden_core.models.workflow import WorkflowDefinition, WorkflowInput, StickyNote
+        from programgarden_core.models.resource import ResourceLimits
+        try:
+            finite_json(changes)
+            structured = []
+            if isinstance(changes.get("resource_limits"), dict):
+                structured.append((changes["resource_limits"], ResourceLimits))
+            if isinstance(changes.get("inputs"), dict):
+                structured.extend((value, WorkflowInput) for value in changes["inputs"].values())
+            if isinstance(changes.get("notes"), list):
+                structured.extend((value, StickyNote) for value in changes["notes"])
+            if any(isinstance(value, dict) and set(value) - model.model_fields.keys()
+                   for value, model in structured):
+                raise BuildGateError("BUILD_HEADER_INVALID", "Unknown header setting; use the native field names")
+            candidate = {**deepcopy(self.graph), **deepcopy(changes)}
+            # Validate the header against the actual library contract. Node logic
+            # may still be under repair and is not certified by this check.
+            WorkflowDefinition.model_validate_json(json.dumps(
+                {**candidate, "nodes": [], "edges": [], "credentials": []}, allow_nan=False), strict=True)
+        except (ValidationError, ContractViolation):
+            raise BuildGateError("BUILD_HEADER_INVALID", "The workflow header violates its native schema") from None
+        if content_hash(candidate) == content_hash(self.graph):
+            return
+        self.graph = candidate
+        self._invalidate(set(self.states))
+        self.revision += 1
+
     def replan(self, plan_revision: int, *, expected_revision: int):
         self._revision(expected_revision)
         if type(plan_revision) is not int or plan_revision <= self.plan_revision:

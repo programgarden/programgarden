@@ -226,3 +226,48 @@ def test_shared_plugin_edit_without_version_bump_changes_runtime_hash(monkeypatc
     before=module.runtime_identity()
     plugin.write_text("THRESHOLD = 25\n")
     assert module.runtime_identity()!=before
+
+
+@pytest.mark.asyncio
+async def test_remove_rechecks_roots_and_cannot_reset_attempts_or_final_expectations():
+    ws = workspace()
+    await append(ws, {"id": "start", "type": "StartNode"})
+    await append(ws, code("sum", "3"), "start")
+    assert (await ws.finalize(expected_revision=ws.revision))["passed"]
+    attempts = dict(ws.attempts)
+    ws.remove_node("sum", expected_revision=ws.revision)
+    assert ws.graph["edges"] == [] and ws.states == {"start": "STALE"}
+    assert not ws.evidence and ws.attempts == attempts
+    with pytest.raises(BuildGateError, match="Every required node"):
+        await ws.finalize(expected_revision=ws.revision)
+    assert (await ws.run_pending("start", expected_revision=ws.revision))["passed"]
+    assert not (await ws.finalize(expected_revision=ws.revision))["passed"]
+    assert (await append(ws, code("sum", "3"), "start"))["passed"]
+    assert ws.attempts["sum"] == attempts["sum"] + 1
+
+
+@pytest.mark.asyncio
+async def test_header_edit_invalidates_verified_nodes_and_identical_retry_preserves_state():
+    from dataclasses import asdict
+    ws = workspace()
+    await append(ws, {"id": "start", "type": "StartNode"})
+    before = asdict(ws)
+    ws.update_header({"name": ws.graph["name"]}, expected_revision=ws.revision)
+    assert asdict(ws) == before
+    ws.update_header({"inputs": {"quantity": {"type": "number", "default": 2}}}, expected_revision=ws.revision)
+    assert ws.states == {"start": "STALE"} and not ws.evidence
+    assert ws.attempts == before["attempts"]
+    with pytest.raises(BuildGateError, match="Every required node"):
+        await ws.finalize(expected_revision=ws.revision)
+
+
+@pytest.mark.parametrize("change", [{"id": "replace"}, {"nodes": []}, {"credentials": []},
+    {"states": {"start": "VERIFIED"}}, {"resource_limits": {"cpu_cores": "invalid"}},
+    {"inputs": {"quantity": {"type": "imaginary"}}}, {"name": 7}, {"tags": [float("nan")]}])
+def test_invalid_header_edit_is_atomic(change):
+    from dataclasses import asdict
+    ws = workspace()
+    before = asdict(ws)
+    with pytest.raises(BuildGateError):
+        ws.update_header(change, expected_revision=ws.revision)
+    assert asdict(ws) == before

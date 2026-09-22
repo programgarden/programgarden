@@ -217,3 +217,19 @@ node/intent. Repeated submissions are visible and can fail the independent risk
 scenario. Futures use the native cycle/invocation identity. Replay does not claim
 coverage of a deployment's optional durable stock-idempotency registry; that
 execution-profile binding remains a separate release requirement.
+
+
+### Graph removals and shared settings (unreleased)
+
+`BuildWorkspace.remove_node` removes one node and its incident edges. All remaining
+nodes become STALE because roots, iteration and implicit connections may change.
+Removed-node attempts remain recorded; remove/re-add is not a retry reset. Missing
+required output/path assertions still fail final replay after a node is removed.
+
+`update_header` accepts only name, description, version, inputs, resource limits,
+notes and tags. It checks the native JSON schema and rejects unknown setting fields.
+Identity, graph nodes/edges, credentials and evidence are not header edits. Any
+changed header invalidates existing proof; an identical revision-checked retry is
+a no-op. The host independently enforces ownership and a repair's layout policy.
+Thirty focused workspace/replay tests pass. These are unreleased library changes,
+not evidence of public deployment or live trading.

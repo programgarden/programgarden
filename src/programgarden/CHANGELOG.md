@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Added
+- Revision-checked node removal and native-schema header edits invalidate old
+  replay proof without discarding validation attempt history or task identity.
+
 ### Fixed
 - Enforce disabled schedules and trading-hours decisions in startup, Split and
   realtime traversals. A timed-out time filter cannot run its trading branch;
