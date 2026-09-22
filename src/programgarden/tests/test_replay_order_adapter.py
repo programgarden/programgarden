@@ -33,6 +33,22 @@ async def test_graph_reaches_order_and_actual_result_envelope():
 
 
 @pytest.mark.asyncio
+async def test_no_signal_retains_initial_account_without_submitting_an_intent():
+    graph, fixture = case()
+    fixture["broker"]["account"]["positions"] = {"NASDAQ:A": 3}
+    graph["nodes"].insert(2, {"id": "signal", "type": "IfNode", "left": 0, "operator": ">", "right": 1})
+    graph["edges"][-1] = {"from": "broker", "to": "signal"}
+    graph["edges"].append({"from": "signal", "to": "order", "from_port": "true"})
+    result = await replay(graph, fixture)
+    assert result.passed, result.errors
+    assert result.node_states["order"] == "skipped"
+    assert result.simulation["cash"] == 1000
+    assert result.simulation["positions"] == {"NASDAQ:A": 3}
+    assert result.simulation["orders"] == {} and result.simulation["reserved_cash"] == 0
+    assert result.order_observations == [] and result.simulation["live_order_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_wrong_quantity_blocks_before_any_intent_is_submitted():
     graph,fixture=case();graph["nodes"][2]["order"]["quantity"]="two"
     result=await replay(graph,fixture)

@@ -283,6 +283,11 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
         context.set_workflow_job(job)
         context.start()
         async def run_all():
+            if any(node.node_type in ORDER_NODES for node in resolved.nodes.values()):
+                # A no-signal branch still has account state to verify. Starting
+                # the book only on the first order loses unchanged cash/holdings
+                # and makes every correctly skipped order look unverifiable.
+                runner.orders = ReplayOrders(fixture)
             await job._execute_main_flow()
             if fixture.get("events") and not outcome.errors:
                 from programgarden.replay_events import replay_events

@@ -55,9 +55,14 @@ def finite_json(value: Any, path: str = "$", depth: int = 0) -> None:
 def check_contract(value: Any, schema: dict[str, Any], path: str = "$") -> None:
     """Validate a finite JSON value without coercion; raise at the first defect."""
     finite_json(value, path)
+    validate_contract(schema)
+    _check(value, schema, path, 0)
+
+
+def validate_contract(schema: dict[str, Any]) -> None:
+    """Check an independently prepared schema before any candidate exists."""
     finite_json(schema, "contract")
     _validate_schema(schema, "contract", 0)
-    _check(value, schema, path, 0)
 
 
 def _literal_equal(left, right):

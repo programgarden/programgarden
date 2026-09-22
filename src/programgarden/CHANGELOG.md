@@ -1,10 +1,13 @@
 ## Unreleased
 
 ### Added
+- Validate independently prepared assertion schemas before candidate execution.
 - Revision-checked node removal and native-schema header edits invalidate old
   replay proof without discarding validation attempt history or task identity.
 
 ### Fixed
+- Preserve the initial simulated cash/holdings when a trading graph takes a
+  no-signal branch. No order submission is needed to verify unchanged state.
 - Separate consecutive validation failures from successful edits. Node/final
   validation retains total accounting while PASS clears only its failure streak.
   Removing or changing a node does not reset a failed-repair budget.

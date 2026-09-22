@@ -328,7 +328,7 @@ OVERSEAS_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "market", "type": "string", "description": "시장 구분명"},
 ]
 
-# 국내주식 REST 계좌 (t0424)
+# Domestic REST account: observed CSPAQ12300 evidence plus executor aliases.
 KOREA_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "exchange", "type": "string", "description": "거래소 코드 (항상 KRX)"},
     {"name": "symbol", "type": "string", "description": "종목코드"},
@@ -342,6 +342,20 @@ KOREA_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "sellable_qty", "type": "number", "description": "매도 가능 수량"},
     {"name": "eval_amount", "type": "number", "description": "평가 금액"},
     {"name": "product", "type": "string", "description": "상품 구분 (항상 korea_stock)"},
+    {"name": "symbol_name", "type": "string", "description": "Observed instrument name; name alias uses the same value"},
+    {"name": "currency", "type": "string", "description": "Valuation currency: KRW"},
+    {"name": "buy_price", "type": "number", "description": "Observed average acquisition price; null when unavailable"},
+    {"name": "average_price", "type": "number", "description": "Observed average acquisition price; null when unavailable"},
+    {"name": "acquisition_amount", "type": "number", "description": "Observed acquisition amount; null when unavailable"},
+    {"name": "purchase_amount", "type": "number", "description": "Acquisition amount alias; null when unavailable"},
+    {"name": "pnl_rate_basis", "type": "string", "description": "Broker average cost basis, commission excluded"},
+    {"name": "pnl_rate_status", "type": "string", "description": "available or unavailable; missing evidence is not zero return"},
+    {"name": "pnl_status", "type": "string", "description": "available or unavailable"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "Missing P&L evidence reason; null when available"},
+    {"name": "cost_basis", "type": "string", "description": "Broker average cost basis, commission excluded"},
+    {"name": "cost_status", "type": "string", "description": "available or unavailable"},
+    {"name": "cost_unavailable_reason", "type": "string", "description": "Missing acquisition evidence reason; null when available"},
+    {"name": "observed_at", "type": "string", "description": "UTC ISO observation timestamp"},
 ]
 
 # 해외선물 REST 계좌 (CIDBQ01500 block2)

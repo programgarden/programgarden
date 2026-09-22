@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Fixed
+- Declare all observed domestic REST position fields, including acquisition
+  basis, missing-evidence status, currency and observation time. Correct the
+  account example's nonexistent cash/equity output names. Missing money stays
+  nullable; this change does not query a broker or alter holdings.
 - Return the declared TradingHoursFilterNode `blocked` output consistently.
   Clarify waiting, timeout and immediate SessionGate alternatives in the schema.
 

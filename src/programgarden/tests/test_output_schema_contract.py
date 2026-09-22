@@ -176,7 +176,7 @@ CASES = [
 
     # ── 종목 리스트 ──
     ("WatchlistNode", "symbols", [(WatchlistNodeExecutor, "execute", "processed_symbols", "append")]),
-    ("MarketUniverseNode", "symbols", [(MarketUniverseNodeExecutor, "_fetch_index_constituents", "symbols", "append")]),
+    ("MarketUniverseNode", "symbols", [(MarketUniverseNodeExecutor, "parse_constituents", "symbols", "append")]),
     ("ScreenerNode", "symbols", [
         (ScreenerNodeExecutor, "_filter_via_ls_overseas_stock", "prefilter", "append"),  # LS 분기
         (ScreenerNodeExecutor, "_filter_symbols", "filtered", "append"),                 # yfinance 분기
@@ -187,7 +187,9 @@ CASES = [
 
     # ── 계좌 (REST) ──
     ("OverseasStockAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_stock", "positions", "append")]),
-    ("KoreaStockAccountNode", "positions", [(AccountNodeExecutor, "_ls_korea_stock", "positions", "append")]),
+    # Domestic positions now combine finance evidence and executor aliases.
+    # test_domestic_node_evidence checks the actual parser/executor output keys;
+    # extracting only append literals here misses that composed contract.
     ("OverseasFuturesAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_futureoption", "positions", "append")]),
     ("OverseasStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_stock", "held_symbols", "listcomp")]),
     ("KoreaStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_korea_stock", "held_symbols", "listcomp")]),

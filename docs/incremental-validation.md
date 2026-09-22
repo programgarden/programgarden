@@ -237,3 +237,16 @@ changed header invalidates existing proof; an identical revision-checked retry i
 a no-op. The host independently enforces ownership and a repair's layout policy.
 Thirty focused workspace/replay tests pass. These are unreleased library changes,
 not evidence of public deployment or live trading.
+
+## Requirements-first contract preparation
+
+`replay_contracts.validate_contract` checks an assertion schema without inventing
+an output value or running candidate code. A coordinator may compile independent
+test specifications before construction; this is not a validation PASS. Native
+node and cumulative-chain execution, final expectations and saved-byte readback
+remain required. Unknown schema keywords fail closed.
+
+Domestic REST account discovery now includes the fields actually emitted by the
+finance evidence parser plus executor aliases. Runtime tests compare the composed
+output with the catalog both with and without monetary evidence. Missing costs or
+P&L remain null with an explicit unavailable status, rather than becoming zero.

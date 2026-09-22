@@ -111,7 +111,7 @@ class KoreaStockAccountNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "positions port: list of {symbol, quantity, avg_price, pnl_rate} in KRW; balance port: {cash_krw, total_eval_krw, orderable_amount}; held_symbols: [{symbol}].",
+            "expected_output": "positions: observed holdings with symbol, quantity, avg_price, pnl_rate and cost/P&L availability; missing money stays null. balance: {deposit, total_eval, orderable_amount} in KRW; held_symbols: [{exchange, symbol}].",
         },
         {
             "title": "Cash check before Korea stock order",
