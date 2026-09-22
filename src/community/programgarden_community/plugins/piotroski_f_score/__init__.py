@@ -5,12 +5,10 @@ Joseph Piotroski (2000) "Value Investing: The Use of Historical Financial
 Statement Information to Separate Winners from Losers".
 9개 재무 신호로 기업의 재무 건전성을 0~9점으로 채점 (높을수록 우량).
 
-⚠️ 축소역량 (REDUCED 7/9):
-FundamentalDataNode (FMP) 는 cash_flow (data_type) 를 제공하지 않으므로
-영업현금흐름(CFO) 의존 2신호(#2 CFO>0, #4 발생액 CFO>ROA)는 채점 불가.
-따라서 본 플러그인은 max_score=7 로 축소 채점하고, 생략 신호를
-analysis.skipped_signals / analysis.note 로 명시합니다 (숨은 추정 금지).
-정식 9/9 는 CFO 데이터가 확보되는 후속에서 활성화됩니다.
+Reduced capability: this implementation scores seven signals, omitting the two
+operating-cash-flow signals. Supplying CFO does not enable unimplemented scoring.
+Use verified statement records for the required year-over-year inputs; LS
+security-detail fundamentals alone do not provide these statements.
 
 입력 형식 (income_statement + balance_sheet 를 symbol/year 로 병합한 플랫 배열):
 - data: [{symbol, exchange, calendarYear, netIncome, totalAssets, longTermDebt,
@@ -20,7 +18,6 @@ analysis.skipped_signals / analysis.note 로 명시합니다 (숨은 추정 금�
 
 ※ 다중 종목 플러그인 - ConditionNode auto-iterate 는 종목별로 1행만 넘겨
   연도 비교가 불가하므로, 종목 전체를 단일 호출로 넘기거나 NodeRunner 사용.
-  (companion: programmer_example/piotroski_income_balance_merge.py)
 """
 
 from typing import List, Dict, Any, Optional
@@ -34,8 +31,8 @@ MAX_SCORE = 7
 
 REDUCED_NOTE = (
     "Reduced 7/9 Piotroski F-Score: the 2 operating-cash-flow signals "
-    "(cfo_positive, accruals) are skipped because FundamentalDataNode does not "
-    "expose operating cash flow. Provide CFO upstream to enable the full 9/9 score."
+    "(cfo_positive, accruals) are not implemented. Supplying CFO does not "
+    "enable full 9/9 scoring in this version."
 )
 
 
@@ -48,8 +45,8 @@ PIOTROSKI_SCHEMA = PluginSchema(
         "Fundamental value screener (registered under TECHNICAL until a FUNDAMENTAL "
         "category exists). Piotroski F-Score (2000) scores balance-sheet/income-statement "
         "health across 9 binary signals. This build scores a REDUCED 7/9: the two operating "
-        "cash-flow signals (cfo_positive, accruals) are skipped because FundamentalDataNode "
-        "provides no cash-flow data. Merge income_statement + balance_sheet by symbol/year and "
+        "cash-flow signals (cfo_positive, accruals) are not implemented. "
+        "Merge verified income_statement + balance_sheet records by symbol/year and "
         "feed 2+ years per symbol. Multi-symbol plugin."
     ),
     products=[ProductType.OVERSEAS_STOCK],
@@ -138,7 +135,7 @@ def _score_symbol(current: Dict[str, Any], prior: Dict[str, Any]) -> Dict[str, A
     Returns:
         {"f_score": int, "signals": {...}, "missing_reason": str|None}
     """
-    # === 원자료 추출 (여러 FMP 필드명 후보 허용) ===
+    # Accept documented camelCase and snake_case statement field names.
     net_income_c = _pick(current, ["netIncome", "net_income"])
     total_assets_c = _pick(current, ["totalAssets", "total_assets"])
     total_assets_p = _pick(prior, ["totalAssets", "total_assets"])

@@ -193,7 +193,14 @@ class WorkflowResolver:
                     f"Unknown node type '{node_type}'",
                     location=ErrorLocation(node_id=node_id, node_type=node_type),
                     available_values=suggest_close_match(node_type or "", known_types),
-                    suggestion="Pick a node type from the registered list.",
+                    suggestion=(
+                        "FundamentalDataNode (FMP) was removed. For LS overseas-stock PER/EPS, "
+                        "use OverseasStockFundamentalNode and rebind its value/values outputs. "
+                        "It does not supply financial statements or cash-flow history; "
+                        "do not silently substitute missing data."
+                        if node_type == "FundamentalDataNode" else
+                        "Pick a node type from the registered list."
+                    ),
                 )
             )
 

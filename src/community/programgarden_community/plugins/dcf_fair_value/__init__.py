@@ -8,12 +8,9 @@ DCF Fair Value (2단계 현금흐름할인) 플러그인
   Terminal: 마지막 FCF 를 (1+terminal_growth)/(r-terminal_growth) 로 영구가치화
   fair_value_per_share = (Σ PV(FCF) + PV(Terminal)) / shares_outstanding
 
-⚠️ 필수 upstream 입력 `fcf` (자유현금흐름):
-FundamentalDataNode (FMP) 는 cash_flow (data_type) 를 **제공하지 않으므로**
-fcf 를 만들 수 없습니다. 반드시 상류에서 fcf 를 주입해야 하며(companion:
-programmer_example/dcf_cashflow_datapath.py — HTTPRequestNode(FMP
-cash-flow-statement) → FieldMappingNode(freeCashFlow→fcf) → 본 플러그인),
-fcf 가 없으면 per-symbol missing_reason 을 반환합니다 (숨은 추정 금지).
+Required upstream input: free cash flow (`fcf`) from a verified data source.
+LS security-detail fundamentals do not include cash-flow statements. Supply
+actual fcf explicitly; missing input yields fcf_unavailable without estimation.
 
 입력 형식 (종목당 1행):
 - data: [{symbol, exchange, fcf, shares_outstanding, current_price}, ...]
@@ -37,8 +34,8 @@ DCF_SCHEMA = PluginSchema(
         "category exists). Two-stage Discounted Cash Flow: projects free cash flow at "
         "growth_rate for `years`, discounts at discount_rate, adds a Gordon terminal value, "
         "and divides by shares to get fair value per share. REQUIRES an upstream `fcf` input — "
-        "FundamentalDataNode does NOT provide free cash flow, so fcf must be supplied via a "
-        "cash-flow data path (see dcf_cashflow_datapath companion); missing fcf yields a "
+        "LS security-detail fundamentals do not provide free cash flow; supply it via a "
+        "verified cash-flow data path; missing fcf yields a "
         "per-symbol missing_reason with no hidden estimation. discount_rate <= terminal_growth "
         "returns analysis.error."
     ),
@@ -102,8 +99,8 @@ DCF_SCHEMA = PluginSchema(
             "description": (
                 "펀더멘털 밸류 스크리너 (FUNDAMENTAL 카테고리가 생기기 전까지 TECHNICAL 로 등록). "
                 "2단계 DCF 로 주당 내재가치를 추정합니다. `fcf` 는 필수 상류 입력이며 "
-                "FundamentalDataNode 는 이를 제공하지 않으므로 현금흐름 데이터경로로 주입해야 합니다"
-                "(companion 참고). fcf 결측 시 per-symbol missing_reason 을 반환합니다. "
+                "LS 종목정보에는 현금흐름이 없으므로 검증된 외부 자료에서 입력해야 합니다"
+                "; fcf 결측 시 per-symbol missing_reason 을 반환합니다. "
                 "discount_rate <= terminal_growth 이면 analysis.error."
             ),
             "fields.growth_rate": "1단계 연간 FCF 성장률 (0.10 = 10%)",
@@ -236,7 +233,7 @@ async def dcf_fair_value_condition(
                 "fair_value": None, "current_price": current_price,
                 "buy_price": None, "margin_pct": None, "undervalued": None,
                 "missing_reason": "fcf_unavailable",
-                "detail": "fcf is required upstream; FundamentalDataNode does not provide free cash flow",
+                "detail": "fcf is required upstream from a verified cash-flow source",
             })
             continue
 

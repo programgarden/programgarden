@@ -230,7 +230,7 @@ BrokerNode는 엣지로 연결된 하위 노드들에게 **자동으로 증권�
 |----------|------|----------|
 | `infra` | 워크플로우 시작, 증권사 연결, 흐름 제어, 조건 분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
 | `account` | 잔고, 포지션, 미체결 주문 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode |
-| `market` | 시세, 종목, 과거 데이터, 펀더멘털, 환율, 심리, 제외종목 | WatchlistNode, MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, ScreenerNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode |
+| `market` | 시세, 종목, 과거 데이터, 펀더멘털, 환율, 심리, 제외종목 | WatchlistNode, MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, ScreenerNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode |
 | `condition` | 매매 조건 판단, 논리 조합 | ConditionNode, LogicNode |
 | `order` | 신규/정정/취소 주문 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
 | `risk` | 포트폴리오 배분, 리밸런싱 | PortfolioNode |

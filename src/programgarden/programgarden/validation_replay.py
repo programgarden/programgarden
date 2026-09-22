@@ -131,14 +131,6 @@ class ReplayExecutor(WorkflowExecutor):
         try:
             from programgarden_core import NodeTypeRegistry
             from pydantic import ValidationError
-            if node_type == "FundamentalDataNode":
-                # Match DefaultNodeExecutor's recursive binding boundary before
-                # validating the resolved input. The scheduler only resolves
-                # list leaves, so nested symbol entries still contain item paths.
-                from programgarden.executor import evaluate_all_bindings
-                config = evaluate_all_bindings(config, context, node_id)
-                if context.get_deep_unresolved_bindings():
-                    raise ContractViolation(node_id, "Unresolved external-node input binding")
             node_class = NodeTypeRegistry().get(node_type)
             if node_class is None:
                 raise ContractViolation(node_id,"Unknown node type")
@@ -171,10 +163,6 @@ class ReplayExecutor(WorkflowExecutor):
                 check_contract(output, record["contract"], f"{node_id}.output")
                 if self.orders is not None and node_type.endswith("OpenOrdersNode"):
                     self.orders.check_open_orders(output, node_type)
-            elif node_type == "FundamentalDataNode":
-                from programgarden.replay_external import external_record, replay_fundamental
-                output = await replay_fundamental(node_id, config, context,
-                    external_record(self.fixture, node_id, node_type, context))
             elif node_type in ORDER_NODES:
                 if self.orders is None:
                     self.orders = ReplayOrders(self.fixture)

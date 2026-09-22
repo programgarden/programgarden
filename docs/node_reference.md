@@ -2054,7 +2054,7 @@ AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활�
 |----------|--------|------|----------|
 | `infra` | 8 | 시작/연결/흐름/분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
 | `account` | 12 | 계좌 조회 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
-| `market` | 24 | 시세/종목/펀더멘털/환율/심리/제외종목/장운영정보 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, FundamentalDataNode, MarketStatusNode, FuturesContractNode, KoreaStock* |
+| `market` | 23 | 시세/종목/펀더멘털/환율/심리/제외종목/장운영정보 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, MarketStatusNode, FuturesContractNode, KoreaStock* |
 | `condition` | 2 | 조건 평가 | ConditionNode, LogicNode |
 | `order` | 10 | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
 | `risk` | 1 | 리스크 관리 | PortfolioNode |

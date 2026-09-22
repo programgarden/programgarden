@@ -11,14 +11,13 @@ ProgramGarden Community - 커뮤니티 노드
 """
 
 from programgarden_community.nodes.messaging import TelegramNode
-from programgarden_community.nodes.market import FearGreedIndexNode, FundamentalDataNode
+from programgarden_community.nodes.market import FearGreedIndexNode
 from programgarden_community.nodes.data import FileReaderNode
 from programgarden_community.nodes.analysis import PerformanceReportNode
 
 __all__ = [
     "TelegramNode",
     "FearGreedIndexNode",
-    "FundamentalDataNode",
     "FileReaderNode",
     "PerformanceReportNode",
 ]

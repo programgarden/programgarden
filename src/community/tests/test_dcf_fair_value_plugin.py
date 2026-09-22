@@ -26,9 +26,9 @@ class TestDCFSchema:
     def test_description_flags_mismatch_and_fcf(self):
         desc = DCF_SCHEMA.description.lower()
         assert "fundamental" in desc and "technical" in desc
-        # description must state FundamentalDataNode does not provide fcf
+        # The schema must disclose the required external cash-flow input.
         assert "fcf" in desc or "free cash flow" in desc
-        assert "fundamentaldatanode" in desc
+        assert "verified cash-flow data path" in desc
 
 
 class TestDCFHappyPath:
@@ -94,7 +94,7 @@ class TestDCFBoundaries:
         sr = result["symbol_results"][0]
         assert sr["fair_value"] is None
         assert sr["missing_reason"] == "fcf_unavailable"
-        assert "FundamentalDataNode" in sr.get("detail", "")
+        assert "verified cash-flow source" in sr.get("detail", "")
 
     @pytest.mark.asyncio
     async def test_invalid_shares_missing_reason(self):

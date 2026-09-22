@@ -64,7 +64,7 @@ class OverseasStockFundamentalNode(BaseNode):
 
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
-            "Retrieve fundamental valuation data (PER, EPS, PBR, market cap, 52w high/low, sector) for a US-listed stock",
+            "Retrieve LS security-detail data (PER, EPS, market cap, 52w high/low, industry) for a US-listed stock using the existing broker connection",
             "Screen or rank stocks by fundamental criteria — pair with ConditionNode or FieldMappingNode for filtering",
             "Give an AI Agent context about a stock's valuation alongside price data for investment thesis generation",
         ],
@@ -72,6 +72,7 @@ class OverseasStockFundamentalNode(BaseNode):
             "For Korean domestic stock fundamentals — use KoreaStockFundamentalNode",
             "When you only need price/volume data — use OverseasStockMarketDataNode",
             "For real-time earnings or news events — fundamental data is updated daily, not tick-by-tick",
+            "For financial-statement history, free cash flow, ROE or PBR — these are not returned by this node; use a separately verified data source",
         ],
         "typical_scenarios": [
             "SplitNode.item → OverseasStockFundamentalNode → ConditionNode (filter by PER < 20)",
@@ -80,7 +81,8 @@ class OverseasStockFundamentalNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Returns per, pbr, eps, market_cap, shares_outstanding, 52w_high, 52w_low, sector, industry fields",
+        "Returns per, eps, market_cap, shares_outstanding, high_52w, low_52w and industry fields",
+        "Uses the LS overseas-stock broker credential; no separate financial-data subscription key is required",
         "Item-based execution: pair with SplitNode to fetch fundamentals for each symbol in a universe",
         "is_tool_enabled=True — AI Agent can call this node to analyze stock valuation autonomously",
         "Broker connection is auto-injected via DAG traversal from OverseasStockBrokerNode",
@@ -130,7 +132,7 @@ class OverseasStockFundamentalNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "value port: {symbol, exchange, per, pbr, eps, market_cap, shares_outstanding, 52w_high, 52w_low, sector, industry}.",
+            "expected_output": "value port: {symbol, exchange, per, eps, market_cap, shares_outstanding, high_52w, low_52w, industry}.",
         },
         {
             "title": "Fundamental screening — filter low-PER stocks",
@@ -172,7 +174,7 @@ class OverseasStockFundamentalNode(BaseNode):
             "Supported exchanges: NYSE, NASDAQ, AMEX. Broker connection is auto-injected."
         ),
         "output_consumption": (
-            "The `value` port emits: {symbol, exchange, per, pbr, eps, market_cap, shares_outstanding, 52w_high, 52w_low, sector, industry}. "
+            "The `value` port emits: {symbol, exchange, per, eps, market_cap, shares_outstanding, high_52w, low_52w, industry}. "
             "Access individual fields via `{{ nodes.fundamental.value.per }}`."
         ),
         "common_combinations": [
@@ -182,7 +184,8 @@ class OverseasStockFundamentalNode(BaseNode):
         ],
         "pitfalls": [
             "Fundamental data is updated daily — do not use it as a real-time signal",
-            "PER may be null for pre-earnings or non-profitable companies — add null-check in ConditionNode logic",
+            "Missing broker fields can be empty or zero. For a positive-PER screen require a finite numeric per > 0 before comparing the upper bound; missing/zero/negative data must not create a buy signal",
+            "LS does not document the PER computation basis or the market-cap currency unit here. Do not claim TTM equivalence or compare cross-provider values without confirming the contract",
             "The symbol field expects a single dict; use SplitNode for multi-symbol fundamental queries",
         ],
     }

@@ -61,16 +61,11 @@ before replacing the stored suite. Focused session/workspace tests: 27 passed.
 
 ## Evidence and remaining release gates
 
-FMP replay runs the actual `FundamentalDataNode` request construction and response
-normalization with an offline transport replacement. Each trusted recording binds
-the exact endpoint, symbol list and query parameters to a response contract;
-missing, extra or mismatched requests fail. Recursive item bindings use the same
-boundary as the live default executor. Whole-array reevaluation is not silently
-narrowed to make a fixture pass. Profile and key-metric tests cover actual field
-normalization, missing valuation data and multiple symbols. These are scenario
-assumptions, not evidence of API-key validity, subscription rights or current
-provider availability. Domestic per-symbol fixtures use KRX identity when the
-actual domestic input schema contains only a symbol.
+External replay requires per-symbol recordings with explicit contracts. Missing
+market identity or a mismatched symbol is rejected rather than borrowing another
+symbol's result. Domestic symbol-only inputs use KRX identity. These fixtures
+are scenario assumptions, not observed broker availability. The removed FMP
+provider has no replay adapter.
 
 Each validation records task/plan/workflow identity, graph/node/fixture hashes,
 engine/source versions, run IDs, mode and results. Source identity covers all
@@ -96,7 +91,6 @@ The public executor's simulated array narrowing now selects the matching entry
 from the node's configured input. It must not replace that entry with a raw
 upstream quote, which can introduce numeric fields into a symbol-only contract
 or override a configured order quantity. Live execution behavior is unchanged.
-The regression exercises quote-to-FMP data flow without provider calls: a valid
-`profile` request passes, while unsupported `ratios` remains an error. This
-correction does not make credential-free fixtures proof of live FMP availability
-or account subscription permissions.
+The regression exercises quote-to-LS-fundamentals data flow without broker calls.
+Provider fixtures do not establish live data availability. The removed FMP node
+is rejected at admission; its provider-specific replay adapter is also removed.

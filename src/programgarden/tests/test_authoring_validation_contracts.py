@@ -202,21 +202,14 @@ def test_simulated_array_narrowing_preserves_configured_symbol_payload(tmp_path)
     assert "price" not in result["symbols"][0]
 
 
-@pytest.mark.parametrize("data_type", ["profile", "ratios"])
-async def test_quote_to_fmp_preserves_identity_binding_and_real_errors(data_type):
+async def test_quote_to_ls_fundamentals_preserves_symbol_contract_without_network():
     symbols = [{"symbol": "XOM", "exchange": "NYSE"},
                {"symbol": "CVX", "exchange": "NYSE"}]
     definition = workflow(
         {"id": "quotes", "type": "OverseasStockMarketDataNode", "symbols": symbols},
-        {"id": "fmp", "type": "FundamentalDataNode", "symbols": symbols,
-         "data_type": data_type},
+        {"id": "fundamentals", "type": "OverseasStockFundamentalNode", "symbols": symbols},
     )
-    with patch("programgarden_community.nodes.market.fmp.FundamentalDataNode._fetch_api",
-               side_effect=AssertionError("No provider calls")) as fetch:
+    with patch("programgarden.executor.ensure_ls_login", side_effect=AssertionError("No broker calls")) as login:
         result = await ProgramGarden().executor.deep_validate(definition)
-    fetch.assert_not_called()
-    if data_type == "profile":
-        assert result.is_valid, [e.short() for e in result.errors]
-    else:
-        assert not result.is_valid
-        assert any("Unsupported FMP data_type" in e.message for e in result.errors)
+    login.assert_not_called()
+    assert result.is_valid, [e.short() for e in result.errors]

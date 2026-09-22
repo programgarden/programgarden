@@ -22885,7 +22885,7 @@ class WorkflowJob:
                     narrowed = dict(item_config)
                 # Preserve the configured projection and quantity. The upstream
                 # item can contain quotes or other numeric fields that are not
-                # inputs to this node (e.g. FMP expects symbol/exchange strings).
+                # inputs to this node (e.g. a symbol-only market-data contract).
                 # Substituting that raw item changed valid bindings in validation.
                 narrowed[port] = [matching[0]]
         return narrowed if narrowed is not None else item_config
