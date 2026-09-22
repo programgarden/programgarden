@@ -1,3 +1,8 @@
+## [1.31.1] - 2026-09-22
+
+### Fixed
+- Add fmp_api and the platform telegram_bot alias with native field contracts. Clarify key-free FMP drafts and the limits of offline validation.
+
 ## [1.31.0] - 2026-09-21
 
 ### Added

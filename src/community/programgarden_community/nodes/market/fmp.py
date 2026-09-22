@@ -99,6 +99,7 @@ class FundamentalDataNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
+        "Requires a user-owned fmp_api credential with api_key, separate from the broker account. Save an unlinked draft and validate fixtures before registration; live provider access remains unverified.",
         "Four data types via Financial Modeling Prep API: 'profile' (company overview + valuation ratios), 'key_metrics' (ROIC, EV/EBITDA, net debt), 'income_statement', and 'balance_sheet'",
         "Credential-based API key management — FMP API key stored in a 'fmp_api' credential, never embedded in workflow JSON",
         "Batch profile fetch (up to 5 symbols per request) with automatic batching for larger symbol lists",
@@ -280,6 +281,12 @@ class FundamentalDataNode(BaseNode):
     # Credential에서 주입되는 API 키 (내부용)
     _api_key: Optional[str] = None
 
+    def __init__(self, **data: Any) -> None:
+        # GenericNodeExecutor injects api_key; retain it privately, never in DSL dumps.
+        api_key = data.pop("api_key", None)
+        super().__init__(**data)
+        self._api_key = api_key if isinstance(api_key, str) and api_key.strip() else None
+
     @classmethod
     def is_tool_enabled(cls) -> bool:
         return True
@@ -311,6 +318,7 @@ class FundamentalDataNode(BaseNode):
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
+                credential_types=["fmp_api"],
                 expected_type="str",
             ),
             "symbols": FieldSchema(
@@ -386,6 +394,9 @@ class FundamentalDataNode(BaseNode):
         import aiohttp
         import asyncio
 
+        if getattr(context, "is_deep_validate", False) is True:
+            return self._deep_validation_fixture(context)
+
         # API 키 확인 (credential에서 주입됨)
         api_key = self._api_key
         if not api_key:
@@ -430,6 +441,45 @@ class FundamentalDataNode(BaseNode):
             "data": all_data,
             "summary": summary,
         }
+
+    def _deep_validation_fixture(self, context: Any) -> Dict[str, Any]:
+        """Exercise output contracts offline; never represent fixtures as provider data."""
+        from datetime import date
+
+        if self.data_type not in {"profile", "key_metrics", "income_statement", "balance_sheet"}:
+            raise ExternalAPIError("Unsupported FMP data_type for offline validation.")
+        if self.period not in {"annual", "quarter"}:
+            raise ExternalAPIError("Unsupported FMP period for offline validation.")
+        if not self.symbols or any(not s.get("symbol") or not s.get("exchange") for s in self.symbols):
+            raise ExternalAPIError("FMP validation requires symbol and exchange for each item.")
+        records = []
+        for item in self.symbols:
+            for index in range(1 if self.data_type == "profile" else self.limit):
+                month_index = 2025 * 12 + 8 - index * (3 if self.period == "quarter" else 12)
+                stamp = date(month_index // 12, month_index % 12 + 1, 1).isoformat()
+                row = {"symbol": item["symbol"], "exchange": item["exchange"], "date": stamp}
+                if self.data_type == "income_statement":
+                    row.update(revenue=1_000_000 / (1.25 ** index), netIncome=100_000,
+                               operatingIncome=150_000, ebitda=180_000, reportedCurrency="USD")
+                elif self.data_type == "balance_sheet":
+                    row.update(totalAssets=2_000_000, totalLiabilities=500_000,
+                               totalStockholdersEquity=1_500_000, reportedCurrency="USD")
+                elif self.data_type == "key_metrics":
+                    row.update(enterprise_value=3_000_000, ebit=10, invested_capital=2_000_000,
+                               ev_to_ebitda=15, roe=0.1, roic=0.08, revenue_per_share=100, net_debt=1)
+                else:
+                    row.update(company_name="Synthetic validation company", sector="Synthetic",
+                               market_cap=3_000_000, per=20, pbr=2, eps=5, roe=0.1,
+                               roa=0.05, dividend_yield=0, beta=1)
+                records.append(row)
+        result = {"data": records, "summary": {"data_type": self.data_type,
+                  "symbol_count": len(self.symbols), "record_count": len(records),
+                  "source": "synthetic_validation_fixture", "live_data_verified": False}}
+        override = context.get_deep_fixture(self.id, self.type)
+        if override is not None:
+            from programgarden.deep_fixtures import apply_override
+            result = apply_override(result, override)
+        return result
 
     async def _fetch_profile(
         self, symbols: List[str], api_key: str, timeout: Any
@@ -534,18 +584,12 @@ class FundamentalDataNode(BaseNode):
                             f"[FMP] HTTP {resp.status}: Server error"
                         )
                     if resp.status >= 400:
-                        text = await resp.text()
-                        raise ExternalAPIError(
-                            f"[FMP] HTTP {resp.status}: {text[:200]}"
-                        )
+                        raise ExternalAPIError(f"[FMP] HTTP {resp.status}: Request rejected")
 
                     try:
                         data = await resp.json()
                     except (ValueError, Exception) as je:
-                        text = await resp.text()
-                        raise ExternalAPIError(
-                            f"[FMP] JSON parse failed: {je} (response: {text[:200]})"
-                        )
+                        raise ExternalAPIError("[FMP] JSON parse failed") from None
 
             return data
 
@@ -553,12 +597,12 @@ class FundamentalDataNode(BaseNode):
             raise
 
         except aiohttp.ClientError as e:
-            raise ExternalAPINetworkError(f"[FMP] Network error: {e}")
+            raise ExternalAPINetworkError("[FMP] Network request failed") from None
 
         except Exception as e:
             if isinstance(e, (ExternalAPIRateLimitError, ExternalAPIError, ExternalAPINetworkError)):
                 raise
-            raise ExternalAPIError(f"[FMP] Unexpected error: {e}")
+            raise ExternalAPIError("[FMP] Unexpected provider response") from None
 
     def _normalize_profile(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """FMP profile 응답을 표준 형식으로 정규화"""

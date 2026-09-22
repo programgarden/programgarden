@@ -318,7 +318,7 @@
   "fields.FileReaderNode.max_file_size_mb": "Maximum file size per file (MB). Range 1-50, default 10MB.",
   "fields.FearGreedIndexNode.resilience": "Retry and fallback settings for API call failures",
   "fields.FearGreedIndexNode.timeout_seconds": "API request timeout (seconds). Default 30s, adjust based on your network conditions.",
-  "fields.FundamentalDataNode.credential_id": "FMP API credentials. Register your API key from financialmodelingprep.com.",
+  "fields.FundamentalDataNode.credential_id": "FMP API key issued by financialmodelingprep.com. Select, replace or unlink its credential in node details. You can save an unlinked draft and run offline fixture checks; live data remains unverified until you connect a valid key with access to the selected endpoint.",
   "fields.FundamentalDataNode.symbols": "Symbols to query. [{symbol, exchange}] format.",
   "fields.FundamentalDataNode.data_type": "Data type: profile, income_statement, balance_sheet, key_metrics",
   "fields.FundamentalDataNode.period": "Period: annual or quarter. Used for financial statements and key metrics.",

@@ -1,3 +1,8 @@
+## [1.15.4] - 2026-09-22
+
+### Fixed
+- Expose FMP and Telegram credential selectors and setup requirements. Preserve injected FMP keys privately and exercise financial records with offline deep-validation fixtures. Prevent direct Telegram validation sends and redact provider-network errors.
+
 ## [1.15.3] - 2026-09-12
 ### Fixed
 - **상태 기반 플러그인 5종의 트래커 메서드명 정렬 (time_based_exit / pair_trading / beta_hedge / correlation_guard /

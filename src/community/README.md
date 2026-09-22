@@ -123,3 +123,23 @@ plugins = list_plugins(category="technical")
 ## 변경 로그
 
 자세한 변경 사항은 `CHANGELOG.md`를 참고하세요.
+
+
+## External credentials and validation
+
+FundamentalDataNode requires an `fmp_api` credential containing `api_key`.
+TelegramNode requires a `telegram_bot` credential containing `bot_token` and
+receiving `chat_id`; the historical native `telegram` alias remains accepted.
+Register secrets outside workflow JSON. Node metadata declares the types and
+setup instructions for clients and assistants. Keys can be connected after saving
+an unlinked draft. Credential selection does not prove provider access or delivery.
+
+FMP deep validation uses labeled synthetic financial records without credentials
+or network calls. It is a contract fixture, not live financial data or strategy
+verification. Telegram validation never sends a real message. Live integration
+still requires a valid user key and endpoint/chat permissions. Provider entitlement,
+network failures and missing keys must not be repaired by changing trading logic.
+
+The existing FMP v3 transport and output normalization are unchanged in this
+credential fix; this release does not claim validation of a user's FMP subscription
+or compatibility with endpoints available only in the newer stable API.
