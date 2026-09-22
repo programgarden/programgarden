@@ -197,26 +197,6 @@ class OverseasStockMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="value",
-            type="market_data",
-            description="i18n:ports.market_data_value",
-            fields=PRICE_DATA_FIELDS,
-            example={
-                "symbol": "AAPL",
-                "exchange": "NASDAQ",
-                "price": 187.45,
-                "change": -2.34,
-                "change_pct": -1.23,
-                "volume": 12_345_678,
-                "open": 189.10,
-                "high": 190.02,
-                "low": 186.90,
-                "close": 187.45,
-                "per": 28.5,
-                "eps": 6.57,
-            },
-        ),
-        OutputPort(
             name="values",
             type="array",
             description="Array of per-symbol market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
@@ -224,9 +204,9 @@ class OverseasStockMarketDataNode(BaseNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Remove nonexistent singular quote output; bind the values array."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Fixed
+- Remove the nonexistent singular `value` output from the three REST market-data
+  schemas. Their live executor returns only `values`; schema discovery must not
+  advertise a field that always resolves to missing data. Existing runtime
+  output, customer graphs and running workflows are unchanged.
 - Declare all observed domestic REST position fields, including acquisition
   basis, missing-evidence status, currency and observation time. Correct the
   account example's nonexistent cash/equity output names. Missing money stays

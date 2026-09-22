@@ -196,8 +196,6 @@ class OverseasFuturesMarketDataNode(BaseNode):
         InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
     ]
     _outputs: List[OutputPort] = [
-        OutputPort(name="value", type="market_data", description="i18n:ports.market_data_value",
-                   fields=FUTURES_REST_PRICE_FIELDS),
         OutputPort(
             name="values",
             type="array",
@@ -206,9 +204,9 @@ class OverseasFuturesMarketDataNode(BaseNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Remove nonexistent singular quote output; bind the values array."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

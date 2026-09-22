@@ -170,9 +170,9 @@ def _declared_fields(node_type: str, port: str) -> Set[str]:
 # 한 포트를 여러 갈래가 만들면 **전부** 적는다 — 갈래끼리 키가 어긋나는 것도 결함이다.
 M = MarketDataNodeExecutor
 CASES = [
-    ("OverseasStockMarketDataNode", "value", [(M, "_fetch_overseas_stock", "values", "append")]),
-    ("OverseasFuturesMarketDataNode", "value", [(M, "_fetch_overseas_futures", "values", "append")]),
-    ("KoreaStockMarketDataNode", "value", [(M, "_fetch_korea_stock", "values", "append")]),
+    ("OverseasStockMarketDataNode", "values", [(M, "_fetch_overseas_stock", "values", "append")]),
+    ("OverseasFuturesMarketDataNode", "values", [(M, "_fetch_overseas_futures", "values", "append")]),
+    ("KoreaStockMarketDataNode", "values", [(M, "_fetch_korea_stock", "values", "append")]),
 
     # ── 종목 리스트 ──
     ("WatchlistNode", "symbols", [(WatchlistNodeExecutor, "execute", "processed_symbols", "append")]),
@@ -288,7 +288,7 @@ MARKET_DATA_NODES = [
 
 def test_price_and_change_names_are_consistent_across_markets():
     """같은 개념을 시장마다 다른 이름으로 부르면 챗봇이 반드시 헷갈린다."""
-    names = {nt: _declared_fields(nt, "value") for nt in MARKET_DATA_NODES}
+    names = {nt: _declared_fields(nt, "values") for nt in MARKET_DATA_NODES}
 
     for node_type, declared in names.items():
         assert "price" in declared, f"{node_type}: 현재가는 'price' 로 통일한다 (실측 런타임 이름)"

@@ -139,19 +139,12 @@ class TestItemBasedNodeSchemas:
         assert "symbol" in input_names
         assert "symbols" not in input_names
 
-    def test_market_data_node_value_output(self):
-        """MarketDataNode 가 단일 value + 배열 values 둘 다 노출하는지 확인.
-
-        v1.21.11+: strict port 검증을 위해 runtime 이 emit 하는 모든 키를 schema 에 선언.
-        - value: 단일 시세 (예전부터 선언)
-        - values: 배열 (runtime 의 실제 반환값, 워크플로우에서 직접 접근)
-        """
-        from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
-
-        node = OverseasStockMarketDataNode(id="test")
-        output_names = [p.name for p in node._outputs]
-        assert "value" in output_names
-        assert "values" in output_names
+    @pytest.mark.parametrize("kind", ["OverseasStock", "OverseasFutures", "KoreaStock"])
+    def test_market_data_node_declares_only_actual_runtime_output(self, kind):
+        """The live executor emits values, never the old singular value port."""
+        from programgarden_core import NodeTypeRegistry
+        schema = NodeTypeRegistry().get_schema(kind + "MarketDataNode")
+        assert [port["name"] for port in schema.outputs] == ["values"]
 
     def test_historical_data_node_single_symbol_input(self):
         """HistoricalDataNode가 단일 symbol 입력을 받는지 확인"""

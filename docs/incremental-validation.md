@@ -4,6 +4,13 @@ This branch adds a server-owned BuildWorkspace, fresh node/cumulative execution,
 strict replay contracts and an in-memory order-intent book. The public live
 executor remains separate. A replay result does not authorize a broker order.
 
+Native schema correction: the three REST MarketDataNode variants now advertise
+only `values`, matching their actual live return envelope. The old singular
+`value` was never emitted but remained in catalog declarations and could mislead
+independent fixture design or generated bindings. AST output-contract checks now
+compare actual quote rows with `values`. This does not add a runtime compatibility
+alias or rewrite any customer workflow.
+
 - `programgarden.incremental_build.BuildWorkspace`: admit one dependent node only
   after its upstream nodes are VERIFIED; verify references as well as edges.
   Repairs, edge changes, execution-plan changes and runtime changes invalidate
