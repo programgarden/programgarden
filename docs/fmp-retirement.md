@@ -23,5 +23,12 @@ deleted. Replacing a node requires rebinding and validating the affected graph.
 The September22 read-only audit found no saved prod graph or credential using
 FMP, but one unfinished prod draft; preserve that draft as repair input.
 
-Source removal is a release candidate until installed runtime packages,
+All four 2.0.1 packages are published on TestPyPI and PyPI with matching artifact
+hashes. Installed-wheel checks passed176 cases. Application rollout remains a
+release candidate until installed runtime packages,
 registration API, node catalog and retrieval documents are checked together.
+
+The release uses major version2.0.1 because a public node and credential contract
+are removed. All four packages move together to avoid incompatible dependency
+ranges; Finance changes only its Core dependency. The separate node-by-node
+workspace/replay feature is not included in this public release.

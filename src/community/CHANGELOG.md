@@ -1,5 +1,15 @@
 ## [1.15.4] - 2026-09-22
 
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Remove provider-specific transport, fixtures and examples. Keep financial plugins with verified-input requirements and Telegram credentials intact.
+
+
 ### Fixed
 - Expose FMP and Telegram credential selectors and setup requirements. Preserve injected FMP keys privately and exercise financial records with offline deep-validation fixtures. Prevent direct Telegram validation sends and redact provider-network errors.
 
