@@ -24,9 +24,12 @@ The September22 read-only audit found no saved prod graph or credential using
 FMP, but one unfinished prod draft; preserve that draft as repair input.
 
 All four 2.0.1 packages are published on TestPyPI and PyPI with matching artifact
-hashes. Installed-wheel checks passed176 cases. Application rollout remains a
-release candidate until installed runtime packages,
-registration API, node catalog and retrieval documents are checked together.
+hashes. Installed-wheel checks passed176 cases. ProgramGarden dev/prod consumers now run verified environment-specific2.0.1
+images. Runtime packages, node/credential discovery and maintained retrieval
+references were checked together; Telegram remains available. Each environment
+passed967 installed-image checks. Worker v1.26.30 is opt-in and does not restart
+existing trading processes. Desktop packaging remains deferred. These checks do
+not certify a generated strategy or authorize live orders.
 
 The release uses major version2.0.1 because a public node and credential contract
 are removed. All four packages move together to avoid incompatible dependency
