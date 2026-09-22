@@ -184,3 +184,39 @@ def test_array_warning_matches_executor_selection(tmp_path, node_type, override,
     with patch.object(context, "log") as log:
         assert job._guard_whole_array_reevaluation("node", node_type, config, item, 2) is config
     assert log.called is warns
+
+
+def test_simulated_array_narrowing_preserves_configured_symbol_payload(tmp_path):
+    context = ExecutionContext(
+        "fixture", "fixture", storage_dir=str(tmp_path),
+        context_params={"deep_validate": True},
+    )
+    job = object.__new__(WorkflowJob)
+    job.context = context
+    item = {"symbol": "XOM", "exchange": "NYSE", "price": 100.0, "quantity": 99}
+    selected = {"symbol": "XOM", "exchange": "NYSE", "quantity": 1}
+    config = {"symbols": [selected, {"symbol": "CVX", "exchange": "NYSE"}]}
+    result = job._guard_whole_array_reevaluation("node", "WatchlistNode", config, item, 2)
+    assert result["symbols"] == [selected]
+    assert len(config["symbols"]) == 2
+    assert "price" not in result["symbols"][0]
+
+
+@pytest.mark.parametrize("data_type", ["profile", "ratios"])
+async def test_quote_to_fmp_preserves_identity_binding_and_real_errors(data_type):
+    symbols = [{"symbol": "XOM", "exchange": "NYSE"},
+               {"symbol": "CVX", "exchange": "NYSE"}]
+    definition = workflow(
+        {"id": "quotes", "type": "OverseasStockMarketDataNode", "symbols": symbols},
+        {"id": "fmp", "type": "FundamentalDataNode", "symbols": symbols,
+         "data_type": data_type},
+    )
+    with patch("programgarden_community.nodes.market.fmp.FundamentalDataNode._fetch_api",
+               side_effect=AssertionError("No provider calls")) as fetch:
+        result = await ProgramGarden().executor.deep_validate(definition)
+    fetch.assert_not_called()
+    if data_type == "profile":
+        assert result.is_valid, [e.short() for e in result.errors]
+    else:
+        assert not result.is_valid
+        assert any("Unsupported FMP data_type" in e.message for e in result.errors)

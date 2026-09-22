@@ -22868,7 +22868,8 @@ class WorkflowJob:
             value = item_config.get(port)
             if not isinstance(value, list) or len(value) != total:
                 continue
-            if not any(self._same_symbol_entry(entry, current_item) for entry in value):
+            matching = [entry for entry in value if self._same_symbol_entry(entry, current_item)]
+            if not matching:
                 continue
             simulated = bool(getattr(self.context, "is_dry_run", False))
             self.context.log(
@@ -22882,7 +22883,11 @@ class WorkflowJob:
             if simulated:
                 if narrowed is None:
                     narrowed = dict(item_config)
-                narrowed[port] = [current_item]
+                # Preserve the configured projection and quantity. The upstream
+                # item can contain quotes or other numeric fields that are not
+                # inputs to this node (e.g. FMP expects symbol/exchange strings).
+                # Substituting that raw item changed valid bindings in validation.
+                narrowed[port] = [matching[0]]
         return narrowed if narrowed is not None else item_config
 
     def _merge_iterate_results(self, results: list) -> Dict[str, Any]:

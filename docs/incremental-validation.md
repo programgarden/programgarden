@@ -65,3 +65,14 @@ contract coverage, remaining broker-specific lifecycle semantics, public
 entry-path gates, queue semantics and AI tool integration remain in progress.
 No new package version has been published and no incremental gate is enabled in
 production. Do not describe a passing fixture as "error-free live trading".
+
+## Existing deep-validation projection correction
+
+The public executor's simulated array narrowing now selects the matching entry
+from the node's configured input. It must not replace that entry with a raw
+upstream quote, which can introduce numeric fields into a symbol-only contract
+or override a configured order quantity. Live execution behavior is unchanged.
+The regression exercises quote-to-FMP data flow without provider calls: a valid
+`profile` request passes, while unsupported `ratios` remains an error. This
+correction does not make credential-free fixtures proof of live FMP availability
+or account subscription permissions.
