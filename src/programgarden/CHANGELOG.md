@@ -5,6 +5,9 @@
   replay proof without discarding validation attempt history or task identity.
 
 ### Fixed
+- Separate consecutive validation failures from successful edits. Node/final
+  validation retains total accounting while PASS clears only its failure streak.
+  Removing or changing a node does not reset a failed-repair budget.
 - Enforce disabled schedules and trading-hours decisions in startup, Split and
   realtime traversals. A timed-out time filter cannot run its trading branch;
   explicit blocked branches and independent work remain distinct.

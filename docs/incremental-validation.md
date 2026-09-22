@@ -9,7 +9,11 @@ executor remains separate. A replay result does not authorize a broker order.
   Repairs, edge changes, execution-plan changes and runtime changes invalidate
   evidence. JSON restoration preserves the same task identity. Concurrent/stale
   validation results cannot become current evidence. Validation cancellation and
-  exhausted attempts stay BLOCKED.
+  exhausted retry budgets stay BLOCKED. `attempts` counts every node and final
+  validation, while `failure_streaks` counts consecutive unsuccessful results.
+  Only a new PASS clears its streak. Six unsuccessful results block that target;
+  the total384-attempt limit remains independent. Normal successful multi-turn
+  modifications therefore do not exhaust a six-failure retry allowance.
 - `programgarden.validation_replay.replay`: actual scheduler, expressions,
   CodeNode subprocess and condition/set operations; no forced deep-validation
   passes. External I/O requires exact fixtures, including per-symbol fixtures

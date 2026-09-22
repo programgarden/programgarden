@@ -271,3 +271,43 @@ def test_invalid_header_edit_is_atomic(change):
     with pytest.raises(BuildGateError):
         ws.update_header(change, expected_revision=ws.revision)
     assert asdict(ws) == before
+
+
+@pytest.mark.asyncio
+async def test_successful_edits_and_finalizations_do_not_exhaust_failed_repair_limit():
+    ws = workspace()
+    await append(ws, {"id": "start", "type": "StartNode"})
+    await append(ws, code("sum", "3"), "start")
+    for i in range(8):
+        ws.repair_node({**code("sum", "3"), "description": f"Revision {i}"}, expected_revision=ws.revision)
+        assert (await ws.run_pending("sum", expected_revision=ws.revision))["passed"]
+        assert (await ws.finalize(expected_revision=ws.revision))["passed"]
+    assert ws.attempts["sum"] == 9 and ws.attempts["$final"] == 8
+    assert ws.failure_streaks["sum"] == ws.failure_streaks["$final"] == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_repairs_remain_bounded_after_edit_remove_and_readd():
+    ws = workspace()
+    await append(ws, {"id": "start", "type": "StartNode"})
+    ws.add_node(code("sum", "99"), [{"from": "start", "to": "sum"}], expected_revision=ws.revision)
+    for i in range(6):
+        if i:
+            ws.repair_node({**code("sum", "99"), "description": str(i)}, expected_revision=ws.revision)
+        assert not (await ws.run_pending("sum", expected_revision=ws.revision))["passed"]
+    ws.remove_node("sum", expected_revision=ws.revision)
+    assert (await ws.run_pending("start", expected_revision=ws.revision))["passed"]
+    ws.add_node(code("sum", "3"), [{"from": "start", "to": "sum"}], expected_revision=ws.revision)
+    with pytest.raises(BuildGateError, match="Consecutive failures"):
+        await ws.run_pending("sum", expected_revision=ws.revision)
+    assert ws.attempts["sum"] == ws.failure_streaks["sum"] == 6
+
+
+@pytest.mark.asyncio
+async def test_total_validation_budget_still_bounds_repeated_success():
+    ws = workspace()
+    ws.add_node({"id": "start", "type": "StartNode"}, [], expected_revision=0)
+    ws.attempts["other"] = 384
+    with pytest.raises(BuildGateError, match="total validation budget"):
+        await ws.run_pending("start", expected_revision=ws.revision)
+    assert ws.attempts == {"other": 384}

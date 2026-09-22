@@ -114,6 +114,7 @@ class BuildWorkspace:
     states: dict[str, str] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
     attempts: dict[str, int] = field(default_factory=dict)
+    failure_streaks: dict[str, int] = field(default_factory=dict)
     status: str = "BUILDING"
     runtime: str = field(default_factory=runtime_identity)
     max_attempts: int = 6
@@ -123,7 +124,7 @@ class BuildWorkspace:
             raise BuildGateError("BUILD_FIXTURE_INVALID", "Fixtures must be a bounded array of scenario objects")
         # Never retain aliases to a caller's snapshot or a previously loaded
         # revision. The worker owns this mutable working state.
-        for key in ("graph", "fixtures", "states", "evidence", "attempts"):
+        for key in ("graph", "fixtures", "states", "evidence", "attempts", "failure_streaks"):
             value = deepcopy(getattr(self, key))
             finite_json(value, key)
             setattr(self, key, value)
@@ -131,8 +132,14 @@ class BuildWorkspace:
             raise BuildGateError("BUILD_PLAN_REVISION_INVALID", "A positive execution plan revision is required")
         if type(self.revision) is not int or self.revision < 0:
             raise BuildGateError("BUILD_REVISION_CONFLICT", "Invalid workspace revision")
-        if not 1 <= self.max_attempts <= 6 or len(self.graph.get("nodes", [])) > 64 or len(self.fixtures) > 16:
+        if (type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 6
+                or len(self.graph.get("nodes", [])) > 64 or len(self.fixtures) > 16):
             raise BuildGateError("BUILD_BUDGET_INVALID", "Build size or retry budget exceeds the supported limit")
+        if any(not isinstance(key, str) or type(value) is not int or value < 0
+               for counter in (self.attempts, self.failure_streaks) for key, value in counter.items()):
+            raise BuildGateError("BUILD_BUDGET_INVALID", "Validation counters must be nonnegative integers")
+        if "$final" in self.states:
+            raise BuildGateError("BUILD_NODE_ID_INVALID", "The final-validation ledger key is reserved")
         if {n["id"] for n in self.graph.get("nodes", [])} != set(self.states):
             raise BuildGateError("BUILD_STATE_INVALID", "Each stored node must have a server-owned state")
 
@@ -165,7 +172,7 @@ class BuildWorkspace:
         if len(self.states) >= 64:
             raise BuildGateError("BUILD_NODE_LIMIT", "A build supports at most 64 nodes")
         node_id = node.get("id")
-        if not isinstance(node_id, str) or not node_id or node_id in self.states:
+        if not isinstance(node_id, str) or not node_id or node_id == "$final" or node_id in self.states:
             raise BuildGateError("BUILD_NODE_ID_INVALID", "Use a new stable node ID; repair existing nodes explicitly")
         if any(e.get("to", "").split(".")[0] != node_id for e in edges):
             raise BuildGateError("BUILD_EDGE_SCOPE", "An addition may attach only incoming edges of that node")
@@ -303,14 +310,11 @@ class BuildWorkspace:
             self.status = "BLOCKED"
             self.revision += 1
             raise BuildGateError("BUILD_FIXTURE_REQUIRED", "A reproducible fixture suite is required")
-        if self.attempts.get(node_id, 0) >= self.max_attempts:
-            self.states[node_id] = "BLOCKED"
-            self.status = "BLOCKED"
-            self.revision += 1
-            raise BuildGateError("BUILD_REPAIR_LIMIT", "Validation budget exhausted; review the saved failure")
+        self._validation_budget(node_id)
         if self.states[node_id] == "VALIDATING":
             raise BuildGateError("BUILD_VALIDATION_BUSY", "This node already has a validation claim")
         self.attempts[node_id] = self.attempts.get(node_id, 0) + 1
+        self.failure_streaks[node_id] = self.failure_streaks.get(node_id, 0) + 1
         self.states[node_id] = "VALIDATING"
         self.revision += 1
         revision = self.revision
@@ -353,16 +357,29 @@ class BuildWorkspace:
             raise BuildGateError("BUILD_RESULT_STALE", "The candidate changed while validation was running")
         if not failure and not reached:
             failure = [{"code": "BUILD_BRANCH_UNCOVERED", "message": "No fixture exercised this node in its actual chain"}]
+        if not failure:
+            self.failure_streaks[node_id] = 0
         self.states[node_id] = "FAILED" if failure else "VERIFIED"
         self.status = "FAILED" if failure else "BUILDING"
         self.evidence[node_id] = {**identity, "passed": not failure, "errors": failure or [], "runs": runs}
         self.revision += 1
         return deepcopy(self.evidence[node_id])
 
+    def _validation_budget(self, key: str):
+        if self.failure_streaks.get(key, 0) >= self.max_attempts or sum(self.attempts.values()) >= 384:
+            if key in self.states:
+                self.states[key] = "BLOCKED"
+            self.status = "BLOCKED"
+            self.revision += 1
+            raise BuildGateError("BUILD_REPAIR_LIMIT", "Consecutive failures or total validation budget exhausted")
+
     async def finalize(self, *, expected_revision: int, timeout: float = 30):
         self._revision(expected_revision)
         if not self.states or any(s != "VERIFIED" for s in self.states.values()):
             raise BuildGateError("BUILD_NOT_VERIFIED", "Every required node must be verified before final replay")
+        self._validation_budget("$final")
+        self.attempts["$final"] = self.attempts.get("$final", 0) + 1
+        self.failure_streaks["$final"] = self.failure_streaks.get("$final", 0) + 1
         revision = self.revision
         plan_revision, fixture_hash = self.plan_revision, content_hash(self.fixtures)
         states_hash = content_hash(self.states)
@@ -384,6 +401,8 @@ class BuildWorkspace:
                 or content_hash(self.fixtures) != fixture_hash or content_hash(self.states) != states_hash):
             raise BuildGateError("BUILD_RESULT_STALE", "The saved candidate changed during final replay")
         passed = bool(results) and all(r["scenario_passed"] for r in results)
+        if passed:
+            self.failure_streaks["$final"] = 0
         self.status = "READY" if passed else "FAILED"
         self.revision += 1
         return {"passed": passed, "graph_hash": content_hash(graph), "runtime_hash": self.runtime,
