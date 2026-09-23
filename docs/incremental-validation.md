@@ -261,3 +261,17 @@ Domestic REST account discovery now includes the fields actually emitted by the
 finance evidence parser plus executor aliases. Runtime tests compare the composed
 output with the catalog both with and without monetary evidence. Missing costs or
 P&L remain null with an explicit unavailable status, rather than becoming zero.
+
+## CodeNode output guidance correction (unreleased, September23)
+
+The native schema/examples now distinguish the entire undeclared `result` value
+from declared output-key mapping. With no outputs, `return 3` exposes result=3,
+while `return {"result":3}` exposes result={"result":3}. Declaring the result port
+maps the returned dictionary's result key to that port. A single declared port
+also accepts a scalar. Deep/replay rejects missing/wrong declared outputs; the
+existing live fallback is documented separately and is not verification evidence.
+The generic code editor example returns data directly to avoid accidental nesting.
+English and Korean output help follow the same contract. No executor behavior or
+package version changed.65 CodeNode execution/replay contract checks passed in a
+network-disabled Linux container. Source fingerprint changes invalidate old proof;
+revalidate before any new publication. No PyPI publication accompanies this edit.

@@ -291,7 +291,7 @@
   "fields.CurrencyRateNode.target_currencies": "대상 통화 목록. 기준 통화 대비 환율을 조회할 통화를 선택하세요.",
   "fields.CurrencyRateNode.timeout_seconds": "API 요청 타임아웃 (초). 기본 30초, 네트워크 환경에 따라 조정하세요.",
   "fields.CodeNode.code": "async def execute(data, params, context) 를 정의하는 파이썬 소스. 샌드박스: 순수 계산용 표준 라이브러리(math, statistics, json, datetime, ...) import 만 허용, credential·네트워크·파일시스템·introspection 불가.",
-  "fields.CodeNode.outputs": "출력 포트 선언 [{name, type}]. 비워두면 반환값 전체를 담는 단일 'result' 포트가 됩니다. 선언한 포트는 소비자 노드의 범용 입력 필드(TableDisplayNode.data, IfNode.left/right 등)에 {{ nodes.<id>.<port> }} 표현식으로 소비됩니다 — 타입드 포트 매칭이 아니라 이름으로 dict 키를 꺼내는 방식. 선언하면 정적 오타 검증이 적용됩니다.",
+  "fields.CodeNode.outputs": "출력 포트 선언 [{name, type}]. 비워두면 반환값 전체를 담는 단일 'result' 포트가 됩니다. 선언한 포트는 소비자 노드의 범용 입력 필드(TableDisplayNode.data, IfNode.left/right 등)에 {{ nodes.<id>.<port> }} 표현식으로 소비됩니다 — 타입드 포트 매칭이 아니라 이름으로 dict 키를 꺼내는 방식. 선언하면 정적 오타 검증이 적용됩니다. outputs를 비우면 반환값 전체가 result입니다. return 3은 result=3, return {'result':3}은 result={'result':3}이 됩니다. 반환 딕셔너리의 result 키를 숫자 포트로 사용하려면 outputs에 name:result, type:number를 선언하세요.",
   "fields.CodeNode.params": "execute() 에 `params` 로 전달되는 파라미터. 표현식 바인딩 허용(예: 기간·임계값).",
   "fields.CodeNode.data": "execute() 에 `data` 로 전달되는 입력 데이터. 상류 값 전체를 바인딩(예: {{ nodes.hist.values }})하고 함수 안에서 반복하세요.",
   "fields.FieldMappingNode.data": "변환할 입력 데이터. HTTPRequestNode 응답이나 다른 노드 출력을 바인딩하세요.",
