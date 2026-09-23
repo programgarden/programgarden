@@ -40,6 +40,27 @@ def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def subsequent_event_types(node_type):
+    """Recorded `events`-frame types a trigger node can emit after the initial run.
+
+    Empty when the node cannot re-trigger (a manual StartNode, TradingHoursFilter,
+    a one-shot REST node, SQLite, computation, etc.): a subsequent-event
+    ("duplicate") scenario is inapplicable to such a blueprint. The AI-side suite
+    compiler imports this to decide whether a duplicate scenario applies. Derived
+    from the native dispatch in `replay_events` (and ScheduleNode's single-startup
+    replay); it is not a live websocket capability promise.
+    """
+    if node_type == "ScheduleNode":
+        return frozenset({"schedule_tick"})
+    if node_type.endswith("RealMarketDataNode"):
+        return frozenset({"market_data", "realtime_update"})
+    if node_type.endswith("RealOrderEventNode"):
+        return frozenset({"order_event", "realtime_update"})
+    if node_type.endswith("RealAccountNode"):
+        return frozenset({"realtime_update"})
+    return frozenset()
+
+
 def event_fixture(fixture, event):
     """Advance external observations without importing mutable account state."""
     frame = {**deepcopy(fixture), "as_of": event["as_of"],
@@ -111,11 +132,21 @@ async def replay_events(job, runner, fixture, outcome):
                 raise ContractViolation(source_id, "Recorded ticks exceed schedule safety limits")
             schedule_instants[source_id], schedule_counts[source_id] = now, count
         else:
-            allowed = ({"market_data", "realtime_update"} if source.node_type.endswith("RealMarketDataNode") else
-                       {"order_event", "realtime_update"} if source.node_type.endswith("RealOrderEventNode") else
-                       {"realtime_update"} if source.node_type.endswith("RealAccountNode") else set())
+            allowed = subsequent_event_types(source.node_type)
             if event["type"] not in allowed:
-                raise ContractViolation(source_id, "Node cannot emit this recorded event type")
+                emittable = sorted(allowed)
+                if emittable:
+                    hint = (f"{source.node_type} emits only {', '.join(emittable)} as a subsequent event; "
+                            f"the recorded '{event['type']}' is not one of them")
+                else:
+                    hint = (f"{source.node_type} is a one-time trigger and emits no subsequent events; a "
+                            "subsequent-event (duplicate) scenario requires a recurring trigger node "
+                            "(ScheduleNode or a realtime stream), so this is a suite specification defect")
+                raise ContractViolation(source_id,
+                    f"{source.node_type} cannot emit recorded event type '{event['type']}' "
+                    f"(emits: {', '.join(emittable) or 'no subsequent events'}); {hint}",
+                    detail={"recorded_event_type": event["type"], "node_type": source.node_type,
+                            "emittable_event_types": emittable, "hint": hint})
             if source_id not in event.get("nodes", {}):
                 raise ContractViolation(source_id, "Event source needs a fresh request-bound recording", "REPLAY_FIXTURE_REQUIRED")
         context.validation_as_of = event["as_of"]

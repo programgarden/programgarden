@@ -218,6 +218,12 @@ cron/timezone/count; this checks delivery consequences, not wall-clock delivery.
 Realtime records bind source identity, request and time. The native scheduler
 chooses downstream nodes; recordings cannot specify a bypass target or replace
 cash/positions. Quotes advance independently and old quotes can fail freshness.
+An event whose source cannot emit that type fails with a message and `detail`
+{recorded_event_type, node_type, emittable_event_types, hint} naming the type and
+the node's emittable set; `replay_events.subsequent_event_types(node_type)` (also
+re-exported from `replay_triggers`) returns that set — empty for a manual
+StartNode/one-shot node — so a subsequent-event (duplicate) scenario is rejected
+as a suite specification defect, and the AI-side compiler can gate it up front.
 
 Final checks require independent assertions and path coverage for every recorded
 event, including intermediate results. Order graphs additionally require financial

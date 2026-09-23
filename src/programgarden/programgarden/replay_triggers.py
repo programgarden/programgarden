@@ -5,6 +5,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from programgarden.replay_contracts import ContractViolation
+# Re-exported so callers can import the subsequent-event capability from the
+# trigger module too; the canonical definition lives with the event model.
+from programgarden.replay_events import subsequent_event_types  # noqa: F401
 
 
 def fixture_instant(context, node_id):
