@@ -93,6 +93,25 @@ OVERSEAS_STOCK_MARKET_CODES = {
 #    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
 
 
+def ls_overseas_stock_limit_price(price: float, side: str) -> float:
+    """Quantize a quote-derived limit price to the LS overseas-stock precision rule.
+
+    Observed live 2026-09-24 (COSAT00301, rsp_cd 00891): a price of 1 USD or more may
+    carry at most two decimals ("$1이상은 소수점 2째 자리까지 입력가능합니다"); the
+    engine had sent the raw quote 2.055 for a market buy converted to a limit order
+    and the broker refused it with no order number. A buy converted from a market
+    intent must stay marketable, so it rounds UP to the cent; a sell rounds DOWN.
+    Prices below 1 USD are passed through unchanged (the rule for that range was not
+    observed; do not invent one).
+    """
+    from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+    value = Decimal(str(price))
+    if value < 1:
+        return float(value)
+    rounding = ROUND_FLOOR if str(side).lower() == "sell" else ROUND_CEILING
+    return float(value.quantize(Decimal("0.01"), rounding=rounding))
+
+
 def resolve_overseas_stock_order_market(
     exchange: Any, symbol: Any = ""
 ) -> "tuple[Optional[str], Optional[str]]":
@@ -16364,8 +16383,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             try:
                 current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
                 if current_price and current_price > 0:
-                    price = current_price
-                    context.log("info", f"현재가 조회: {symbol} = ${price}", node_id)
+                    price = ls_overseas_stock_limit_price(current_price, side)
+                    context.log("info", f"현재가 조회: {symbol} = ${current_price} → 주문가 ${price}", node_id)
                 else:
                     context.log("warning", f"현재가 조회 실패: {symbol}", node_id)
                     return self._order_result(False, symbol, exchange, side, qty, 0, "현재가 조회 실패")
