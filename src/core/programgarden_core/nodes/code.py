@@ -114,7 +114,11 @@ class CodeNode(BaseNode):
             "return 3 gives result=3; return {'result': 3} gives result={'result': 3}. "
             "With outputs=[{name:'result',type:'number'}], return {'result':3} gives result=3. "
             "Declared ports are consumed downstream by {{ nodes.<id>.<port> }} expressions, "
-            "not by typed-port matching; declaring them enables static typo-guarding."
+            "not by typed-port matching; declaring them enables static typo-guarding. "
+            "Do NOT name a port 'error' or 'reason': the engine treats a top-level 'error' "
+            "value (and a top-level 'reason' of no_symbol/no_price/invalid_input) as a node "
+            "failure, so such a port makes a successful return read as an engine error. Put "
+            "any status/diagnostic under a differently named port or nested object instead."
         ),
     )
 
@@ -180,6 +184,11 @@ class CodeNode(BaseNode):
             "pattern": "Declaring 'outputs' ports whose names the return dict never sets",
             "reason": "Deep/replay validation rejects missing declared ports and values that violate their declared types. Legacy live mapping to None is not evidence of a valid output.",
             "alternative": "Return a dict whose keys exactly match every declared output port name.",
+        },
+        {
+            "pattern": "Naming a declared output port 'error' or 'reason'",
+            "reason": "The engine (live runtime and replay) treats a top-level 'error' value, and a top-level 'reason' of no_symbol/no_price/invalid_input, as a node failure. A port with either name makes the node's own successful output read as an engine execution error, and no calculation defect exists to repair.",
+            "alternative": "Rename the port (e.g. 'status', 'note', 'detail') or nest status inside another object such as {'result': {...}}; keep 'error'/'reason' out of the top-level return.",
         },
         {
             "pattern": "Feeding a CodeNode return of non-standard shape into a typed node (order node, ConditionNode)",

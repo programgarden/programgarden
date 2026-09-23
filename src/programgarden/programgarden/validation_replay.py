@@ -48,6 +48,41 @@ def content_hash(value: Any) -> str:
                                     separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+# The live runtime (node_runner) and this replay treat a top-level `error` value,
+# and a top-level `reason` in this set, as a node failure. They are therefore
+# reserved output-key names: a CodeNode must not declare a port called `error`
+# or `reason`, or its own successful result reads as an engine failure.
+_RESERVED_OUTPUT_KEYS = ("error", "reason")
+_INVALID_INPUT_REASONS = ("no_symbol", "no_price", "invalid_input")
+_RESERVED_PREVIEW_LIMIT = 200
+
+
+def _reserved_key_detail(key: str, value: Any, node_type: str, config: dict) -> dict[str, Any]:
+    """Secret-free evidence for a reserved-key failure: the node's own output.
+
+    ``value`` is the node's declared output text, never a credential; it is
+    length-bounded so a large payload cannot bloat the diagnostic.
+    """
+    text = value if isinstance(value, str) else json.dumps(
+        value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    text = str(text)
+    if len(text) > _RESERVED_PREVIEW_LIMIT:
+        text = text[:_RESERVED_PREVIEW_LIMIT] + "…(truncated)"
+    declared = node_type == "CodeNode" and any(
+        isinstance(port, dict) and port.get("name") == key for port in (config.get("outputs") or []))
+    return {"reserved_key": key, "value": text, "declared_output_port": declared}
+
+
+def _reserved_key_message(key: str, reason: str | None = None) -> str:
+    hint = ("a declared CodeNode output port must not be named `error` or `reason` "
+            "(both are reserved); rename it and report status inside a nested object")
+    if key == "reason":
+        return (f"Invalid computation input: {reason}. The engine reserves a top-level "
+                f"`reason` of {'/'.join(_INVALID_INPUT_REASONS)} as invalid input, so {hint}.")
+    return ("Node reported an execution error: the engine treats a top-level `error` output "
+            f"value as a node failure, so {hint}.")
+
+
 @dataclass
 class ReplayResult:
     passed: bool
@@ -214,10 +249,14 @@ class ReplayExecutor(WorkflowExecutor):
             else:
                 raise ContractViolation(node_id, "No replay adapter for this capability", "REPLAY_CAPABILITY_BLOCKED")
             finite_json(output, f"{node_id}.output")
-            if not isinstance(output, dict) or output.get("error"):
+            if not isinstance(output, dict):
                 raise ContractViolation(node_id, "Node reported an execution error")
-            if output.get("reason") in ("no_symbol", "no_price", "invalid_input"):
-                raise ContractViolation(node_id, f"Invalid computation input: {output['reason']}")
+            if output.get("error"):
+                raise ContractViolation(node_id, _reserved_key_message("error"),
+                    detail=_reserved_key_detail("error", output["error"], node_type, config))
+            if output.get("reason") in _INVALID_INPUT_REASONS:
+                raise ContractViolation(node_id, _reserved_key_message("reason", output["reason"]),
+                    detail=_reserved_key_detail("reason", output["reason"], node_type, config))
             if "output" in rules:
                 check_contract(output, rules["output"], f"{node_id}.output")
             if node_type == "CodeNode":

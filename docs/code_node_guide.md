@@ -72,6 +72,15 @@ CodeNode의 출력은 **타입 포트 매칭으로 소비되지 않습니다.** 
 
 > ⚠️ 타입드 노드(주문·조건)로 흘릴 땐 **반드시 표준 심볼 배열** `[{symbol, exchange, ...}]` 모양을 반환하세요. 모양이 틀리면 CodeNode가 아니라 그걸 읽는 타입드 노드에서 실패합니다. 예제 `88-code-node-symbol-passthrough` 참조.
 
+### 예약된 최상위 출력 키 — `error` / `reason` 금지
+
+`error` 와 `reason` 은 **엔진 예약어**입니다. 라이브 런타임과 리플레이 검증 모두 최상위 출력의 `error`(참 값)와 `reason`(`no_symbol`/`no_price`/`invalid_input`)을 **노드 실행 실패**로 간주합니다. 따라서 이 이름으로 출력 포트를 선언하면(또는 최상위 반환 dict 에 그 키를 담으면) 정상 결과가 엔진 오류로 읽혀 챗봇이 있지도 않은 계산 결함을 고치려 헤맵니다.
+
+- ❌ `outputs: [{"name": "error"}]` 선언 후 `return {"error": "..."}`
+- ✅ 다른 이름(`status`/`note`/`detail`)을 쓰거나, 진단 정보를 중첩 객체 안에 담으세요: `return {"result": {"status": "skipped", "note": "..."}}`.
+
+리플레이가 이 실패를 낼 때는 이제 진단에 `detail = {"reserved_key": "error"|"reason", "value": <노드 출력 미리보기>, "declared_output_port": <bool>}` 를 실어 **무엇이 예약어와 충돌했는지** 명확히 알려줍니다(값은 노드 자신의 출력 텍스트이며 비밀이 아닙니다).
+
 ## 5. context — 읽기 전용 스크럽 컨텍스트
 
 `execute`의 세 번째 인자 `context`는 **읽기 전용**이며, 안전한 것만 노출합니다.

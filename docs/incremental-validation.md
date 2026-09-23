@@ -293,3 +293,19 @@ English and Korean output help follow the same contract. No executor behavior or
 package version changed.65 CodeNode execution/replay contract checks passed in a
 network-disabled Linux container. Source fingerprint changes invalidate old proof;
 revalidate before any new publication. No PyPI publication accompanies this edit.
+
+### Reserved top-level output keys (unreleased)
+
+The live runtime (`node_runner`) and this replay both treat a top-level `error`
+value, and a top-level `reason` in {no_symbol, no_price, invalid_input}, as a node
+failure. They are therefore reserved output-key names: a CodeNode that declares a
+port called `error` or `reason` makes its own successful return read as an engine
+failure. Replay now attaches a `detail` to that ContractViolation —
+`{"reserved_key": "error"|"reason", "value": <bounded preview of the node's own
+output text>, "declared_output_port": <true when a CodeNode port declares that
+name>}` — and the message states that a declared CodeNode port must not use either
+name, so the model renames the port or nests status under another object instead
+of guessing at a nonexistent calculation defect. The value is the node's own
+output, never a credential, and is length-bounded. The failure code is unchanged.
+The CodeNode `outputs` schema description and anti-patterns now warn against the
+two names as well. No executor semantics or package version changed.
