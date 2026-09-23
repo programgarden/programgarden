@@ -82,7 +82,7 @@ async def test_stock_repeat_is_not_silently_deduplicated_by_the_test_adapter():
     result = await replay(workflow, fixture)
     assert not result.passed
     assert len(result.simulation["orders"]) == 2, result.errors
-    assert result.simulation["orders"]["SIM-2"]["reason"] == "position_already_held"
+    assert result.simulation["orders"]["SIM-order#2"]["reason"] == "position_already_held"
     assert result.simulation["positions"] == {"NASDAQ:A": 2}
     assert result.simulation["live_order_count"] == 0
 
@@ -163,5 +163,5 @@ async def test_stock_repeat_after_a_long_gap_uses_the_new_clock_for_stale_quote_
                     broker["output"], broker["contract"], as_of=at)}}]
     result = await replay(workflow, fixture)
     assert not result.passed
-    assert result.simulation["orders"]["SIM-2"]["reason"] == "stale_market_data"
+    assert result.simulation["orders"]["SIM-order#2"]["reason"] == "stale_market_data"
     assert result.simulation["cash"] == 800

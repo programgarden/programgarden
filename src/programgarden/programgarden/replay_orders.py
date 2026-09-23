@@ -46,6 +46,13 @@ class SimulationBook:
         self.transitions: list[dict[str, Any]] = []
         self.operations: dict[str, dict[str, Any]] = {}
         self.operation_keys: dict[str, str] = {}
+        # Simulated ids are NODE-BASED, not a running count, so an independent
+        # suite designer names an order by the node that placed it instead of
+        # predicting arithmetic. These count DISTINCT ids per placing node: the
+        # 1st has no suffix, later ones get "#2", "#3". Idempotent re-submission
+        # returns before assigning an id, so a duplicate never consumes an ordinal.
+        self.node_order_counts: dict[str, int] = {}
+        self.node_operation_counts: dict[str, int] = {}
 
     def snapshot(self):
         return {"cash": float(self.cash), "currency": self.currency,
@@ -56,7 +63,7 @@ class SimulationBook:
                 "transitions": deepcopy(self.transitions), "live_order_count": 0}
 
     def submit(self, intent: dict[str, Any], *, key: str, response: str = "accepted",
-               filled_quantity: int = 0) -> dict[str, Any]:
+               filled_quantity: int = 0, node_id: str = "order") -> dict[str, Any]:
         check_contract(key, {"type":"string", "minLength":1, "maxLength":200}, "intent_key")
         finite_json(intent)
         if key in self.intent_keys:
@@ -117,7 +124,7 @@ class SimulationBook:
         elif not closing and (futures or intent["side"] == "buy") and cost > self.cash - self._reserved_cash(): reason = "insufficient_cash"
         elif not futures and intent["side"] == "sell" and intent["quantity"] > held: reason = "insufficient_position"
         elif response == "rejected": reason = "simulated_broker_rejection"
-        order_id = f"SIM-{len(self.orders) + 1}"
+        order_id = self._scoped_id("SIM-", node_id, self._next_ordinal(node_id, self.node_order_counts))
         order = {"order_id": order_id, "intent": deepcopy(intent), "symbol_key": symbol,
                  "status": "rejected" if reason else ("unknown" if response == "timeout" else "accepted"),
                  "reason": reason, "filled_quantity": 0, "unit_cost": float(cost_per_unit),
@@ -158,7 +165,8 @@ class SimulationBook:
         return reserved
 
     def request_change(self, action: str, order_id: str, *, key: str,
-                       response: str, replacement: dict[str, Any] | None = None):
+                       response: str, replacement: dict[str, Any] | None = None,
+                       node_id: str = "change"):
         """Record an acknowledged/unknown request without inventing completion.
 
         Replacement quantities are supported only before any fill. Partial-fill
@@ -208,13 +216,17 @@ class SimulationBook:
         elif replacement is not None:
             raise ContractViolation("replacement", "A cancel request cannot change quantity or price")
         reason = reason or ("simulated_broker_rejection" if response == "rejected" else None)
-        request_id = f"SIM-CHANGE-{len(self.operations) + 1}"
+        # The request and its (modify-only) replacement share one node ordinal so
+        # both read from the same placing node: request SIM-CHANGE-<node>, the
+        # replacement order SIM-REPLACE-<node> (and "#2"... on a repeated node).
+        ordinal = self._next_ordinal(node_id, self.node_operation_counts)
+        request_id = self._scoped_id("SIM-CHANGE-", node_id, ordinal)
         operation = {"request_id":request_id, "action":action, "original_order_id":order_id,
             "symbol_key":order["symbol_key"], "status":"rejected" if reason else ("unknown" if response == "timeout" else "accepted"),
             "reason":reason or ("order_outcome_unknown" if response == "timeout" else None),
             "replacement":deepcopy(replacement), "payload":payload,
             "replacement_reserve":float(replacement_reserve), "filled_quantity":order["filled_quantity"],
-            "replacement_order_id":f"SIM-REPLACE-{len(self.operations) + 1}" if action == "modify" else None}
+            "replacement_order_id":(self._scoped_id("SIM-REPLACE-", node_id, ordinal) if action == "modify" else None)}
         self.operations[request_id] = operation
         self.operation_keys[key] = request_id
         if not reason:
@@ -314,6 +326,17 @@ class SimulationBook:
         self.events[event_id] = payload
         self.transitions.append({"order_id": order_id, "event": "cancel", "status": "cancelled"})
         return deepcopy(order)
+
+    @staticmethod
+    def _scoped_id(prefix: str, node_id: str, ordinal: int) -> str:
+        """Deterministic node-based simulated id; the 1st per node has no suffix."""
+        return f"{prefix}{node_id}" + ("" if ordinal == 1 else f"#{ordinal}")
+
+    def _next_ordinal(self, node_id: str, counts: dict[str, int]) -> int:
+        """Nth distinct id this node has originated in this book (1-based)."""
+        ordinal = counts.get(node_id, 0) + 1
+        counts[node_id] = ordinal
+        return ordinal
 
     @staticmethod
     def _event_payload(value):

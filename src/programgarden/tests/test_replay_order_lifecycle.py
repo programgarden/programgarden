@@ -132,7 +132,7 @@ def lifecycle(product="OverseasStock",*,action="cancel",partial=False,confirm=Tr
     if confirm:
         graph["nodes"].append({"id":"observed","type":product+"OpenOrdersNode"})
         graph["edges"].append({"from":action,"to":"observed"})
-        rows=[] if action=="cancel" else [{**config,"order_id":"SIM-REPLACE-1", "price":110,
+        rows=[] if action=="cancel" else [{**config,"order_id":f"SIM-REPLACE-{action}", "price":110,
             "side":"buy", "filled_quantity":0,"remaining_quantity":2}]
         fixture["nodes"]["observed"]={"output":{"open_orders":rows,"count":len(rows)},
             "contract":{"type":"object","required":["open_orders","count"]},
@@ -153,8 +153,8 @@ async def test_graph_change_and_following_observation_use_the_same_book(product,
     assert result.passed,result.errors
     request=result.outputs[action][action+"_result"]
     assert request["success"] and request["confirmation_pending"]
-    assert result.simulation["operations"]["SIM-CHANGE-1"]["status"]=="confirmed"
-    assert result.simulation["orders"]["SIM-1"]["status"]==("cancelled" if action=="cancel" else "replaced")
+    assert result.simulation["operations"][f"SIM-CHANGE-{action}"]["status"]=="confirmed"
+    assert result.simulation["orders"]["SIM-order"]["status"]==("cancelled" if action=="cancel" else "replaced")
     assert result.simulation["live_order_count"]==0
     if action=="cancel":
         assert sum(result.simulation["positions"].values())==1
@@ -166,7 +166,7 @@ async def test_cancel_ack_alone_does_not_remove_original_order():
     result=await replay(graph,fixture)
     assert result.passed,result.errors
     assert result.outputs["cancel"]["cancelled_order"]["status"]=="cancel_requested"
-    assert result.simulation["orders"]["SIM-1"]["status"]=="partial_fill"
+    assert result.simulation["orders"]["SIM-order"]["status"]=="partial_fill"
 
 
 @pytest.mark.asyncio
@@ -175,7 +175,7 @@ async def test_empty_open_orders_cannot_invent_cancel_completion():
     fixture["nodes"]["observed"].pop("order_events")
     result=await replay(graph,fixture)
     assert not result.passed and any("contradicts" in e.get("message","") for e in result.errors)
-    assert result.simulation["orders"]["SIM-1"]["status"]=="partial_fill"
+    assert result.simulation["orders"]["SIM-order"]["status"]=="partial_fill"
 
 
 @pytest.mark.asyncio
@@ -185,7 +185,7 @@ async def test_modify_keeps_futures_sell_direction_from_the_original():
     fixture["nodes"]["observed"]["output"]["open_orders"][0]["side"]="sell"
     result=await replay(graph,fixture)
     assert result.passed,result.errors
-    assert result.simulation["orders"]["SIM-REPLACE-1"]["intent"]["side"]=="sell"
+    assert result.simulation["orders"]["SIM-REPLACE-modify"]["intent"]["side"]=="sell"
 
 
 @pytest.mark.asyncio
@@ -225,7 +225,7 @@ async def test_negative_change_scenarios_preserve_original_and_failure(action,re
         "reason":"order_outcome_unknown" if response=="timeout" else "simulated_broker_rejection", "filled_quantity":0}]
     result=await replay(graph,fixture)
     assert not result.passed and assess_scenario(result,fixture,graph),result.errors
-    assert result.simulation["orders"]["SIM-1"]["status"]=="accepted"
+    assert result.simulation["orders"]["SIM-order"]["status"]=="accepted"
 
 
 @pytest.mark.asyncio
@@ -240,8 +240,8 @@ async def test_incremental_cancel_final_replay_requires_actual_financial_state(e
             "cash":{"type":"number","const":901 if expectation=="wrong_cash" else 900},
             "reserved_cash":{"type":"number","const":0},
             "positions":{"type":"object","const":{"NASDAQ:A":1}},
-            "orders":{"type":"object","required":["SIM-1"],"properties":{
-                "SIM-1":{"type":"object","required":["status","filled_quantity"],"properties":{
+            "orders":{"type":"object","required":["SIM-order"],"properties":{
+                "SIM-order":{"type":"object","required":["status","filled_quantity"],"properties":{
                     "status":{"type":"string","const":"cancelled"},"filled_quantity":{"type":"integer","const":1}}}}},
             "live_order_count":{"type":"integer","const":0}}}
     if expectation=="absent": fixture.pop("expected_simulation")
@@ -253,4 +253,4 @@ async def test_incremental_cancel_final_replay_requires_actual_financial_state(e
     final=await workspace.finalize(expected_revision=workspace.revision)
     assert final["passed"] is (expectation=="correct")
     assert workspace.status==("READY" if expectation=="correct" else "FAILED")
-    assert final["runs"][0]["simulation"]["orders"]["SIM-1"]["status"]=="cancelled"
+    assert final["runs"][0]["simulation"]["orders"]["SIM-order"]["status"]=="cancelled"

@@ -179,7 +179,7 @@ class ReplayOrders:
                 getattr(context._workflow_job, "_order_cycle", 0), iteration_index, invocation_id)
         else:
             key = f"{node_id}:submission:{self.submissions}"
-        order = self.book.submit(intent,key=key,response=record["response"],filled_quantity=record.get("filled_quantity",0))
+        order = self.book.submit(intent,key=key,response=record["response"],filled_quantity=record.get("filled_quantity",0),node_id=node_id)
         self.last_observation = deepcopy(order)
         known_accepted = order["status"] in ("accepted","partial_fill","filled")
         output = self.normalizer._order_result(known_accepted,intent["symbol"],intent["exchange"],side,
@@ -227,7 +227,7 @@ class ReplayOrders:
         self.submissions += 1
         key = f"{node_id}:change:{self.submissions}"
         operation = self.book.request_change(action, original_id, key=key,
-            response=record["response"], replacement=replacement)
+            response=record["response"], replacement=replacement, node_id=node_id)
         self.operation_nodes[(node_id, original["symbol_key"])] = operation["request_id"]
         self.last_observation = {**deepcopy(operation), "order_id":operation["request_id"]}
         accepted = operation["status"] == "accepted"
