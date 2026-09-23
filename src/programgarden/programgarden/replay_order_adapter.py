@@ -60,8 +60,23 @@ def check_open_orders_snapshot(output):
     check_contract(output, open_orders_snapshot_contract(), "open_orders")
     rows = output["open_orders"]
     indexed = {row["order_id"]: row for row in rows}
-    if len(indexed) != len(rows) or output["count"] != len(rows):
-        raise ContractViolation("open_orders", "Order IDs/count do not describe a complete unique snapshot")
+    seen, duplicates = set(), []
+    for row in rows:
+        oid = row["order_id"]
+        if oid in seen and oid not in duplicates:
+            duplicates.append(oid)
+        seen.add(oid)
+    if duplicates:
+        raise ContractViolation("open_orders",
+            f"open_orders rows repeat order_id {duplicates}; every open order needs a unique order_id",
+            "REPLAY_CONTRACT_FAILED", {"path": "open_orders", "observed": duplicates,
+            "constraint_kind": "unique", "observed_type": "list", "row_count": len(rows)})
+    if output["count"] != len(rows):
+        raise ContractViolation("open_orders",
+            f"count={output['count']!r} but open_orders has {len(rows)} row(s); count must equal the number of rows",
+            "REPLAY_CONTRACT_FAILED", {"path": "open_orders.count", "observed": output["count"],
+            "constraint_kind": "count", "observed_type": type(output["count"]).__name__, "row_count": len(rows),
+            "row_order_ids": [row["order_id"] for row in rows][:32]})
     return indexed
 
 
