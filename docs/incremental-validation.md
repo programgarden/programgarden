@@ -110,6 +110,24 @@ ID. Unknown request fields fail explicitly. The trusted `recording` constructor
 checks an output contract but does not establish fixture provenance; callers
 must provide independently reviewed inputs/expectations.
 
+Each `REPLAY_FIXTURE_MISMATCH` — resolved request, shared replay clock or actual
+iteration item — now carries a deterministic, secret-free field-level diff so the
+host can tell the model exactly what differed. The `ContractViolation.detail`
+(surfaced verbatim in the diagnostic dict, not truncated into the message) is
+`{"recorded": {...}, "resolved": {...}, "differing": ["connection.provider", ...]}`:
+top-level keys present on only one side, and for object fields (`symbol`,
+`connection`, `config`) the differing nested keys as `key.subkey`. The message
+also names the differing paths (bounded). Both operands are already-normalized
+request identities, iteration items or the two clocks; `request_identity` admits
+only non-secret provider/product/paper mode/broker node id/credential reference,
+and the recorded request is already public to the model through build guidance,
+so the diff is precise diagnostics rather than an oracle leak — no credential
+secret can enter it. The comparison uses the same canonical JSON identity as the
+recording hash, so it reports a difference on exactly the paths that made the
+hashes disagree. The receiving host and AI layer must forward `detail` alongside
+`code`/`message`. This is a local, unreleased library change; no package version
+was bumped and no publication accompanies it.
+
 Validator identity is now `incremental-replay-2`. Runtime identity also includes
 `croniter` and `pytz` versions, preventing time-library changes from reusing proof.
 

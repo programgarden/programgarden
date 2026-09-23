@@ -9,6 +9,87 @@ from programgarden.replay_contracts import ContractViolation, check_contract
 _PRESENTATION_FIELDS = {"id", "name", "description", "position", "category"}
 _SCHEDULER_FIELDS = {"_source_node_id", "_trigger_on_update_nodes", "_branch_scope"}
 
+# Bound the diagnostic so a large recording cannot produce an unbounded diff or
+# message. The full evidence still names every top-level/one-level difference up
+# to these caps; both operands are already non-secret normalized identities.
+_MAX_DIFF_PATHS = 24
+_MAX_MESSAGE_PATHS = 6
+_ABSENT = object()
+
+
+def _canon(value):
+    """The exact canonical form ``content_hash`` compares, without hashing.
+
+    Using it as the equality relation means the diff reports a difference on
+    exactly the paths that made the two recordings' hashes disagree, including
+    JSON identities such as ``1`` versus ``1.0`` that Python ``==`` would merge.
+    """
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def _differing_paths(recorded, resolved):
+    """Deterministic top-level and one-level-nested key diff of two JSON objects.
+
+    Reports top-level keys present on only one side and, for keys that are
+    objects on both sides (``symbol``, ``connection``, ``config`` and the like),
+    the differing nested keys as ``key.subkey``. Both operands are normalized
+    request identities or iteration items, so no credential secret can appear.
+    """
+    rec = recorded if isinstance(recorded, dict) else {}
+    res = resolved if isinstance(resolved, dict) else {}
+    paths: list[str] = []
+    for key in sorted(set(rec) | set(res)):
+        in_rec, in_res = key in rec, key in res
+        if in_rec and in_res and _canon(rec[key]) == _canon(res[key]):
+            continue
+        if in_rec and in_res and isinstance(rec[key], dict) and isinstance(res[key], dict):
+            for sub in sorted(set(rec[key]) | set(res[key])):
+                a, b = rec[key].get(sub, _ABSENT), res[key].get(sub, _ABSENT)
+                if a is _ABSENT or b is _ABSENT or _canon(a) != _canon(b):
+                    paths.append(f"{key}.{sub}")
+        else:
+            paths.append(key)
+    return paths
+
+
+def _project(source, paths):
+    """Copy only the given dotted paths out of ``source``; absent paths are omitted."""
+    out: dict = {}
+    for path in paths:
+        head, _, tail = path.partition(".")
+        if not isinstance(source, dict) or head not in source:
+            continue
+        if tail:
+            branch = out.setdefault(head, {})
+            if isinstance(source[head], dict) and tail in source[head]:
+                branch[tail] = deepcopy(source[head][tail])
+        else:
+            out[head] = deepcopy(source[head])
+    return out
+
+
+def mismatch_detail(recorded, resolved):
+    """Secret-free field-level diff of an object recording against its resolution.
+
+    Returns ``{"recorded", "resolved", "differing"}`` where ``differing`` is the
+    bounded, sorted list of dotted paths and the two projections carry only the
+    values at those paths. Callers hand it already-normalized identities/items.
+    """
+    differing = _differing_paths(recorded, resolved)[:_MAX_DIFF_PATHS]
+    return {"recorded": _project(recorded, differing),
+            "resolved": _project(resolved, differing), "differing": differing}
+
+
+def _mismatch_message(base, differing):
+    """Append a bounded list of the differing paths to a mismatch message."""
+    if not differing:
+        return base
+    shown = differing[:_MAX_MESSAGE_PATHS]
+    suffix = ", ".join(shown)
+    if len(differing) > len(shown):
+        suffix += f" (+{len(differing) - len(shown)} more)"
+    return f"{base}; differs at {suffix}"
+
 
 def request_identity(node_type, config):
     """Normalize schema defaults, retaining every executable request parameter.
@@ -92,11 +173,25 @@ def external_record(fixture, node_id, node_type, config, context):
     if "request" not in record or "as_of" not in record or "item" not in record:
         raise ContractViolation(node_id, "An input-bound recording is required", "REPLAY_FIXTURE_REQUIRED")
     from programgarden.validation_replay import content_hash
-    if content_hash(record["request"]) != content_hash(request_identity(node_type, config)):
-        raise ContractViolation(node_id, "Recording does not match the resolved node request", "REPLAY_FIXTURE_MISMATCH")
+    resolved = request_identity(node_type, config)
+    if content_hash(record["request"]) != content_hash(resolved):
+        # The recorded request is already public to the model (build guidance
+        # exposes it) and holds only non-secret identity, so a field-level diff
+        # is precise diagnostics, not an oracle leak.
+        detail = mismatch_detail(record["request"], resolved)
+        raise ContractViolation(node_id, _mismatch_message(
+            "Recording does not match the resolved node request", detail["differing"]),
+            "REPLAY_FIXTURE_MISMATCH", detail)
     if not context.validation_as_of or record["as_of"] != context.validation_as_of:
-        raise ContractViolation(node_id, "Recording does not match the shared replay clock", "REPLAY_FIXTURE_MISMATCH")
+        detail = {"recorded": {"as_of": record["as_of"]},
+                  "resolved": {"as_of": context.validation_as_of}, "differing": ["as_of"]}
+        raise ContractViolation(node_id, _mismatch_message(
+            "Recording does not match the shared replay clock", ["as_of"]),
+            "REPLAY_FIXTURE_MISMATCH", detail)
     item = context._iteration_item if context._iteration_total else None
     if content_hash(record["item"]) != content_hash(item):
-        raise ContractViolation(node_id, "Recording does not match the actual iteration item", "REPLAY_FIXTURE_MISMATCH")
+        detail = mismatch_detail(record["item"], item)
+        raise ContractViolation(node_id, _mismatch_message(
+            "Recording does not match the actual iteration item", detail["differing"]),
+            "REPLAY_FIXTURE_MISMATCH", detail)
     return record

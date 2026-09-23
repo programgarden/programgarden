@@ -22,12 +22,18 @@ _TYPES = {"object": dict, "array": list, "string": str, "number": (int, float),
 
 
 class ContractViolation(ValueError):
-    def __init__(self, path: str, reason: str, code: str = "REPLAY_CONTRACT_FAILED"):
-        self.path, self.reason, self.code = path, reason, code
+    def __init__(self, path: str, reason: str, code: str = "REPLAY_CONTRACT_FAILED",
+                 detail: dict[str, Any] | None = None):
+        self.path, self.reason, self.code, self.detail = path, reason, code, detail
         super().__init__(f"{path}: {reason}")
 
-    def as_dict(self) -> dict[str, str]:
-        return {"code": self.code, "path": self.path, "message": str(self)}
+    def as_dict(self) -> dict[str, Any]:
+        # `detail` is structured, secret-free evidence (e.g. a field-level diff)
+        # the host relays to the model verbatim, never a truncated message string.
+        result: dict[str, Any] = {"code": self.code, "path": self.path, "message": str(self)}
+        if self.detail is not None:
+            result["detail"] = self.detail
+        return result
 
 
 def finite_json(value: Any, path: str = "$", depth: int = 0) -> None:
