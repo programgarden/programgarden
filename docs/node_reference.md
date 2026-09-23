@@ -1251,6 +1251,9 @@ flowchart LR
 | `order_id` | string | ✅ | 정정 대상 주문 ID |
 | `new_price` | number | ❌ | 변경할 가격 |
 | `new_quantity` | integer | ❌ | 변경할 수량 |
+| `price_type` | enum | ❌ | 호가 유형 (해외주식): `limit`(지정가·기본) / `market`(시장가). 정정 TR(COSAT00311)도 시장가를 지원합니다 |
+
+> **`price_type` (해외주식 정정)**: 기본 `limit`(지정가 리프라이스). `market` 으로 두면 시장가 정정으로 나갑니다(COSAT00311 이 `00`=지정가 / `03`=시장가 를 지원). 저수준 LS 원시코드를 직접 넣고 싶으면 `price_type_code`(`"00"`/`"03"`)로 오버라이드할 수 있고, 명시된 `price_type_code` 가 우선합니다. 단 `price_type` 과 `price_type_code` 를 **둘 다** 주면서 서로 다른 유형을 가리키면 정정이 거부됩니다(둘 중 하나만 주거나 일치시키세요).
 
 > **⚠️ `TrailingStop` 플러그인은 존재하지 않습니다**: 가격 추적 정정은 실시간 시세(`OverseasStockRealMarketDataNode` + `ThrottleNode`)와 `OverseasStockOpenOrdersNode`를 조합한 워크플로우에서 `new_price`를 표현식으로 직접 계산하여 구현하세요.
 

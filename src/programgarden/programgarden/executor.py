@@ -17528,15 +17528,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange = config.get("exchange", "KRX" if product == "korea_stock" else "NASDAQ")
         new_quantity = config.get("new_quantity")
         new_price = config.get("new_price")
-        # ⚠️ 잔재값이다 — ModifyOrder 계열 노드 스키마에 side 필드가 없어
-        # (core/programgarden_core/nodes/order.py:245-263) 노드로 들어오면 항상
-        # 기본값 "buy" 다. 세 정정 경로 어디도 이 **변수**로 방향을 정하지 않는다.
-        # 방향은 원 주문 원장 행에서 승계하고(_resolve_modify_target), 원장이
-        # 없거나 행이 없을 때만 **config 에 실제로 실린** side 를 쓴다 — 그건 각
-        # 정정 메서드가 `config.get("side")` 로 기본값 없이 직접 읽는다(여기서
-        # 기본값을 먹인 이 변수를 넘기면 '호출자가 말한 값' 과 '기본값' 을 구분할
-        # 수 없다). 시그니처 호환을 위해서만 넘긴다.
-        side = config.get("side", "buy")
         
         if not original_order_id:
             context.log("error", f"{node_type}: original_order_id가 필수입니다", node_id)
@@ -17577,11 +17568,11 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             # === 5. 상품별 정정 실행 ===
             if product == "overseas_stock":
                 return await self._modify_overseas_stock(
-                    ls, original_order_id, symbol, exchange, new_quantity, new_price, side, config, context, node_id
+                    ls, original_order_id, symbol, exchange, new_quantity, new_price, config, context, node_id
                 )
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._modify_overseas_futures(
-                    ls, original_order_id, symbol, exchange, new_quantity, new_price, side, config, context, node_id
+                    ls, original_order_id, symbol, exchange, new_quantity, new_price, config, context, node_id
                 )
             elif product == "korea_stock":
                 return await self._modify_korea_stock(
@@ -17926,6 +17917,75 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 product_label, new_order_no, ledger_err,
             )
 
+    def _resolve_stock_modify_price_type_code(
+        self, config: Dict[str, Any], node_id: Optional[str] = None
+    ) -> str:
+        """해외주식 정정(COSAT00311)의 호가유형코드(OrdprcPtnCode)를 확정한다.
+
+        OverseasStockModifyOrderNode 스키마는 ``price_type: Literal["limit","market"]``
+        를 노출한다(core/programgarden_core/nodes/order.py:784). 종전 실행부는
+        ``config.get("price_type_code", "00")`` 로 **LS 원시코드만** 읽어 그
+        ``price_type`` 을 통째 무시했다 — ``price_type="market"`` 로 정정을 걸어도
+        조용히 지정가('00')로 나갔다(지정가 리프라이스만 우연히 동작).
+
+        해소 규칙:
+          · ``price_type`` 이 있으면 신규주문 실행부와 **같은 매핑**으로 코드를 뽑는다
+            (NewOrderNodeExecutor.STOCK_PRICE_TYPE_CODES — 'limit'→'00',
+            'market'→'03'). 코드를 지어내지 않는다. 정정 노드 스키마가 허용하는
+            값은 limit/market 뿐이므로(order.py:784) 그 밖의 값은 조용히 지정가로
+            흘리지 않고 ValidationError 로 거부한다(어느 필드인지 이름을 실어).
+          · ``price_type_code`` 가 명시되면 그 원시코드가 하위호환 오버라이드로 이긴다.
+          · 둘 다 있고 서로 다른 코드를 가리키면 어느 쪽인지 추측하지 않고
+            ValidationError 를 던진다.
+          · 둘 다 없으면 종전대로 지정가('00').
+
+        SDK 확인(2026-09-24): COSAT00311InBlock1.OrdprcPtnCode 는 '00'=지정가,
+        '03'=시장가 를 문서화하고(examples=["00","03"]; finance/.../COSAT00311/
+        blocks.py:94-104) 신규주문 COSAT00301 과 같은 코드셋을 참조한다고 명시한다.
+        즉 정정 TR 은 **시장가를 지원**하므로 'market' 은 신규주문과 동일한 '03' 으로
+        매핑한다(별도 코드를 지어낼 필요 없음).
+        """
+        from programgarden_core.exceptions import ValidationError
+
+        price_type = config.get("price_type")
+        explicit_code = config.get("price_type_code")
+
+        derived_code: Optional[str] = None
+        if price_type is not None:
+            key = str(price_type).strip().lower()
+            if key not in ("limit", "market"):
+                raise ValidationError(
+                    f"OverseasStockModifyOrderNode price_type={price_type!r} is not "
+                    f"valid on a modify: only 'limit' and 'market' are supported "
+                    f"(node schema nodes/order.py:784 + COSAT00311 field docs "
+                    f"finance/.../COSAT00311/blocks.py:94-104). Pass 'limit' or "
+                    f"'market', or set an explicit price_type_code.",
+                    node_id=node_id,
+                    field="price_type",
+                )
+            # 신규주문 실행부의 원시코드 매핑을 그대로 재사용한다(코드 지어내기 금지).
+            derived_code = NewOrderNodeExecutor.STOCK_PRICE_TYPE_CODES[key]
+
+        if explicit_code is not None:
+            explicit_code = str(explicit_code)
+            if derived_code is not None and derived_code != explicit_code:
+                raise ValidationError(
+                    f"OverseasStockModifyOrderNode has conflicting price-type fields: "
+                    f"price_type={price_type!r} maps to OrdprcPtnCode={derived_code!r} "
+                    f"but price_type_code={explicit_code!r} was also given. Refusing to "
+                    f"guess which one you meant — pass only one, or make them agree.",
+                    node_id=node_id,
+                    field="price_type_code",
+                )
+            # 명시 원시코드가 하위호환 오버라이드로 이긴다.
+            return explicit_code
+
+        if derived_code is not None:
+            return derived_code
+
+        # 둘 다 없으면 종전 동작 유지 — 지정가.
+        return "00"
+
     async def _modify_overseas_stock(
         self,
         ls,
@@ -17934,20 +17994,23 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange: str,
         new_quantity: Optional[int],
         new_price: Optional[float],
-        side: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
+        side: Optional[str] = None,
     ) -> Dict[str, Any]:
         """해외주식 정정주문 실행 (COSAT00311)
 
-        ⚠️ ``side`` **인자**는 브로커 요청에도 원장 기록에도 쓰지 않는다. ModifyOrder
-        노드 스키마에 side 필드가 없어(core/programgarden_core/nodes/order.py:
-        245-263) 호출부의 ``config.get("side", "buy")`` 가 사실상 항상 "buy" 이기
-        때문이다(COSAT00311 자체는 매매구분을 받지 않는다 — blocks.py:55-95).
-        원장 방향은 원 주문 행에서 승계하고, 행이 없으면 **config 에 실제로 실린**
-        side 만 쓴다(``config.get("side")`` — 기본값 없이 읽으므로 노드 경로에서는
-        None 이다). 인자는 시그니처 호환을 위해 남겨둔다.
+        ⚠️ ``side`` **인자**는 브로커 요청에도 원장 기록에도 쓰지 않는다 — 하위호환·
+        시그니처 안정을 위해 남겨둔 무시 인자다(기본값 None). ModifyOrder 노드
+        스키마에 side 필드가 없고(core/programgarden_core/nodes/order.py:245-263),
+        COSAT00311 자체도 매매구분을 받지 않는다(blocks.py:55-95). 원장 방향은 원
+        주문 행에서 승계하고, 행이 없으면 **config 에 실제로 실린** side 만 쓴다
+        (``config.get("side")`` — 기본값 없이 읽으므로 노드 경로에서는 None 이다).
+
+        호가유형(OrdprcPtnCode)은 스키마의 ``price_type`` 를 존중한다 —
+        _resolve_stock_modify_price_type_code 참조('limit'→'00', 'market'→'03';
+        명시 ``price_type_code`` 오버라이드가 이기고, 둘이 충돌하면 거부).
 
         수량/가격은 **실효값**을 싣는다 — 안 바꾼 필드에 0 을 보내지 않는다.
         근거는 _resolve_modify_target 독스트링(SDK blocks/example 인용).
@@ -17982,8 +18045,9 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"{symbol}: {market_error}", node_id)
             return self._error_result(market_error)
 
-        # 호가유형코드 (지정가)
-        ordprc_ptn_code = config.get("price_type_code", "00")
+        # 호가유형코드 — 스키마의 price_type 를 존중하되 price_type_code 명시
+        # 오버라이드도 지원한다(_resolve_stock_modify_price_type_code).
+        ordprc_ptn_code = self._resolve_stock_modify_price_type_code(config, node_id)
         
         try:
             order_api = ls.overseas_stock().주문().cosat00311(
@@ -18094,18 +18158,18 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange: str,
         new_quantity: Optional[int],
         new_price: Optional[float],
-        side: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
+        side: Optional[str] = None,
     ) -> Dict[str, Any]:
         """해외선물 정정주문 실행 (CIDBT00900)
 
-        ⚠️ ``side`` **인자**는 쓰지 않는다. ModifyOrder 노드 스키마에 side 필드가 없어
-        (core/programgarden_core/nodes/order.py:245-263) 호출부의
-        ``config.get("side", "buy")`` 가 사실상 항상 "buy" 라, 이 TR 의
-        ``BnsTpCode``(blocks.py:88-93 "'1' = sell, '2' = buy")에 매도 주문을
-        정정할 때도 매수가 실렸다. 방향은 원 주문 원장 행에서 승계한다.
+        ⚠️ ``side`` **인자**는 쓰지 않는다 — 하위호환·시그니처 안정을 위해 남겨둔
+        무시 인자다(기본값 None). ModifyOrder 노드 스키마에 side 필드가 없어
+        (core/programgarden_core/nodes/order.py:245-263) 방향을 config 기본값으로
+        추측하지 않는다 — 이 TR 의 ``BnsTpCode``(blocks.py:88-93 "'1' = sell,
+        '2' = buy")에 넣을 방향은 원 주문 원장 행에서 승계한다.
 
         원장 행이 없을 때의 처리는 두 갈래다:
           · ``config`` 에 side 가 **실제로** 실려 있으면(라이브러리 직접 호출자)
