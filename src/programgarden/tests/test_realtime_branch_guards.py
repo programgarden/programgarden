@@ -128,3 +128,29 @@ async def test_failed_tick_cannot_reuse_previous_source_output_or_stop_independe
     assert not job.context.get_all_outputs("dependent")
     assert not job.context.get_all_outputs("_input_dependent")
     assert job.get_state()["nodes"]["source"]["state"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_retrigger_keeps_a_non_reexecuted_upstream_snapshot_visible_to_the_join():
+    # Complement of the failed/downstream-cleared cases above: a join (dependent)
+    # downstream of the re-triggered source ALSO reads a startup snapshot node that
+    # is NOT downstream of the source. The tick re-executes only source -> dependent;
+    # the snapshot is neither re-executed nor cleared, and its retained output is fed
+    # back into the re-triggered join's rebuilt input. This is the live-executor
+    # guarantee behind the realtime trading guard: the open-order / holding snapshots
+    # queried once at startup stay visible to the guard on EVERY subsequent tick.
+    graph = {"id": "snapshot-join", "name": "Snapshot join", "nodes": [
+        {"id": "start", "type": "StartNode"},
+        *[{"id": node, "type": "HTTPRequestNode", "url": f"https://fixture.invalid/{node}"}
+          for node in ("source", "snapshot", "dependent")]],
+        "edges": [{"from": "start", "to": "source"}, {"from": "start", "to": "snapshot"},
+                  {"from": "source", "to": "dependent"}, {"from": "snapshot", "to": "dependent"}]}
+    effects, job = await rerun(graph, ["source"])
+    # Only the tick's own downstream chain re-executes; the upstream snapshot does not.
+    assert effects == ["source", "dependent"]
+    assert "snapshot" not in effects
+    # The snapshot output is retained (never popped) so it stays visible ...
+    assert job.context.get_all_outputs("snapshot") == {"response": {"node": "snapshot"}}
+    assert job.get_state()["nodes"]["snapshot"]["state"] == "completed"
+    # ... and is fed into the re-triggered join's rebuilt input.
+    assert job.context.get_all_outputs("_input_dependent")
