@@ -206,17 +206,31 @@ class ReplayExecutor(WorkflowExecutor):
                 check_contract(config, rules["input"], f"{node_id}.input")
             if node_type in FIXTURE_NODES:
                 from programgarden.replay_external import external_record
+                from programgarden.replay_order_adapter import check_open_orders_snapshot, check_order_events_shape
                 record = external_record(self.fixture, node_id, node_type, config, context)
                 if not isinstance(record,dict) or "output" not in record or "contract" not in record:
                     raise ContractViolation(node_id,"No matching per-item I/O fixture/contract","REPLAY_FIXTURE_REQUIRED")
                 if "order_events" in record:
+                    # The completion-evidence SHAPE is book-independent, so check it
+                    # unconditionally: a malformed recording fails at its own node
+                    # even before an order node creates a book. The matching-request
+                    # reconciliation below still requires that book.
+                    check_order_events_shape(record["order_events"])
                     if self.orders is None or not node_type.endswith(("OpenOrdersNode", "RealOrderEventNode")):
                         raise ContractViolation(node_id,"Completion evidence requires an existing request and broker observation node")
                     self.orders.apply_events(record["order_events"], node_type)
                 output = deepcopy(record["output"])
                 check_contract(output, record["contract"], f"{node_id}.output")
-                if self.orders is not None and node_type.endswith("OpenOrdersNode"):
-                    self.orders.check_open_orders(output, node_type)
+                if node_type.endswith("OpenOrdersNode"):
+                    # The snapshot SHAPE (unique non-empty order_ids, count == rows)
+                    # is verified for every OpenOrdersNode recording, whether or not
+                    # an order node has created a book, so a malformed recording
+                    # fails at THIS node during node-by-node validation. The
+                    # book-consistency comparison additionally requires the book.
+                    if self.orders is not None:
+                        self.orders.check_open_orders(output, node_type)
+                    else:
+                        check_open_orders_snapshot(output)
             elif node_type in SOURCE_NODES:
                 from programgarden.replay_sources import execute_source
                 output = await execute_source(validated_node, config, self.fixture, context)

@@ -30,6 +30,63 @@ def _same_exchange(product, left, right):
     return left == right
 
 
+def open_orders_snapshot_contract():
+    """Shape of an ``*OpenOrdersNode`` snapshot, independent of any simulated book.
+
+    An object with an ``open_orders`` array whose rows each carry a non-empty
+    string ``order_id``, and a nonnegative integer ``count``. Row-count agreement
+    and id uniqueness are asserted by ``check_open_orders_snapshot``; this is the
+    pure JSON-schema part so callers (including the AI-side suite compiler) import
+    one definition instead of duplicating the schema.
+    """
+    return {"type": "object", "required": ["open_orders", "count"],
+        "properties": {"open_orders": {"type": "array", "items": {"type": "object",
+            "required": ["order_id"], "properties": {"order_id": {"type": "string", "minLength": 1}}}},
+            "count": {"type": "integer", "minimum": 0}}}
+
+
+def check_open_orders_snapshot(output):
+    """Verify a recorded open-orders snapshot is well formed, with no book required.
+
+    A fixture cannot omit the identity of the orders it claims are open: every row
+    needs a non-empty ``order_id``, the ids are unique and ``count`` equals the row
+    total. This runs unconditionally for every ``*OpenOrdersNode`` recording so a
+    malformed recording fails at its own node during node-by-node validation,
+    instead of only once an order node creates a simulated book. The
+    book-consistency comparison stays in ``ReplayOrders.check_open_orders`` because
+    that needs the book. Raises ``ContractViolation`` (``REPLAY_CONTRACT_FAILED``)
+    and returns the rows indexed by id for the book check to reuse.
+    """
+    check_contract(output, open_orders_snapshot_contract(), "open_orders")
+    rows = output["open_orders"]
+    indexed = {row["order_id"]: row for row in rows}
+    if len(indexed) != len(rows) or output["count"] != len(rows):
+        raise ContractViolation("open_orders", "Order IDs/count do not describe a complete unique snapshot")
+    return indexed
+
+
+def order_events_contract():
+    """Shape of a completion-evidence ``order_events`` array (book-independent part).
+
+    Each event names its request node, symbol key and event id (non-empty strings)
+    and an ``applied`` boolean, with no extra keys. This is the schema
+    ``ReplayOrders.apply_events`` already enforces; extracting it lets the shape be
+    checked unconditionally for every recording that carries completion evidence,
+    before the matching-request/book reconciliation (which needs the book) runs.
+    """
+    return {"type": "array", "items": {"type": "object",
+        "required": ["request_node", "symbol_key", "event_id", "applied"],
+        "additionalProperties": False, "properties": {
+            "request_node": {"type": "string", "minLength": 1},
+            "symbol_key": {"type": "string", "minLength": 1},
+            "event_id": {"type": "string", "minLength": 1}, "applied": {"type": "boolean"}}}}
+
+
+def check_order_events_shape(events):
+    """Book-independent shape check for a recorded completion ``order_events`` array."""
+    check_contract(events, order_events_contract(), "order_events")
+
+
 class _FixtureLedger:
     """Only the two read methods used by the real modification normalizer."""
     def __init__(self, order):
@@ -178,12 +235,7 @@ class ReplayOrders:
 
     def apply_events(self, events, node_type):
         """Trusted fixture evidence at a subsequent broker-observation boundary."""
-        check_contract(events, {"type":"array", "items":{"type":"object",
-            "required":["request_node", "symbol_key", "event_id", "applied"],
-            "additionalProperties":False, "properties":{
-                "request_node":{"type":"string", "minLength":1},
-                "symbol_key":{"type":"string", "minLength":1},
-                "event_id":{"type":"string", "minLength":1}, "applied":{"type":"boolean"}}}}, "order_events")
+        check_order_events_shape(events)
         for event in events:
             request = self.operation_nodes.get((event["request_node"], event["symbol_key"]))
             if request is None:
@@ -193,15 +245,14 @@ class ReplayOrders:
             self.book.confirm_change(request, event_id=event["event_id"], applied=event["applied"])
 
     def check_open_orders(self, output, node_type):
-        """A fixture cannot hide this workflow's still-open simulated orders."""
-        check_contract(output, {"type":"object", "required":["open_orders", "count"],
-            "properties":{"open_orders":{"type":"array", "items":{"type":"object",
-                "required":["order_id"], "properties":{"order_id":{"type":"string", "minLength":1}}}},
-                "count":{"type":"integer", "minimum":0}}}, "open_orders")
-        rows = output["open_orders"]
-        indexed = {row["order_id"]:row for row in rows}
-        if len(indexed) != len(rows) or output["count"] != len(rows):
-            raise ContractViolation("open_orders", "Order IDs/count do not describe a complete unique snapshot")
+        """A fixture cannot hide this workflow's still-open simulated orders.
+
+        The book-free snapshot shape (``check_open_orders_snapshot``) is checked
+        first — and separately runs unconditionally in ``validation_replay`` so a
+        malformed recording fails at its own node — then this compares the snapshot
+        against the orders this workflow actually opened in the simulated book.
+        """
+        indexed = check_open_orders_snapshot(output)
         for order_id, order in self.book.orders.items():
             product = self.book.instruments[order["symbol_key"]].get("product")
             if product != _product(node_type):
