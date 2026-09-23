@@ -32,6 +32,17 @@ alias or rewrite any customer workflow.
   parser still executes and independently asserted outputs still determine PASS.
 - `programgarden.replay_orders.SimulationBook`: fixture-only cash, positions,
   reserved orders, partial fills, cancellation and UNKNOWN reconciliation.
+  It mirrors the live `NewOrderNode` for held symbols: a BUY for a symbol the
+  account already holds is **accepted** — subject only to the ordinary
+  cash/`max_investment` budget — not refused. The live executor has no
+  held-symbol rule (LS accepts additional buys); the product's "no additional
+  buy by default" is a chatbot CodeNode GUARD, never an engine rule. Only a
+  futures order that *adds* to an open position (same direction, not closing) is
+  still refused (`position_already_held`). The live ExclusionListNode safety
+  check (`executor.py` `_check_exclusion_list`, gated by the node config
+  `ignore_exclusion`) is **not** modelled here because the replay adapter never
+  executes an ExclusionListNode and so never sees an exclusion list; excluded-symbol
+  blocking stays a live/integration concern.
   Futures require explicit margin and multiplier; profit calculations are only
   the fixture model, not broker verification or performance evidence.
 - `programgarden.replay_order_adapter.ReplayOrders`: shares the live new-order

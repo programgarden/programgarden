@@ -63,14 +63,39 @@ def test_risk_rejections_are_explicit(changes,reason):
     assert b.cash==1000 and not b.positions
 
 
-def test_cash_budget_duplicate_position_and_sell_quantity_checks():
+def test_cash_budget_and_sell_quantity_checks():
     b=book();b.cash=100
     assert b.submit(intent(),key="cash")["reason"]=="insufficient_cash"
     b=book()
     assert b.submit(intent(quantity=7),key="limit")["reason"]=="max_investment_exceeded"
     assert b.submit(intent(side="sell"),key="position")["reason"]=="insufficient_position"
     b.submit(intent(),key="filled",response="filled")
-    assert b.submit(intent(),key="held")["reason"]=="position_already_held"
+    # A repeat BUY while already holding is NOT refused as "already held" — the live
+    # engine has no such rule (only the chatbot CodeNode guard does). It falls through
+    # to the ordinary budget check, which trips because 5+5 shares exceed the cap.
+    assert b.submit(intent(),key="held")["reason"]=="max_investment_exceeded"
+
+
+def test_stock_buy_while_holding_is_accepted_when_budget_allows():
+    # Mirror LIVE (executor.py NewOrderNode): an additional buy for a held symbol is
+    # accepted. "No additional buy by default" is a chatbot CodeNode guard, not an
+    # engine rule, so the simulator must let a legitimate add-on buy through.
+    b=book()
+    opened=b.submit(intent(),key="open",response="filled")           # buy 5 -> hold 5, cash 500
+    assert opened["status"]=="filled" and b.positions=={"TEST:A":5}
+    added=b.submit(intent(quantity=1),key="add",response="filled")   # buy 1 more while holding
+    assert added["reason"] is None and added["status"]=="filled"
+    assert b.positions=={"TEST:A":6} and b.cash==400
+
+
+def test_futures_adding_to_open_position_is_still_refused():
+    # Futures semantics are unchanged by the stock fix: adding to an open position
+    # (same direction, not closing) still rejects as position_already_held.
+    b=book(product="overseas_futures",margin_per_contract=200,multiplier=10)
+    entry=b.submit(intent(side="buy",quantity=1),key="entry",response="filled")
+    assert entry["status"]=="filled" and b.positions=={"TEST:A":1}
+    added=b.submit(intent(side="buy",quantity=1),key="add")
+    assert added["reason"]=="position_already_held" and added["status"]=="rejected"
 
 
 def test_futures_requires_explicit_margin_and_never_assumes_stock_notional():

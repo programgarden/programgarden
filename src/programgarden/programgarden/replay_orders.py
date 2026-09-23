@@ -118,7 +118,14 @@ class SimulationBook:
         elif age < 0 or age > max_age: reason = "stale_market_data"
         elif price % tick: reason = "invalid_price_tick"
         elif active or pending_change: reason = "pending_or_unknown_order"
-        elif held and (not futures and intent["side"] == "buy" or futures and not closing): reason = "position_already_held"
+        # The LIVE NewOrderNode (executor.py) has NO held-symbol refusal for stocks:
+        # LS accepts an additional buy while the account already holds the symbol.
+        # The product's "no additional buy by default" is a chatbot CodeNode GUARD,
+        # not an engine rule — so replaying a legitimate add-to-position workflow
+        # must not reject it here. We mirror live: only futures ADDING to an open
+        # position (same direction, i.e. held and not closing) stays refused; a
+        # stock buy while held falls through to the normal budget/cash checks below.
+        elif held and futures and not closing: reason = "position_already_held"
         elif closing and intent["quantity"] > abs(held): reason = "position_reversal_not_supported"
         elif not closing and (futures or intent["side"] == "buy") and cost + self._exposure() > self.max_investment: reason = "max_investment_exceeded"
         elif not closing and (futures or intent["side"] == "buy") and cost > self.cash - self._reserved_cash(): reason = "insufficient_cash"

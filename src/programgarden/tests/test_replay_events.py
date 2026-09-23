@@ -80,10 +80,15 @@ async def test_stock_repeat_is_not_silently_deduplicated_by_the_test_adapter():
         {"connection": broker["output"]["connection"]}, broker["output"], broker["contract"], as_of=at)
     fixture["events"] = [{"as_of": at, "type": "schedule_tick", "source_node_id": "schedule", "nodes": updated}]
     result = await replay(workflow, fixture)
-    assert not result.passed
+    assert result.passed, result.errors
+    # Without the optional durable idempotency registry a stock order re-executes on
+    # each tick: two DISTINCT simulated orders, never one silently deduplicated.
+    # Holding the symbol does NOT block the repeat (the live engine has no held-symbol
+    # refusal — that is a chatbot CodeNode guard), so both buys fill and the position
+    # doubles.
     assert len(result.simulation["orders"]) == 2, result.errors
-    assert result.simulation["orders"]["SIM-order#2"]["reason"] == "position_already_held"
-    assert result.simulation["positions"] == {"NASDAQ:A": 2}
+    assert all(o["status"] == "filled" for o in result.simulation["orders"].values())
+    assert result.simulation["positions"] == {"NASDAQ:A": 4}
     assert result.simulation["live_order_count"] == 0
 
 
