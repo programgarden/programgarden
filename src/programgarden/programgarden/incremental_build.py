@@ -29,6 +29,22 @@ class BuildGateError(ValueError):
         super().__init__(message)
 
 
+def _scenario_id(fixture: dict[str, Any], index: int) -> str:
+    """Stable name for a scenario: the suite's own id, else its position."""
+    sid = fixture.get("scenario_id") or fixture.get("id") if isinstance(fixture, dict) else None
+    return str(sid) if isinstance(sid, (str, int)) and str(sid).strip() else f"scenario[{index}]"
+
+
+def _stamp_scenario(errors: list[dict[str, Any]], sid: str) -> list[dict[str, Any]]:
+    """Name the failing scenario on each error and inside its diagnostic detail."""
+    for error in errors:
+        if isinstance(error, dict):
+            error.setdefault("scenario_id", sid)
+            if isinstance(error.get("detail"), dict):
+                error["detail"].setdefault("scenario_id", sid)
+    return errors
+
+
 def runtime_identity() -> str:
     """Identify actual implementations and computation dependencies.
 
@@ -329,16 +345,19 @@ class BuildWorkspace:
                     "mode": "SIMULATION", "live_authorized": False}
         runs, failure, reached = [], None, False
         try:
-            for fixture in deepcopy(self.fixtures):
+            for index, fixture in enumerate(deepcopy(self.fixtures)):
+                sid = _scenario_id(fixture, index)
                 standalone = await replay(node_graph, fixture, timeout=timeout, node_under_test=node_id)
                 assessed = scenario_receipt(standalone,fixture,node_graph)
-                runs.append({"stage": "node", **asdict(standalone), **assessed})
+                _stamp_scenario(standalone.errors, sid); _stamp_scenario(assessed["scenario_errors"], sid)
+                runs.append({"stage": "node", "scenario_id": sid, **asdict(standalone), **assessed})
                 if not assessed["scenario_passed"]:
                     failure = standalone.errors + assessed["scenario_errors"]
                     break
                 chain = await replay(graph, fixture, timeout=timeout)
                 assessed = scenario_receipt(chain,fixture,graph)
-                runs.append({"stage": "chain", **asdict(chain), **assessed})
+                _stamp_scenario(chain.errors, sid); _stamp_scenario(assessed["scenario_errors"], sid)
+                runs.append({"stage": "chain", "scenario_id": sid, **asdict(chain), **assessed})
                 if not assessed["scenario_passed"]:
                     failure = chain.errors + assessed["scenario_errors"]
                     break
@@ -386,7 +405,8 @@ class BuildWorkspace:
         # Serialization and a fresh load are mandatory; no in-memory result reuse.
         graph = json.loads(json.dumps(self.graph, allow_nan=False))
         results = []
-        for fixture in deepcopy(self.fixtures):
+        for index, fixture in enumerate(deepcopy(self.fixtures)):
+            sid = _scenario_id(fixture, index)
             result = await replay(graph, fixture, timeout=timeout)
             assessed = scenario_receipt(result,fixture,graph)
             if assessed["scenario_passed"]:
@@ -395,7 +415,8 @@ class BuildWorkspace:
                 except ContractViolation as exc:
                     assessed["scenario_passed"] = False
                     assessed["scenario_errors"].append(exc.as_dict())
-            results.append({**asdict(result),**assessed})
+            _stamp_scenario(result.errors, sid); _stamp_scenario(assessed["scenario_errors"], sid)
+            results.append({"scenario_id": sid, **asdict(result), **assessed})
         if (self.revision != revision or self.runtime != runtime_identity()
                 or self.plan_revision != plan_revision or content_hash(self.graph) != content_hash(graph)
                 or content_hash(self.fixtures) != fixture_hash or content_hash(self.states) != states_hash):

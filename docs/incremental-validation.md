@@ -319,6 +319,19 @@ output, never a credential, and is length-bounded. The failure code is unchanged
 The CodeNode `outputs` schema description and anti-patterns now warn against the
 two names as well. No executor semantics or package version changed.
 
+CodeNode sandbox: a single-underscore string literal is allowed (it names a
+native data marker read as a dict key, e.g. `balance.get("_partial_failure")`);
+only dunder-style names, blocked attribute re-exports (`"os"`/`"_os"`/…), and
+attribute-walking format fields stay rejected, and underscore attribute access
+(`x._os`) and getattr remain blocked, so the relaxation opens no new escape.
+
+Failed contract assertions (`check_contract`) now attach `detail {path, observed,
+constraint_kind, observed_type}` — the candidate's own value at the path, never
+the expected value, so the oracle stays hidden — and the incremental coordinator
+stamps `scenario_id` into each error's detail and onto every per-run summary
+(`runs: [{stage, scenario_id, passed, scenario_passed, …}]`), from the suite's
+own id or its position, so the host can name the failing scenario.
+
 Aligned rule (matches the live `node_runner`): for computation nodes (CodeNode
 and the other COMPUTATION_NODES) a top-level `error` KEY of any value — including
 `None`/`""` — is a failure, so replay no longer certifies an output the runtime

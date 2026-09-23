@@ -98,7 +98,7 @@ async def execute(data, params, context):
 CodeNode 코드는 **항상** 다음 4계층을 거칩니다. 끄는 공개 스위치는 없습니다.
 
 1. **스크럽 컨텍스트** — credential 접근 경로 자체를 제거(§5).
-2. **제한 builtins + AST 차단목록** — `eval`/`exec`/`getattr`/`open` 등 제거 + 화이트리스트 `__import__`(순수 계산용 stdlib: math/statistics/json/datetime/…만). AST로 위험 import(`os`/`socket`/`urllib`/`subprocess`/…), introspection dunder(`__class__`/`__globals__`/…), 밑줄 attribute 접근을 차단.
+2. **제한 builtins + AST 차단목록** — `eval`/`exec`/`getattr`/`open` 등 제거 + 화이트리스트 `__import__`(순수 계산용 stdlib: math/statistics/json/datetime/…만). AST로 위험 import(`os`/`socket`/`urllib`/`subprocess`/…), introspection dunder(`__class__`/`__globals__`/…), 밑줄 **attribute** 접근(`x._os` 등 모듈 내부 재노출)을 차단. **단일 밑줄 문자열 리터럴은 허용됩니다** — `balance.get("_partial_failure")` / `balance["_partial_failure"]` 처럼 네이티브 데이터 마커(dict 키)를 읽는 정상 용법이기 때문입니다. 여전히 차단: `__dunder__` 문자열, 차단 재노출명(`"os"`/`"_os"`/`"system"`/…), attribute-walk 포맷 필드. (getattr/attrgetter/format 이 별도로 차단되므로 밑줄 문자열만으로는 attribute 접근으로 바뀌지 못합니다.)
 3. **바인딩 봉쇄** — `data`/`params`에 credential/secret 유사 소스를 참조하지 못하게 검증.
 4. **subprocess 격리** — 코드는 **앱키 없는 자식 프로세스**에서 실행됩니다. 자식 입력은 credential-free 스냅샷만, 결과는 JSON만 왕복.
 
