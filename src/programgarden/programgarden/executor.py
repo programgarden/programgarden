@@ -93,6 +93,40 @@ OVERSEAS_STOCK_MARKET_CODES = {
 #    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
 
 
+def ls_overseas_business_dates(now=None) -> set:
+    """Calendar dates (YYYYMMDD) that an LS overseas-stock query may echo as its business date.
+
+    Observed live 2026-09-24 04:17 KST (COSAQ00102, empty account): the node sent
+    OrdDt=20260924 (naive local KST date) but the broker echoed OrdDt=20260923 —
+    the US trading-session date. During the overnight session the KST calendar day
+    is one ahead of the broker's business day, so an empty-result check that
+    demands `echo.OrdDt == local today` fails and a legitimate "no pending orders"
+    answer (rsp_cd 02679) was reported as fetch_failed. Accept either the Seoul or
+    the New York date, both computed with explicit zones.
+    """
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _Z
+    moment = now or _dt.now(_Z("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_Z("Asia/Seoul"))
+    return {moment.astimezone(_Z("Asia/Seoul")).strftime("%Y%m%d"),
+            moment.astimezone(_Z("America/New_York")).strftime("%Y%m%d")}
+
+
+def ls_overseas_stock_side(code) -> str:
+    """Map an LS overseas-stock BnsTpCode to buy/sell/unknown.
+
+    Observed live 2026-09-24: COSAQ00102 block3 returns the code as a single
+    character ("2" for a buy — the same row carried OrdPtnNm "매수정정"), while the
+    documented values are written zero-padded ("01" 매도, "02" 매수). Comparing
+    against "02" only labelled every buy as a sell. Leading zeros are ignored and
+    anything else is reported as "unknown" so a guard can refuse it instead of
+    silently treating it as a sell.
+    """
+    text = str(code or "").strip().lstrip("0")
+    return {"2": "buy", "1": "sell"}.get(text, "unknown")
+
+
 def ls_overseas_stock_limit_price(price: float, side: str) -> float:
     """Quantize a quote-derived limit price to the LS overseas-stock precision rule.
 
@@ -6425,7 +6459,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         # see finance/docs/observed_broker_responses.md (2026-09-09).
         observed_no_data = (
             complete_empty and status == 200 and diagnostics["rsp_cd"] == "02679"
-            and echo.OrdDt == today and echo.OrdMktCode == "%"
+            and echo.OrdDt in ls_overseas_business_dates() and echo.OrdMktCode == "%"
             and echo.ThdayBnsAppYn == "1" and echo.BnsTpCode == "0"
             and echo.CrcyCode == "000"
             and all(
@@ -6442,6 +6476,16 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         )
         valid_empty = complete_empty and (diagnostics["rsp_cd"] == "00000" or observed_no_data)
         if diagnostics["rsp_cd"] == "02679" and not observed_no_data:
+            # Say WHICH part of the empty-result envelope did not match, so a live
+            # "no pending orders" answer is never a silent fetch_failed again.
+            diagnostics.update({
+                "empty_envelope_mismatch": True,
+                "echo_ord_dt": getattr(echo, "OrdDt", None) if echo is not None else None,
+                "accepted_business_dates": sorted(ls_overseas_business_dates()),
+                "echo_ord_mkt_code": getattr(echo, "OrdMktCode", None) if echo is not None else None,
+                "complete_empty": complete_empty,
+                "tr_cont": getattr(header, "tr_cont", None) if header is not None else None,
+            })
             return unavailable()
         if not usable_rows and not valid_empty:
             return unavailable()
@@ -6452,8 +6496,9 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
             if not order_id:
                 continue
 
-            # BnsTpCode: 01=매도, 02=매수
-            side = "buy" if item.BnsTpCode == "02" else "sell"
+            # BnsTpCode: 01/1=매도, 02/2=매수 — the broker returns the single-character
+            # form (observed 2026-09-24); anything else is "unknown", never a guessed sell.
+            side = ls_overseas_stock_side(item.BnsTpCode)
 
             open_orders.append({
                 "order_id": order_id,
