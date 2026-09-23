@@ -60,3 +60,35 @@ async def test_ordinary_codenode_output_is_unaffected():
     result = await replay(workflow(code("calc", "1")), {})
     assert result.passed, result.errors
     assert result.outputs["calc"]["result"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ret,preview", [("{'error': None}", "None"), ("{'error': ''}", "")])
+async def test_present_error_key_fails_for_computation_nodes_even_when_falsy(ret, preview):
+    # Matches the live node_runner rule (`"error" in result`): a present top-level
+    # `error` key is a failure regardless of value, so {"error": None} no longer
+    # certifies behavior the production runtime rejects.
+    # Untyped port so the falsy value reaches the reserved-key check rather than the
+    # declared-port type check (a typed `string` port would reject None on its own).
+    node = code_node("calc", [{"name": "error"}], ret)
+    result = await replay(workflow(node), {})
+    assert not result.passed
+    err = next(e for e in result.errors if e.get("node_id") == "calc")
+    assert err["code"] == "REPLAY_CONTRACT_FAILED"
+    assert err["detail"] == {"reserved_key": "error", "value": preview, "declared_output_port": True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quantity", [0, 2])
+async def test_native_success_envelope_with_error_none_still_passes(quantity):
+    # OverseasFuturesOrderableQuantityNode (a SOURCE node) returns a success
+    # envelope {"quantity", "verified": True, "error": None}. The presence rule is
+    # scoped to computation nodes, so this native `error: None` is not a failure.
+    from tests.test_futures_orderable_evidence import config, response
+    from tests.test_replay_sources import futures_case
+    node = {"id": "capacity", "type": "OverseasFuturesOrderableQuantityNode", **config()}
+    node.pop("connection")
+    source = response(quantity).model_dump(mode="json", exclude_unset=True)
+    result = await replay(*futures_case(node, source))
+    assert result.passed, result.errors
+    assert result.outputs["capacity"] == {"quantity": quantity, "verified": True, "error": None}

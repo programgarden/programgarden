@@ -309,3 +309,10 @@ of guessing at a nonexistent calculation defect. The value is the node's own
 output, never a credential, and is length-bounded. The failure code is unchanged.
 The CodeNode `outputs` schema description and anti-patterns now warn against the
 two names as well. No executor semantics or package version changed.
+
+Aligned rule (matches the live `node_runner`): for computation nodes (CodeNode
+and the other COMPUTATION_NODES) a top-level `error` KEY of any value — including
+`None`/`""` — is a failure, so replay no longer certifies an output the runtime
+rejects; native envelope nodes (FIXTURE/SOURCE/ORDER) keep the truthy rule because
+some legitimately return `error: None` on success (e.g.
+OverseasFuturesOrderableQuantityNode returns `{"quantity", "verified", "error": None}`).

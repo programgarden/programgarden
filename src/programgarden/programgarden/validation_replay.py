@@ -63,9 +63,12 @@ def _reserved_key_detail(key: str, value: Any, node_type: str, config: dict) -> 
     ``value`` is the node's declared output text, never a credential; it is
     length-bounded so a large payload cannot bloat the diagnostic.
     """
-    text = value if isinstance(value, str) else json.dumps(
-        value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-    text = str(text)
+    if isinstance(value, str):
+        text = value
+    elif value is None:
+        text = "None"  # a present `error: None` key still fails; show it plainly
+    else:
+        text = json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     if len(text) > _RESERVED_PREVIEW_LIMIT:
         text = text[:_RESERVED_PREVIEW_LIMIT] + "…(truncated)"
     declared = node_type == "CodeNode" and any(
@@ -251,9 +254,17 @@ class ReplayExecutor(WorkflowExecutor):
             finite_json(output, f"{node_id}.output")
             if not isinstance(output, dict):
                 raise ContractViolation(node_id, "Node reported an execution error")
-            if output.get("error"):
+            # Match the live node_runner rule (`"error" in result`) for computation
+            # nodes: a top-level `error` KEY of any value (including None/"") is a
+            # failure, so a CodeNode returning {"error": None, ...} fails here just as
+            # it would live. Native envelope adapters (FIXTURE/SOURCE/ORDER nodes)
+            # legitimately carry `error: None` on success — e.g.
+            # OverseasFuturesOrderableQuantityNode returns {"quantity", "verified",
+            # "error": None} — so for those we keep the truthy rule.
+            error_failed = "error" in output if node_type in COMPUTATION_NODES else bool(output.get("error"))
+            if error_failed:
                 raise ContractViolation(node_id, _reserved_key_message("error"),
-                    detail=_reserved_key_detail("error", output["error"], node_type, config))
+                    detail=_reserved_key_detail("error", output.get("error"), node_type, config))
             if output.get("reason") in _INVALID_INPUT_REASONS:
                 raise ContractViolation(node_id, _reserved_key_message("reason", output["reason"]),
                     detail=_reserved_key_detail("reason", output["reason"], node_type, config))
