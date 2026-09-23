@@ -115,16 +115,34 @@ def request_identity(node_type, config):
         raise ContractViolation("request", "Unknown recording request fields", "REPLAY_FIXTURE_INVALID")
     result = node.model_dump(mode="json", exclude=_PRESENTATION_FIELDS | _SCHEDULER_FIELDS | {"connection"})
     connection = config.get("connection")
-    if connection:
-        allowed = {"provider", "product", "paper_trading", "broker_node_id", "credential_id"}
-        if not isinstance(connection, dict) or set(connection) - allowed:
-            raise ContractViolation("request.connection", "Only explicit non-secret broker identity is allowed",
-                                    "REPLAY_FIXTURE_INVALID")
-        for key, value in connection.items():
-            if (key == "paper_trading" and type(value) is not bool
-                    or key != "paper_trading" and (not isinstance(value, str) or not value)):
-                raise ContractViolation("request.connection", "Invalid broker identity", "REPLAY_FIXTURE_INVALID")
-        result["connection"] = deepcopy(connection)
+    if connection is not None:
+        allowed = ("provider", "product", "paper_trading", "broker_node_id", "credential_id")
+        if not isinstance(connection, dict):
+            raise ContractViolation("request.connection", f"expected object, got {type(connection).__name__}",
+                "REPLAY_FIXTURE_INVALID", {"key": "connection", "expected": "object",
+                "received_type": type(connection).__name__, "allowed_keys": list(allowed)})
+        # A null-valued identity key is semantically absent: at replay the engine
+        # injects an unlinked broker's identity WITHOUT a credential_id key at all,
+        # so a recorded {credential_id: null, ...} must equal that same identity.
+        # Drop None on this (and the recorded) side before validation and hashing.
+        cleaned = {key: value for key, value in connection.items() if value is not None}
+        unknown = sorted(set(cleaned) - set(allowed))
+        if unknown:
+            raise ContractViolation(f"request.connection.{unknown[0]}",
+                "key(s) not in the non-secret broker identity allowlist: " + ", ".join(unknown),
+                "REPLAY_FIXTURE_INVALID", {"key": unknown[0], "expected": "one of " + ", ".join(allowed),
+                "received_type": type(cleaned[unknown[0]]).__name__, "allowed_keys": list(allowed),
+                "unknown_keys": unknown})
+        for key, value in cleaned.items():
+            expected = "bool" if key == "paper_trading" else "nonempty string"
+            valid = type(value) is bool if key == "paper_trading" else (isinstance(value, str) and bool(value))
+            if not valid:
+                raise ContractViolation(f"request.connection.{key}",
+                    f"expected {expected}, got {type(value).__name__}", "REPLAY_FIXTURE_INVALID",
+                    {"key": key, "expected": expected, "received_type": type(value).__name__,
+                     "allowed_keys": list(allowed)})
+        if cleaned:
+            result["connection"] = cleaned
     return result
 
 

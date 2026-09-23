@@ -200,8 +200,11 @@ observations individually. Repeated quote reads within one invocation are avoide
 
 Replay request identity retains the selected non-secret broker connection,
 including credential reference, product, paper mode and broker node ID. Changing
-that identity cannot reuse a recorded account/market observation. No secret values
-are accepted in connection recordings. These are local changes, not a package or
+that identity cannot reuse a recorded account/market observation. A null-valued
+identity key is normalized as absent on both sides before hashing (an unlinked
+broker injects no credential_id), and an invalid or unknown identity key now fails
+with a message and `detail` naming the key, its expected type and the received
+type. No secret values are accepted in connection recordings. These are local changes, not a package or
 production release. The targeted engine sweep passes312 tests; the smaller
 LS/request-binding sweep passes97 (overlapping cases, not accuracy percentages).
 
