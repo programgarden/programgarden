@@ -176,6 +176,8 @@ class SQLiteNode(BaseNode):
         "Outputs rows (list), affected_count (int), and last_insert_id (int) to cover all read/write patterns",
         "is_tool_enabled=True — AI Agent can use SQLiteNode as a tool to read or write local state",
         "Databases are scoped to /app/data/ directory; db_name selects the file",
+        "Has a dedicated replay adapter (execute_sqlite) and takes no external recording; it runs against a file-backed database rooted at the run's storage directory",
+        "State written on one tick or event frame persists to that database and stays visible on later frames within the run, so a durable duplicate guard can be built on it",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

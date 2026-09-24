@@ -102,6 +102,13 @@ class KoreaStockHistoricalDataNode(BaseNode):
         "start_date / end_date accept YYYYMMDD strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions",
         "is_tool_enabled=True — AI Agent can fetch domestic historical data for fundamental/technical analysis",
         "Symbol format: 6-digit KRX code (e.g., '005930') without exchange field",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "The value port is one row object whose time_series lists bars of exactly {date, open, high, low, close, volume}; the values port is the array of such rows",
+        "This ohlcv_data is not the realtime shape: a *RealMarketDataNode records ohlcv_data as a symbol-keyed object of bar lists, although both are typed ohlcv_data",
+        "A previous close is the close of the corresponding bar in time_series; a change cannot be computed from a single bar",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

@@ -168,6 +168,9 @@ class CodeNode(BaseNode):
         "Safe helper namespaces available on context (date/finance/stats/format/lst) mirror expression bindings",
         "Batch-friendly: receives the whole upstream array in `data` (one subprocess call, loop in-code)",
         "Multi-upstream: accepts any number of upstream producers — bind each one to its own expression-bound `params` key ({{ nodes.<id>.<port> }}) and read it with params.get(...)",
+        "The top-level output keys error (truthy) and reason in {no_symbol, no_price, invalid_input} are engine failure markers; never declare or expect them as ports — put a diagnostic inside a nested object port (e.g. result.error) or a differently named port",
+        "A computation node: it receives no external recording in a suite (its code runs) and keeps no state across ticks; a durable one-shot guard needs ThrottleNode or SQLiteNode",
+        "Completing with a boolean false does not gate a downstream order node; route the boolean through an IfNode true edge",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

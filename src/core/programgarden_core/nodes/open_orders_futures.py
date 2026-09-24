@@ -62,6 +62,13 @@ class OverseasFuturesOpenOrdersNode(BaseNode):
         "Returns `open_orders` (list of unfilled futures order dicts) and `count` (integer) ports",
         "is_tool_enabled=True — AI Agent can query pending futures orders as a tool call",
         "Works in both paper_trading and real trading modes via the upstream OverseasFuturesBrokerNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "Retained across realtime events (queried once at startup); re-runs on every schedule tick",
+        "Each recorded row needs a non-empty unique order_id, and count must equal the number of rows; a snapshot lists only still-open orders, so a guard blocks on presence (count > 0), not on a derived remaining_quantity",
+        "order_events (modify/cancel completions: [{request_node, symbol_key, event_id, applied}]) is a top-level field of the recording beside request/as_of/output, never inside output",
+        "An order this workflow did not place (any non-SIM- id) is taken exactly as recorded: never retired by order_events, never reserving simulated cash, and listed in every OpenOrders recording of the same tick or in none",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

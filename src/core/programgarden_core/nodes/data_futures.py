@@ -90,6 +90,11 @@ class OverseasFuturesMarketDataNode(BaseNode):
         "is_tool_enabled=True — AI Agent can call this node to look up live futures prices autonomously",
         "Supported exchanges: CME, EUREX, SGX, HKEX — symbol format includes contract month code (e.g., ESH26)",
         "Broker connection is auto-injected via DAG traversal from OverseasFuturesBrokerNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "In replay the one-shot quote records its `values` port as a flat row list at nodes.<id>.output.values; this is not the realtime symbol-keyed ohlcv_data shape",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
