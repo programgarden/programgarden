@@ -389,7 +389,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         "Supports extended price_type options: LOO, LOC, MOO, MOC for open/close auction orders",
         "is_tool_enabled=True — AI Agent can call this node as a tool to place orders autonomously",
         "retry is disabled by default (resilience.retry.enabled=False); only pure network-connection failures may be retried, never a submitted order",
-        "US daytime (Blue Ocean) session accepts LIMIT orders only — a market order is refused at intake with rsp_cd=00891 and no order number. A workflow scheduled across both the daytime and the regular overnight session must therefore use order_type='limit' for it to work in both.",
+        "US daytime (Blue Ocean) session accepts LIMIT orders only — a market order is refused at intake with rsp_cd=00891 and no order number (00891 is a generic order-price rejection: it was also observed on 2026-09-24 for a price of 1 USD or more sent with more than two decimals — '주문단가 오류. $1이상은 소수점 2째 자리까지 입력가능합니다'). A workflow scheduled across both the daytime and the regular overnight session must therefore use order_type='limit' for it to work in both.",
         "A limit order needs a price. Buy orders fall back to a current-price lookup, and so do sell orders since engine 1.37.3, but that lookup (g3101) only accepts exchange codes 81/82 — it fails for a holding listed on any other market. Prefer feeding the price the account balance already carries: price='{{ item.current_price }}'.",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
@@ -438,7 +438,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "fields": ["price"]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold_threshold": 30}},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.value.price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.values[0].price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
                     {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "limit", "order": "{{ nodes.sizing.order }}"},
                 ],
                 "edges": [

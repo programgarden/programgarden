@@ -1,4 +1,43 @@
-## [1.31.1] - 2026-09-22
+## [2.1.0] - 2026-09-24
+
+### Added
+- Reserved output keys (`error`, and `reason` in no_symbol/no_price/invalid_input)
+  that mark a node failure are explained in replay diagnostics with a bounded,
+  secret-free preview of the node's own output and whether a CodeNode declared
+  that key as a port.
+
+### Fixed
+- Expression evaluation: an output port that shares its name with a
+  NodeOutputProxy helper (for example `count`) resolves to the port value, not
+  the helper method, so `{{ nodes.open_orders.count }}` compares as a number.
+  Calling the helper form on such a node (`{{ nodes.open_orders.count() }}`)
+  still invokes the helper, so existing workflows keep working.
+- CodeNode accepts single-underscore literals in inline code (documented
+  `_partial_failure` / `_source` keys can be read).
+- Overseas-stock order node guidance states the LS price precision rule (two
+  decimals at or above USD 1, rsp_cd 00891); the quantization itself lives in
+  the programgarden executor (2.1.0).
+- Example snippets in other node schemas (symbol query, new order, position
+  sizing, SQLite, watchlist, display pitfalls) that still bound the removed
+  `value` port now bind `values` / `values[0].price`, so every catalog example
+  validates again; the registry node-count guard reflects the 72 core nodes.
+- Remove the nonexistent singular `value` output from the three REST market-data
+  schemas. Their live executor returns only `values`; schema discovery must not
+  advertise a field that always resolves to missing data. Existing runtime
+  output, customer graphs and running workflows are unchanged.
+- Declare all observed domestic REST position fields, including acquisition
+  basis, missing-evidence status, currency and observation time. Correct the
+  account example's nonexistent cash/equity output names. Missing money stays
+  nullable; this change does not query a broker or alter holdings.
+- Return the declared TradingHoursFilterNode `blocked` output consistently.
+  Clarify waiting, timeout and immediate SessionGate alternatives in the schema.
+
+### Changed
+- TradingHoursFilterNode validates its configuration: an instant without a
+  timezone, days that are not explicit weekday names, window times that are
+  not H:MM / HH:MM, and an overnight window (end before start, use
+  SessionGateNode) now raise ValueError instead of silently passing or
+  waiting. Unpadded hours such as "9:30" remain valid.
 
 ## [2.0.1] - 2026-09-22
 

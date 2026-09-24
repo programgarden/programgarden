@@ -113,7 +113,7 @@ class WatchlistNode(BaseNode):
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
                     {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.watchlist.symbols }}'},
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -392,7 +392,7 @@ class ScreenerNode(BaseNode):
     description: str = "i18n:nodes.ScreenerNode.description"
 
     # 입력 종목 리스트 (선택사항) - 바인딩 또는 직접 입력
-    symbols: Optional[Union[List[Dict[str, str]], str]] = Field(
+    symbols: Optional[Union[List[Dict[str, Any]], str]] = Field(
         default=None,
         description="필터링할 종목 리스트. 없으면 전체 시장에서 검색",
     )
@@ -592,6 +592,10 @@ class ScreenerNode(BaseNode):
             "KoreaStockBrokerNode → KoreaStockSymbolQueryNode → ScreenerNode(market='korea_stock') → SplitNode",
         ],
         "pitfalls": [
+            "LS screening requires an explicit exchange for each symbol and a connected broker credential. It does not guess NASDAQ for unknown exchanges.",
+            "LS sector filtering is unsupported: choose data_source='yfinance' for sector names. A sector condition is never silently removed in LS mode.",
+            "LS market-cap filters require numeric market_cap from a g3190 master upstream. A watchlist plus g3101 cannot supply market cap; missing data raises an error.",
+            "Valid observations with no matching symbols produce count=0. Missing quotes, wrong response identity or unavailable filter data are errors, not a no-signal result.",
             "ScreenerNode relies on Yahoo Finance data (or LS g3190/g3101 for overseas_stock) which may have delays or inconsistencies with realtime broker data.",
             "Setting no filters returns all symbols up to max_results — always set at least one filter for production strategies.",
             "data_source='ls' is only effective for overseas_stock. Other markets log a warning and fall back to yfinance — set data_source='yfinance' explicitly to silence the warning.",
@@ -600,9 +604,9 @@ class ScreenerNode(BaseNode):
         ],
     }
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Preserve numeric master fields; bind LS quotes and fail unavailable filters without treating zero matches as errors."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

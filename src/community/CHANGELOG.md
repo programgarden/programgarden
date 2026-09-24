@@ -1,4 +1,10 @@
-## [1.15.4] - 2026-09-22
+## [2.1.0] - 2026-09-24
+
+### Changed
+- FearGreedIndexNode: response normalization moved into `parse_response(data)` so
+  a recorded provider response can be parsed without network transport (replay).
+  Live behaviour is unchanged.
+- deps: programgarden-core ^2.1.0.
 
 ## [2.0.1] - 2026-09-22
 

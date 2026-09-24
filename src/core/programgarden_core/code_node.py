@@ -104,9 +104,11 @@ FORBIDDEN_ATTR_NAMES: frozenset = frozenset({
 })
 
 # ── Denylist: introspection-escape / exfiltration dunders & frame attrs ──────
-# NOTE: enforcement is the BLANKET underscore rule in _scan_ast (any attribute
-# or string beginning with '_' is rejected), which subsumes every dunder. This
-# explicit set is retained for documentation / message clarity.
+# NOTE: enforcement is the underscore rule in _scan_ast — any ATTRIBUTE beginning
+# with '_' is rejected (subsumes every dunder and private module re-export like
+# random._os); STRING literals are rejected when they contain a dunder or name a
+# blocked attribute re-export (bare single-underscore data-key strings such as
+# "_partial_failure" are allowed). This explicit set is retained for message clarity.
 FORBIDDEN_DUNDERS: frozenset = frozenset({
     "__class__", "__bases__", "__base__", "__subclasses__", "__mro__",
     "__globals__", "__code__", "__closure__", "__func__", "__self__",
@@ -224,12 +226,18 @@ def _scan_ast(tree: ast.AST, allowed_imports: Set[str]) -> List[Dict[str, Any]]:
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             v = node.value
             bad = None
-            if v.startswith("_"):
-                bad = f"string literal '{v}' begins with '_' (introspection escape)"
-            elif "__" in v:
-                bad = f"string literal contains a dunder (introspection escape)"
-            elif v in FORBIDDEN_ATTR_NAMES:
-                bad = f"string literal '{v}' names a blocked attribute"
+            # A single leading underscore names a documented native data marker
+            # read as a dict key (e.g. balance["_partial_failure"], "_source"),
+            # so it is allowed. Still rejected: dunder-style names, and blocked
+            # public/underscored attribute re-exports ("os"/"sys"/"system"/"_os"/
+            # "_sys"... -> in FORBIDDEN_ATTR_NAMES via lstrip("_")), and attribute-
+            # walking format fields. getattr/attrgetter/operator/format are
+            # independently blocked, so a bare underscore data-key string cannot
+            # be turned into attribute access.
+            if "__" in v:
+                bad = "string literal contains a dunder (introspection escape)"
+            elif v.lstrip("_") in FORBIDDEN_ATTR_NAMES:
+                bad = f"string literal '{v}' names a blocked attribute (introspection escape)"
             elif _FORMAT_ATTR_RE.search(v):
                 bad = "format string performs attribute access (introspection escape)"
             if bad:

@@ -257,7 +257,7 @@ class PositionSizingNode(BaseNode):
                         "max_percent": 10.0,
                         "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
                         "balance": "{{ nodes.account.balance }}",
-                        "market_data": "{{ nodes.market.value }}",
+                        "market_data": "{{ nodes.market.values }}",
                     },
                     {"id": "display", "type": "SummaryDisplayNode", "title": "Sized orders", "data": {"orders": "{{ nodes.size.orders }}"}},
                 ],

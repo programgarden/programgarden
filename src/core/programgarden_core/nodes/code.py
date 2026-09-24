@@ -69,8 +69,10 @@ class CodeNode(BaseNode):
     - `context` = a READ-ONLY scrubbed context: safe helper namespaces
       (`context.date/finance/stats/format/lst`), a risk-tracker read snapshot,
       and workflow meta. It exposes NO credentials, broker, or executor.
-    - Return a dict; its keys map to the declared `outputs` ports. If `outputs`
-      is omitted, the entire return value is exposed on a single `result` port.
+    - With declared `outputs`, return a dict keyed by those ports. A single
+      declared port also accepts a scalar. With no declaration, the WHOLE return
+      value becomes `result`: return 3 gives result=3; return {'result': 3}
+      gives result={'result': 3}, not result=3.
 
     Example DSL:
         {
@@ -108,9 +110,15 @@ class CodeNode(BaseNode):
     outputs: List[Dict[str, str]] = Field(
         default_factory=list,
         description=(
-            "Output port declarations [{name, type}]. Empty → single 'result' port. "
+            "Output port declarations [{name, type}]. Empty exposes the WHOLE return on result: "
+            "return 3 gives result=3; return {'result': 3} gives result={'result': 3}. "
+            "With outputs=[{name:'result',type:'number'}], return {'result':3} gives result=3. "
             "Declared ports are consumed downstream by {{ nodes.<id>.<port> }} expressions, "
-            "not by typed-port matching; declaring them enables static typo-guarding."
+            "not by typed-port matching; declaring them enables static typo-guarding. "
+            "Do NOT name a port 'error' or 'reason': the engine treats a top-level 'error' "
+            "value (and a top-level 'reason' of no_symbol/no_price/invalid_input) as a node "
+            "failure, so such a port makes a successful return read as an engine error. Put "
+            "any status/diagnostic under a differently named port or nested object instead."
         ),
     )
 
@@ -174,8 +182,13 @@ class CodeNode(BaseNode):
         },
         {
             "pattern": "Declaring 'outputs' ports whose names the return dict never sets",
-            "reason": "A declared port missing from the return maps to None with a warning — a silent-looking gap downstream.",
+            "reason": "Deep/replay validation rejects missing declared ports and values that violate their declared types. Legacy live mapping to None is not evidence of a valid output.",
             "alternative": "Return a dict whose keys exactly match every declared output port name.",
+        },
+        {
+            "pattern": "Naming a declared output port 'error' or 'reason'",
+            "reason": "The engine (live runtime and replay) treats a top-level 'error' value, and a top-level 'reason' of no_symbol/no_price/invalid_input, as a node failure. A port with either name makes the node's own successful output read as an engine execution error, and no calculation defect exists to repair.",
+            "alternative": "Rename the port (e.g. 'status', 'note', 'detail') or nest status inside another object such as {'result': {...}}; keep 'error'/'reason' out of the top-level return.",
         },
         {
             "pattern": "Feeding a CodeNode return of non-standard shape into a typed node (order node, ConditionNode)",
@@ -347,7 +360,7 @@ class CodeNode(BaseNode):
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "SINGLE upstream: bind the whole upstream value to 'data' (e.g. \"{{ nodes.hist.values }}\") and loop over it inside execute() — CodeNode is not per-item auto-iterated. MULTIPLE upstreams (2+ producers feeding this node — fully supported): 'data' holds ONE whole value, so do NOT try to merge producers into it. Keep an edge from EACH producer and bind EACH upstream value to its own key under 'params' — params values are expression-bindable: \"params\": {\"fgi_value\": \"{{ nodes.fgi.value }}\", \"vix_response\": \"{{ nodes.vix_http.response }}\"} — then read them with params.get('fgi_value', 50) inside execute(). params.get(...) is the normal, always-allowed way to read bound inputs. 'params' also carries fixed knobs (literals). Declare 'outputs' when you want named ports; omit it to use the single 'result' port.",
-        "output_consumption": "Downstream nodes do NOT need a matching typed port. They consume a CodeNode output by writing a {{ nodes.<id>.<port> }} expression into their own generic input field (e.g. TableDisplayNode.data, IfNode.left/right, FieldMappingNode.data) — the binding layer resolves the dict key by name, it does not type-match ports. With no outputs declared, read {{ nodes.<id>.result }} (the whole return value). A declared output port that no node references is fine; a declared port absent from the return dict resolves to None with a warning. Because ports are declared, validate() typo-guards these references.",
+        "output_consumption": "Downstream nodes do NOT need a matching typed port. They consume a CodeNode output by writing a {{ nodes.<id>.<port> }} expression into their own generic input field (e.g. TableDisplayNode.data, IfNode.left/right, FieldMappingNode.data) — the binding layer resolves the dict key by name, it does not type-match ports. With no outputs declared, read {{ nodes.<id>.result }} (the whole return value). A declared output port that no node references is fine; a declared port absent from the return dict fails deep/replay validation. Do not rely on legacy live None substitution. Because ports are declared, validate() typo-guards these references.",
         "common_combinations": [
             "CodeNode → TableDisplayNode / LineChartNode / TelegramNode (display or sink — any return shape works)",
             "CodeNode → OverseasStockNewOrderNode / ConditionNode (typed node — return the standard [{symbol, exchange, ...}] shape)",
@@ -362,7 +375,7 @@ class CodeNode(BaseNode):
             "sandbox, and I/O/system stdlib (os, sys, socket, subprocess, urllib, http, requests, open) is "
             "blocked. Re-implement such functionality by hand in pure Python using the allowed stdlib.",
             "No credential/broker/network access — CodeNode cannot place orders or fetch data itself; feed it data from typed nodes.",
-            "Declared output ports must all appear as keys in the returned dict, or they resolve to None.",
+            "Every declared output must be present and match its type in deep/replay validation. A single declared port also supports a scalar return.",
             "There is NO one-upstream limit. Only the `data` field carries a single whole value — "
             "the node accepts any number of upstream producers. With 2+ producers, keep an edge "
             "from each and bind each value to its own `params` key "
@@ -440,7 +453,7 @@ class CodeNode(BaseNode):
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
                 ui_component=UIComponent.CUSTOM_CODE_EDITOR,
-                example="async def execute(data, params, context):\n    return {'result': data}",
+                example="async def execute(data, params, context):\n    return data",
                 expected_type="str",
                 help_text=(
                     "Define async def execute(data, params, context). Sandboxed: no "

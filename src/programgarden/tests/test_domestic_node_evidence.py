@@ -54,6 +54,21 @@ def ls_for(positions=None, funds=None, orders=None):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("missing_money", [False, True])
+async def test_domestic_position_catalog_matches_actual_composed_output(missing_money):
+    from programgarden_core import NodeTypeRegistry
+    row = {key: value for key, value in POSITION.items()
+           if not missing_money or key not in {"AvrUprc", "PchsAmt", "EvalPnl", "PnlRat"}}
+    result = await AccountNodeExecutor()._ls_korea_stock(
+        ls_for(position_response(rows=[row]), cash_response()), "account", Mock())
+    schema = NodeTypeRegistry().get_schema("KoreaStockAccountNode")
+    declared = next(port["fields"] for port in schema.outputs if port["name"] == "positions")
+    assert result["positions"]
+    assert {field["name"] for field in declared} == set(result["positions"][0])
+    assert result["positions"][0]["cost_status"] == ("unavailable" if missing_money else "available")
+
+
+@pytest.mark.asyncio
 async def test_unsettled_position_never_disappears_or_uses_unavailable_summary():
     ls = ls_for(position_response(), cash_response())
     result = await AccountNodeExecutor()._ls_korea_stock(ls, "account", Mock())

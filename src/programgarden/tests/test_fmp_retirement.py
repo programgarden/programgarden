@@ -7,6 +7,10 @@ from programgarden import ProgramGarden
 from programgarden_core import NodeTypeRegistry
 from programgarden_core.models.credential import BUILTIN_CREDENTIAL_SCHEMAS
 from programgarden_finance.ls.overseas_stock.market.g3104.blocks import G3104OutBlock
+from programgarden.replay_external import recording
+from programgarden.validation_replay import replay
+
+AS_OF = "2026-09-22T14:00:00Z"
 
 
 def test_removed_provider_is_not_discoverable_or_accepted():
@@ -29,3 +33,34 @@ def test_consumed_ls_fields_exist_in_the_actual_sdk_model():
     assert {"engname", "induname", "nation_name", "exchange_name", "pcls", "clos",
             "volume", "perv", "epsv", "shareprc", "share", "high52p", "low52p",
             "exrate"} <= G3104OutBlock.model_fields.keys()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("per,expected", [(15.5, ["XOM"]), (25.0, []), (0, []), (-2, []), (None, [])])
+async def test_ls_positive_per_filter_uses_recorded_data_without_broker(per, expected):
+    graph = {"id": "ls-per-replay", "name": "LS PER replay", "nodes": [
+        {"id": "start", "type": "StartNode"},
+        {"id": "broker", "type": "OverseasStockBrokerNode"},
+        {"id": "fundamental", "type": "OverseasStockFundamentalNode",
+         "symbols": [{"symbol": "XOM", "exchange": "NYSE"}]},
+        {"id": "filter", "type": "CodeNode", "data": "{{ nodes.fundamental.values }}",
+         "outputs": [{"name": "symbols", "type": "array"}],
+         "code": "def execute(data, params, context):\n return {'symbols': [r['symbol'] for r in data if isinstance(r.get('per'), (int, float)) and 0 < r['per'] <= 20]}"}],
+        "edges": [{"from": "start", "to": "broker"},
+                  {"from": "broker", "to": "fundamental"},
+                  {"from": "fundamental", "to": "filter"}]}
+    # Recordings are request-bound since the replay foundation of 2.1.0
+    # (replay_external.external_record): request identity, clock and item.
+    fixture = {"as_of": AS_OF, "nodes": {
+        "broker": recording("OverseasStockBrokerNode", {}, {"connection": {"product": "overseas_stock"}},
+                            {"type": "object"}, as_of=AS_OF),
+        # The resolved request carries the broker connection the executor injects.
+        "fundamental": recording("OverseasStockFundamentalNode",
+                                 {"symbols": [{"symbol": "XOM", "exchange": "NYSE"}],
+                                  "connection": {"product": "overseas_stock"}},
+                                 {"values": [{"symbol": "XOM", "exchange": "NYSE", "per": per}]},
+                                 {"type": "object", "required": ["values"]}, as_of=AS_OF)}}
+    result = await replay(graph, fixture)
+    assert result.passed, result.errors
+    assert result.outputs["filter"]["symbols"] == expected
+    assert not result.live_authorized

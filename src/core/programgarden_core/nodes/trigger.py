@@ -115,7 +115,7 @@ class ScheduleNode(BaseNode):
         {
             "pattern": "No TradingHoursFilterNode downstream for time-sensitive trading",
             "reason": "Cron fires exactly at the cron cadence, including weekends and holidays; orders may slip onto a closed market.",
-            "alternative": "Chain `ScheduleNode → TradingHoursFilterNode (from_port='passed') → trading body` so cron-after-hours is silently blocked.",
+            "alternative": "Use SessionGateNode → IfNode for immediate off-hours refusal, or TradingHoursFilterNode to wait until the window opens. Neither supplies an exchange holiday calendar.",
         },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
@@ -310,14 +310,14 @@ class TradingHoursFilterNode(BaseNode):
         ],
         "typical_scenarios": [
             "ScheduleNode → TradingHoursFilterNode → trading body (passed branch)",
-            "TradingHoursFilterNode → IfNode(reason='...') for per-reason branching",
+            "TradingHoursFilterNode blocked port → IfNode for timeout handling",
             "Start → TradingHoursFilterNode → long-running realtime subscription (cleanup at close)",
         ],
     }
     _features: ClassVar[List[str]] = [
         "Configurable start / end in HH:MM form and IANA timezone",
         "`days` whitelist supports weekend-only or weekday-only flows",
-        "Dual outputs: `passed` (within hours) and `blocked` (outside) for explicit branching",
+        "Outside the window this node waits; `passed` activates on entry and `blocked` activates only on timeout/shutdown",
         "max_wait_hours safeguards long waits — the node timeouts instead of stalling forever",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
@@ -356,11 +356,11 @@ class TradingHoursFilterNode(BaseNode):
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
             },
-            "expected_output": "Cron fires every 5 min; account query runs only during US trading hours on weekdays. Off-hours cycles hit the blocked branch and skip downstream.",
+            "expected_output": "Account query runs after the trading window opens. Outside the window the node waits up to max_wait_hours; timeout skips the trading branch.",
         },
         {
             "title": "Branch on blocked path for after-hours notification",
-            "description": "TradingHoursFilterNode forks: passed branch runs trading body, blocked branch sends an after-hours notice.",
+            "description": "TradingHoursFilterNode waits for the window: passed runs the trading body; blocked handles timeout. Use SessionGateNode plus IfNode for an immediate closed-window decision.",
             "workflow_snippet": {
                 "id": "hours-filter-notify",
                 "name": "Trading hours fork",
@@ -383,12 +383,12 @@ class TradingHoursFilterNode(BaseNode):
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
             },
-            "expected_output": "Hourly cron; within hours → account query; outside hours → SummaryDisplay renders the closed notice.",
+            "expected_output": "Within hours → account query; outside hours → wait; on timeout → SummaryDisplay renders the blocked notice.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Trigger edge from upstream (ScheduleNode or StartNode). Window is configured via start / end / timezone / days.",
-        "output_consumption": "`passed` port runs during-hours branches; `blocked` runs after-hours branches. Use edge `from_port` to pick which downstream fires.",
+        "output_consumption": "`passed` and default edges run after entering the window; explicit `blocked` edges run on timeout. Outside the window the node waits first.",
         "common_combinations": [
             "ScheduleNode → TradingHoursFilterNode → trading body",
             "TradingHoursFilterNode → OverseasStockRealMarketDataNode (start realtime only in-hours)",
@@ -413,7 +413,7 @@ class TradingHoursFilterNode(BaseNode):
             "start": FieldSchema(
                 name="start",
                 type=FieldType.STRING,
-                description="Start time in HH:MM format (24-hour). Signals before this time are blocked.",
+                description="Start time in HH:MM format (24-hour). Wait until the window opens, bounded by max_wait_hours.",
                 default="09:30",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -424,7 +424,7 @@ class TradingHoursFilterNode(BaseNode):
             "end": FieldSchema(
                 name="end",
                 type=FieldType.STRING,
-                description="End time in HH:MM format (24-hour). Signals after this time are blocked.",
+                description="Inclusive end minute in HH:MM format (24-hour). Afterward wait for the next configured window, bounded by max_wait_hours.",
                 default="16:00",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -468,31 +468,36 @@ class TradingHoursFilterNode(BaseNode):
             ),
         }
 
-    def _is_trading_hours(self) -> bool:
-        """Check if current time is within trading hours"""
+    def _is_trading_hours(self, *, as_of: Optional[datetime] = None) -> bool:
+        """Use the live window predicate with an optional aware replay instant."""
+        if as_of is not None and (as_of.tzinfo is None or as_of.utcoffset() is None):
+            raise ValueError("Trading-hours instant must include a timezone")
         try:
             import pytz
         except ImportError:
-            # pytz 없으면 UTC 기준으로 체크
-            now = datetime.utcnow()
-            tz = None
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self.timezone)
         else:
             tz = pytz.timezone(self.timezone)
-            now = datetime.now(tz)
+        now = as_of.astimezone(tz) if as_of is not None else datetime.now(tz)
         
         # 요일 체크
         day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-        active_weekdays = [day_map[d.lower()] for d in self.days if d.lower() in day_map]
+        if not self.days or any(d.lower() not in day_map for d in self.days):
+            raise ValueError("Trading days must use explicit weekday names")
+        active_weekdays = [day_map[d.lower()] for d in self.days]
+        # Reject malformed windows even on an inactive weekday.
+        import re
+        # H:MM and HH:MM are both unambiguous ("9:30" was accepted before 2.1.0).
+        if any(not isinstance(value, str) or not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", value)
+               for value in (self.start, self.end)):
+            raise ValueError("Trading-hours window requires HH:MM times")
+        start_h, start_m = map(int, self.start.split(":"))
+        end_h, end_m = map(int, self.end.split(":"))
+        if (end_h, end_m) < (start_h, start_m):
+            raise ValueError("Use SessionGateNode for an overnight window")
         if now.weekday() not in active_weekdays:
             return False
-        
-        # 시간 체크
-        try:
-            start_h, start_m = map(int, self.start.split(":"))
-            end_h, end_m = map(int, self.end.split(":"))
-        except ValueError:
-            # 파싱 실패 시 통과
-            return True
         
         current_minutes = now.hour * 60 + now.minute
         start_minutes = start_h * 60 + start_m
@@ -513,7 +518,7 @@ class TradingHoursFilterNode(BaseNode):
         # dry_run: 거래시간 대기 없이 즉시 통과
         if getattr(context, "is_dry_run", False):
             context.log("info", "[dry_run] TradingHoursFilter bypassed", self.id)
-            return {"passed": True, "reason": "dry_run_bypass"}
+            return {"passed": True, "blocked": False, "reason": "dry_run_bypass"}
 
         check_interval = 60  # 1분마다 체크
         wait_start = _time.monotonic()
@@ -523,7 +528,7 @@ class TradingHoursFilterNode(BaseNode):
             # graceful shutdown 체크
             if hasattr(context, 'is_running') and not context.is_running:
                 context.log("info", "Shutdown requested, exiting trading hours wait", self.id)
-                return {"passed": False, "reason": "shutdown"}
+                return {"passed": False, "blocked": True, "reason": "shutdown"}
 
             # M-7: max_wait_hours 초과 체크
             if (_time.monotonic() - wait_start) >= max_wait_sec:
@@ -532,10 +537,10 @@ class TradingHoursFilterNode(BaseNode):
                     f"거래시간 대기 timeout: max_wait_hours={self.max_wait_hours}h 초과",
                     self.id,
                 )
-                return {"passed": False, "reason": "timeout"}
+                return {"passed": False, "blocked": True, "reason": "timeout"}
 
             context.log("debug", f"Outside trading hours, waiting... (next check in {check_interval}s)", self.id)
             await asyncio.sleep(check_interval)
 
         context.log("info", "Trading hours active, passing through", self.id)
-        return {"passed": True}
+        return {"passed": True, "blocked": False}

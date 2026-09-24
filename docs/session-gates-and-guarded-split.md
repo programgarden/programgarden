@@ -5,6 +5,15 @@ waiting filter; choose it when waiting until opening is intended. SessionGate
 uses its own current UTC clock converted through an IANA timezone. It does not
 accept a workflow-controlled clock or bypass the decision in dry-run mode.
 
+`TradingHoursFilterNode` routes its `passed` port and default edges only after
+entering the window. A timeout returns `passed=false, blocked=true`; only an
+explicit `blocked` edge is eligible. A shutdown result also sets `blocked`, but
+does not override job cancellation. It is not an immediate outside-hours signal.
+Disabled schedules (`trigger=false`) skip their dependent branches. These guards
+apply to startup, Split items and realtime re-execution. Independent branches
+remain eligible; an unrelated input cannot bypass a refused required gate at a
+join. A merge reached by the selected alternative branch remains eligible.
+
 ```json
 {
   "id": "session",

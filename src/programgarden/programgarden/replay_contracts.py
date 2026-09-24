@@ -8,11 +8,38 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+import json
 import math
 import re
 from typing import Any
 
 CONTRACT_VERSION = "replay-contract-1"
+_OBSERVED_LIMIT = 200
+
+
+def _observed_detail(value: Any, path: str, kind: str) -> dict[str, Any]:
+    """Secret-free evidence for a failed assertion: the observed value only.
+
+    Carries the candidate's/actual value at ``path`` (bounded) and the kind of
+    constraint that failed — NEVER the expected value, so the oracle stays
+    hidden. The observed value is the model's own output/data, not the oracle.
+    """
+    if isinstance(value, str):
+        observed = value
+    else:
+        try:
+            observed = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                  allow_nan=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            observed = str(value)
+    if len(observed) > _OBSERVED_LIMIT:
+        observed = observed[:_OBSERVED_LIMIT] + "…(truncated)"
+    return {"path": path, "observed": observed, "constraint_kind": kind,
+            "observed_type": type(value).__name__}
+
+
+def _fail(path: str, reason: str, value: Any, kind: str):
+    return ContractViolation(path, reason, "REPLAY_CONTRACT_FAILED", _observed_detail(value, path, kind))
 _KEYS = frozenset({"type", "nullable", "required", "properties", "items", "enum",
                    "minimum", "maximum", "minItems", "maxItems", "minLength",
                    "maxLength", "const", "additionalProperties", "format",
@@ -22,12 +49,18 @@ _TYPES = {"object": dict, "array": list, "string": str, "number": (int, float),
 
 
 class ContractViolation(ValueError):
-    def __init__(self, path: str, reason: str, code: str = "REPLAY_CONTRACT_FAILED"):
-        self.path, self.reason, self.code = path, reason, code
+    def __init__(self, path: str, reason: str, code: str = "REPLAY_CONTRACT_FAILED",
+                 detail: dict[str, Any] | None = None):
+        self.path, self.reason, self.code, self.detail = path, reason, code, detail
         super().__init__(f"{path}: {reason}")
 
-    def as_dict(self) -> dict[str, str]:
-        return {"code": self.code, "path": self.path, "message": str(self)}
+    def as_dict(self) -> dict[str, Any]:
+        # `detail` is structured, secret-free evidence (e.g. a field-level diff)
+        # the host relays to the model verbatim, never a truncated message string.
+        result: dict[str, Any] = {"code": self.code, "path": self.path, "message": str(self)}
+        if self.detail is not None:
+            result["detail"] = self.detail
+        return result
 
 
 def finite_json(value: Any, path: str = "$", depth: int = 0) -> None:
@@ -55,9 +88,14 @@ def finite_json(value: Any, path: str = "$", depth: int = 0) -> None:
 def check_contract(value: Any, schema: dict[str, Any], path: str = "$") -> None:
     """Validate a finite JSON value without coercion; raise at the first defect."""
     finite_json(value, path)
+    validate_contract(schema)
+    _check(value, schema, path, 0)
+
+
+def validate_contract(schema: dict[str, Any]) -> None:
+    """Check an independently prepared schema before any candidate exists."""
     finite_json(schema, "contract")
     _validate_schema(schema, "contract", 0)
-    _check(value, schema, path, 0)
 
 
 def _literal_equal(left, right):
@@ -139,34 +177,39 @@ def _check(value: Any, schema: dict[str, Any], path: str, depth: int) -> None:
     matches = (value is None and schema.get("nullable") is True) or any(isinstance(value, _TYPES[k]) and
                   not (k in ("number", "integer") and isinstance(value, bool)) for k in kinds)
     if not matches:
-        raise ContractViolation(path, f"Expected {kind}, received {type(value).__name__}")
+        raise _fail(path, f"Expected {kind}, received {type(value).__name__}", value, "type")
     if "const" in schema and not _literal_equal(value,schema["const"]):
-        raise ContractViolation(path, "Value does not match the required identity")
+        raise _fail(path, "Value does not match the required identity", value, "identity")
     if "enum" in schema and not any(_literal_equal(value,v) for v in schema["enum"]):
-        raise ContractViolation(path, "Value is outside the allowed enumeration")
+        raise _fail(path, "Value is outside the allowed enumeration", value, "enum")
     if isinstance(value, dict):
         properties, required = schema.get("properties", {}), schema.get("required", [])
         if not isinstance(properties, dict) or not isinstance(required, list) or any(not isinstance(k, str) for k in required):
             raise ContractViolation(path, "Invalid object contract", "REPLAY_CONTRACT_UNSUPPORTED")
         for key in required:
             if key not in value:
-                raise ContractViolation(f"{path}.{key}", "Required field is absent")
+                # The observed value is the absent key's presence, not the oracle:
+                # report which keys ARE present so the model can see what it emitted.
+                raise ContractViolation(f"{path}.{key}", "Required field is absent",
+                    "REPLAY_CONTRACT_FAILED", {"path": f"{path}.{key}", "observed": "<absent>",
+                    "constraint_kind": "required", "observed_type": "absent",
+                    "present_keys": sorted(value)[:32]})
         for key, item in value.items():
             if key in properties:
                 _check(item, properties[key], f"{path}.{key}", depth + 1)
             elif schema.get("additionalProperties") is False:
-                raise ContractViolation(f"{path}.{key}", "Undeclared field")
+                raise _fail(f"{path}.{key}", "Undeclared field", item, "unexpected")
     elif isinstance(value, list):
         for key, valid in (("minItems", len(value) >= schema.get("minItems", 0)),
                            ("maxItems", len(value) <= schema.get("maxItems", len(value)))):
             if not valid:
-                raise ContractViolation(path, f"Array violates {key}")
+                raise _fail(path, f"Array violates {key}", value, "length")
         if "items" in schema:
             for index, item in enumerate(value):
                 _check(item, schema["items"], f"{path}[{index}]", depth + 1)
     elif type(value) in (float, int):
         if value < schema.get("minimum", value) or value > schema.get("maximum", value):
-            raise ContractViolation(path, "Number is outside the allowed range")
+            raise _fail(path, "Number is outside the allowed range", value, "range")
         if "decimalPlaces" in schema:
             places = schema["decimalPlaces"]
             if type(places) is not int or not 0 <= places <= 18:
@@ -176,19 +219,19 @@ def _check(value: Any, schema: dict[str, Any], path: str, depth: int) -> None:
             except InvalidOperation as exc:
                 raise ContractViolation(path, "Invalid decimal") from exc
             if precision > places:
-                raise ContractViolation(path, "Number exceeds the allowed decimal precision")
+                raise _fail(path, "Number exceeds the allowed decimal precision", value, "precision")
     elif isinstance(value, str):
         if not schema.get("minLength", 0) <= len(value) <= schema.get("maxLength", len(value)):
-            raise ContractViolation(path, "String length violates the contract")
+            raise _fail(path, "String length violates the contract", value, "length")
         if "format" in schema:
             if schema["format"] != "date-time":
                 raise ContractViolation(path, "Unsupported format", "REPLAY_CONTRACT_UNSUPPORTED")
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             except ValueError as exc:
-                raise ContractViolation(path, "Expected an ISO timestamp") from exc
+                raise _fail(path, "Expected an ISO timestamp", value, "format") from exc
             if parsed.tzinfo is None or parsed.utcoffset() is None:
-                raise ContractViolation(path, "Timestamp must include its timezone")
+                raise _fail(path, "Timestamp must include its timezone", value, "format")
 
 
 def check_observation_identity(actual: dict[str, Any], expected: dict[str, Any]) -> None:

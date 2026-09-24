@@ -56,6 +56,8 @@ def _get_nested_value(obj: Any, path: str) -> Any:
             return None
         if isinstance(current, dict):
             current = current.get(key)
+        elif isinstance(current, NodeOutputProxy) and isinstance(current._data, dict) and key in current._data:
+            current = current._data[key]  # port before helper method (see _eval_node)
         else:
             current = getattr(current, key, None)
     return current
@@ -941,6 +943,15 @@ class SafeEvaluator:
             obj = self._eval_node(node.value)
             if isinstance(obj, dict):
                 return obj.get(node.attr)
+            # An output PORT wins over a proxy helper of the same name: a node
+            # whose port is called `count` (OpenOrdersNode), `sum`, `first`, `last`,
+            # `map` or `filter` must resolve to the port value, not to the bound
+            # helper method (observed 2026-09-24: `{{ nodes.open_orders.count }}`
+            # returned `NodeOutputProxy.count` and the CodeNode input could not be
+            # serialized — "Object of type method is not JSON serializable").
+            if isinstance(obj, NodeOutputProxy) and isinstance(obj._data, dict) and node.attr in obj._data:
+                value = obj._data[node.attr]
+                return NodeOutputProxy(value) if isinstance(value, list) else value
             return getattr(obj, node.attr, None)
 
         # 인덱싱 (arr[0], dict["key"])
@@ -952,6 +963,15 @@ class SafeEvaluator:
         # 함수 호출
         if isinstance(node, ast.Call):
             func = self._eval_node(node.func)
+            if not callable(func) and isinstance(node.func, ast.Attribute):
+                # `{{ nodes.open_orders.count() }}`: the bare attribute resolves to
+                # the `count` PORT (see the Attribute branch), but a CALL of that
+                # name still means the proxy helper, so workflows written against
+                # the helper keep working on nodes that also declare the port.
+                owner = self._eval_node(node.func.value)
+                helper = getattr(owner, node.func.attr, None) if isinstance(owner, NodeOutputProxy) else None
+                if callable(helper):
+                    func = helper
             if not callable(func):
                 raise ExpressionError(f"호출 불가능한 객체: {func}")
             args = [self._eval_node(arg) for arg in node.args]

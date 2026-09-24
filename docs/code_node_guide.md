@@ -72,6 +72,15 @@ CodeNode의 출력은 **타입 포트 매칭으로 소비되지 않습니다.** 
 
 > ⚠️ 타입드 노드(주문·조건)로 흘릴 땐 **반드시 표준 심볼 배열** `[{symbol, exchange, ...}]` 모양을 반환하세요. 모양이 틀리면 CodeNode가 아니라 그걸 읽는 타입드 노드에서 실패합니다. 예제 `88-code-node-symbol-passthrough` 참조.
 
+### 예약된 최상위 출력 키 — `error` / `reason` 금지
+
+`error` 와 `reason` 은 **엔진 예약어**입니다. 라이브 런타임과 리플레이 검증 모두 최상위 출력의 `error`(참 값)와 `reason`(`no_symbol`/`no_price`/`invalid_input`)을 **노드 실행 실패**로 간주합니다. 따라서 이 이름으로 출력 포트를 선언하면(또는 최상위 반환 dict 에 그 키를 담으면) 정상 결과가 엔진 오류로 읽혀 챗봇이 있지도 않은 계산 결함을 고치려 헤맵니다.
+
+- ❌ `outputs: [{"name": "error"}]` 선언 후 `return {"error": "..."}`
+- ✅ 다른 이름(`status`/`note`/`detail`)을 쓰거나, 진단 정보를 중첩 객체 안에 담으세요: `return {"result": {"status": "skipped", "note": "..."}}`.
+
+리플레이가 이 실패를 낼 때는 이제 진단에 `detail = {"reserved_key": "error"|"reason", "value": <노드 출력 미리보기>, "declared_output_port": <bool>}` 를 실어 **무엇이 예약어와 충돌했는지** 명확히 알려줍니다(값은 노드 자신의 출력 텍스트이며 비밀이 아닙니다).
+
 ## 5. context — 읽기 전용 스크럽 컨텍스트
 
 `execute`의 세 번째 인자 `context`는 **읽기 전용**이며, 안전한 것만 노출합니다.
@@ -89,7 +98,7 @@ async def execute(data, params, context):
 CodeNode 코드는 **항상** 다음 4계층을 거칩니다. 끄는 공개 스위치는 없습니다.
 
 1. **스크럽 컨텍스트** — credential 접근 경로 자체를 제거(§5).
-2. **제한 builtins + AST 차단목록** — `eval`/`exec`/`getattr`/`open` 등 제거 + 화이트리스트 `__import__`(순수 계산용 stdlib: math/statistics/json/datetime/…만). AST로 위험 import(`os`/`socket`/`urllib`/`subprocess`/…), introspection dunder(`__class__`/`__globals__`/…), 밑줄 attribute 접근을 차단.
+2. **제한 builtins + AST 차단목록** — `eval`/`exec`/`getattr`/`open` 등 제거 + 화이트리스트 `__import__`(순수 계산용 stdlib: math/statistics/json/datetime/…만). AST로 위험 import(`os`/`socket`/`urllib`/`subprocess`/…), introspection dunder(`__class__`/`__globals__`/…), 밑줄 **attribute** 접근(`x._os` 등 모듈 내부 재노출)을 차단. **단일 밑줄 문자열 리터럴은 허용됩니다** — `balance.get("_partial_failure")` / `balance["_partial_failure"]` 처럼 네이티브 데이터 마커(dict 키)를 읽는 정상 용법이기 때문입니다. 여전히 차단: `__dunder__` 문자열, 차단 재노출명(`"os"`/`"_os"`/`"system"`/…), attribute-walk 포맷 필드. (getattr/attrgetter/format 이 별도로 차단되므로 밑줄 문자열만으로는 attribute 접근으로 바뀌지 못합니다.)
 3. **바인딩 봉쇄** — `data`/`params`에 credential/secret 유사 소스를 참조하지 못하게 검증.
 4. **subprocess 격리** — 코드는 **앱키 없는 자식 프로세스**에서 실행됩니다. 자식 입력은 credential-free 스냅샷만, 결과는 JSON만 왕복.
 

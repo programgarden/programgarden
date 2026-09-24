@@ -69,11 +69,34 @@ def test_object_graph_walk_blocked(code):
     "def execute(d, p, c):\n    return '{0.__class__}'.format(d)",
     "import statistics\ndef execute(d, p, c):\n    return '{0.sys}'.format(statistics)",
     "import statistics\ndef execute(d, p, c):\n    return f'{statistics.sys}'",
-    "def execute(d, p, c):\n    return '_os'",           # would feed a getattr substitute
+    "def execute(d, p, c):\n    return '_os'",           # '_os'->'os' is a blocked re-export
+    "def execute(d, p, c):\n    return '_sys'",           # '_sys'->'sys' is a blocked re-export
     "def execute(d, p, c):\n    return '__class__'",
 ])
 def test_string_attribute_obfuscation_blocked(code):
     assert _screen(code).error_code == "CODE_NODE_FORBIDDEN"
+
+
+# ── single-underscore native data markers are legitimate dict keys ──────────
+
+@pytest.mark.parametrize("code", [
+    # The documented native failure marker read as a dict key (the reported case).
+    "def execute(d, p, c):\n    return {'r': d.get('_partial_failure')}",
+    "def execute(d, p, c):\n    return {'r': d['_partial_failure']}",
+    "def execute(d, p, c):\n    return {'r': d.get('_source'), 's': '_pnl_rate_evidence'}",
+])
+def test_single_underscore_data_markers_allowed(code):
+    assert _screen(code).ok, _screen(code).message
+
+
+def test_underscore_marker_string_cannot_be_weaponized():
+    # Even with '_os' as a string allowed nowhere and getattr blocked, the string
+    # relaxation does not reopen a getattr/attrgetter escape via an underscore key.
+    for code in (
+        "def execute(d, p, c):\n    return getattr(c, '_partial_failure')",
+        "import operator\ndef execute(d, p, c):\n    return operator.attrgetter('_partial_failure')(c)",
+    ):
+        assert _screen(code).error_code == "CODE_NODE_FORBIDDEN"
 
 
 # ── shell / process / network reachability ─────────────────────────────────
