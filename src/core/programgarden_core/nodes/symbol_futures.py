@@ -133,7 +133,7 @@ class OverseasFuturesSymbolQueryNode(BaseNode):
                     {"id": "symbols", "type": "OverseasFuturesSymbolQueryNode", "futures_exchange": "6", "futures_contract_month": "front", "max_results": 50},
                     {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.symbols.symbols }}'},
                     {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},

@@ -1,8 +1,29 @@
 ## [1.31.1] - 2026-09-22
 
-## Unreleased
+## [2.1.0] - 2026-09-24
+
+### Added
+- Reserved output keys (`error`, and `reason` in no_symbol/no_price/invalid_input)
+  that mark a node failure are explained in replay diagnostics with a bounded,
+  secret-free preview of the node's own output and whether a CodeNode declared
+  that key as a port.
 
 ### Fixed
+- Expression evaluation: an output port that shares its name with a
+  NodeOutputProxy helper (for example `count`) resolves to the port value, not
+  the helper method, so `{{ nodes.open_orders.count }}` compares as a number.
+- CodeNode accepts single-underscore literals in inline code; contract
+  diagnostics name the failing scenario.
+- Overseas-stock order node: a quote-derived limit price is quantized to the LS
+  precision rule (two decimals at or above USD 1) before submission, instead of
+  sending the raw quote the broker refuses (rsp_cd 00891).
+- Remove the nonexistent quote output ports from the three REST market-data
+  schemas; native output fields are compared against the real values-only
+  envelope.
+- Example snippets in other node schemas (symbol query, new order, position
+  sizing, SQLite, watchlist, display pitfalls) that still bound the removed
+  `value` port now bind `values` / `values[0].price`, so every catalog example
+  validates again; the registry node-count guard reflects the 72 core nodes.
 - Remove the nonexistent singular `value` output from the three REST market-data
   schemas. Their live executor returns only `values`; schema discovery must not
   advertise a field that always resolves to missing data. Existing runtime

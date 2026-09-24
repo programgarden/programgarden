@@ -113,7 +113,7 @@ class WatchlistNode(BaseNode):
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
                     {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.watchlist.symbols }}'},
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
                 {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},

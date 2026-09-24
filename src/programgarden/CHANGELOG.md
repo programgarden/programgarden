@@ -1,6 +1,16 @@
-## Unreleased
+## [2.1.0] - 2026-09-24
 
 ### Added
+- Incremental replay validation: `incremental_build` / `validation_replay` and
+  the `replay_*` modules replay a workflow node by node against independently
+  recorded fixtures with a simulated order book, including recorded subsequent
+  events (schedule ticks, realtime market data, order events) through the real
+  scheduler and modify/cancel completion evidence. Credential-free; no live
+  provider call.
+- Replay diagnostics report field-level recording mismatches, reserved-key node
+  failures, unsupported recorded event types (with the node's emittable types),
+  duplicate ids or count mismatches in open-orders snapshots, and null broker
+  identity keys treated as absent.
 - Describe native raw-source fixture envelopes and SDK field contracts for
   independent scenario preparation; no live provider call or PASS implication.
 - Validate independently prepared assertion schemas before candidate execution.
@@ -8,6 +18,17 @@
   replay proof without discarding validation attempt history or task identity.
 
 ### Fixed
+- Simulated order ids are node-based (`SIM-<node>`, `SIM-<node>#n`,
+  `SIM-REPLACE-<modify node>`) instead of count-based, so a suite can name them.
+- The open-orders snapshot shape is enforced at the recorded node; initial
+  fixture expectations are judged on the main-flow snapshot, not the post-event
+  final state (realtime snapshot retention across a re-trigger is locked by
+  tests).
+- Replay mirrors the live executor: no held-symbol refusal for stock buys;
+  replay error-key semantics match the live runtime.
+- Overseas-stock orders: honour modify `price_type`; quantize a quote-derived
+  limit price to the LS precision rule; accept the broker's US business date on
+  empty pending queries; map a single-character `BnsTpCode` side.
 - Preserve the initial simulated cash/holdings when a trading graph takes a
   no-signal branch. No order submission is needed to verify unchanged state.
 - Separate consecutive validation failures from successful edits. Node/final
@@ -16,6 +37,11 @@
 - Enforce disabled schedules and trading-hours decisions in startup, Split and
   realtime traversals. A timed-out time filter cannot run its trading branch;
   explicit blocked branches and independent work remain distinct.
+
+### Changed
+- The FMP provider is retired from incremental authoring as well.
+- deps: programgarden-core ^2.1.0, programgarden-community ^2.1.0
+  (programgarden-finance stays ^2.0.1; finance is unchanged in this release).
 
 ## [2.0.1] - 2026-09-22
 

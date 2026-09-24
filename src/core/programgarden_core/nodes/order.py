@@ -438,7 +438,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "fields": ["price"]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold_threshold": 30}},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.value.price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.values[0].price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
                     {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "limit", "order": "{{ nodes.sizing.order }}"},
                 ],
                 "edges": [

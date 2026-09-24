@@ -190,7 +190,7 @@ class TableDisplayNode(BaseDisplayNode):
         {
             "pattern": "Binding a single dict (not a list) to TableDisplayNode data",
             "reason": "TableDisplayNode expects list[dict]. A plain dict renders as a single-column table with keys, which is rarely useful.",
-            "alternative": "Wrap single records in a list ([{{ nodes.market.value }}]) or use SummaryDisplayNode for single-object display.",
+            "alternative": "Wrap single records in a list ([{{ nodes.market.values[0] }}]) or use SummaryDisplayNode for single-object display.",
         },
         {
             "pattern": "Setting limit=100 for a live dashboard that updates every second",

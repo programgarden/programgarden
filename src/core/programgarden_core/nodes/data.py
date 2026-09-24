@@ -212,7 +212,7 @@ class SQLiteNode(BaseNode):
                         "operation": "simple",
                         "table": "hwm",
                         "action": "upsert",
-                        "values": {"symbol": "{{ nodes.market.value.symbol }}", "peak": '{{ nodes.market.value.price }}'},
+                        "values": {"symbol": "{{ nodes.market.values[0].symbol }}", "peak": '{{ nodes.market.values[0].price }}'},
                         "on_conflict": "symbol",
                     },
                     {
