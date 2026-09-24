@@ -29,10 +29,14 @@ def list_node_types(
         [{"node_type": "ConditionNode", "display_name": "조건 노드", ...}]
     """
     from programgarden_core import NodeTypeRegistry
+    from programgarden.replay_semantics import attach_execution
 
     registry = NodeTypeRegistry()
     schemas = registry.list_schemas(category=category, locale=locale)
-    return [schema.model_dump() for schema in schemas]
+    # Attach the machine-readable execution-semantics block and merge its rendered
+    # lines into `features` (attach_execution returns a copy — the cached schema is
+    # untouched).
+    return [attach_execution(schema).model_dump() for schema in schemas]
 
 
 def get_node_schema(node_type: str, locale: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -51,11 +55,12 @@ def get_node_schema(node_type: str, locale: Optional[str] = None) -> Optional[Di
         {"node_type": "ConditionNode", "display_name": "i18n:nodes.ConditionNode.name", ...}
     """
     from programgarden_core import NodeTypeRegistry
+    from programgarden.replay_semantics import attach_execution
 
     registry = NodeTypeRegistry()
     schema = registry.get_schema(node_type, locale=locale)
     if schema:
-        return schema.model_dump()
+        return attach_execution(schema).model_dump()
 
     return None
 
