@@ -106,6 +106,37 @@ class ReplayResult:
     setup_executed: list[str] = field(default_factory=list)
     node_under_test: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
+    # Outputs/executed captured at the END of the main flow, BEFORE any events frame
+    # re-executes or clears a downstream branch. `outputs`/`executed` above are the
+    # FINAL (post-event) state; the INITIAL fixture's expected/must_execute describe
+    # the initial run, so they are judged against these. Left None when the run has
+    # no events (or the main flow raised) — consumers then fall back to the final state.
+    main_outputs: dict[str, Any] | None = None
+    main_executed: list[str] | None = None
+
+    @property
+    def initial_outputs(self) -> dict[str, Any]:
+        """Node outputs as of the end of the main flow (the initial run).
+
+        A subsequent events frame may re-execute or, when a ThrottleNode/gate blocks,
+        CLEAR a downstream node's outputs (executor M-8 clearing). `outputs` is the
+        post-event final state; the initial fixture's `expected` describes the initial
+        run, so it is evaluated here. Falls back to the final `outputs` when no events
+        were replayed (final == initial) or the main flow never completed.
+        """
+        return self.main_outputs if self.main_outputs is not None else self.outputs
+
+    @property
+    def initial_executed(self) -> list[str]:
+        """Nodes executed during the main flow only, not the union with event frames.
+
+        The initial fixture's `must_execute` is a main-flow path claim; a node that
+        runs only in a later frame does not satisfy it. Falls back to the final
+        executed list (plus setup for a standalone node run) when no events replayed.
+        """
+        if self.main_executed is not None:
+            return self.main_executed
+        return [*self.executed, *self.setup_executed]
 
 
 class ReplayContext(ExecutionContext):
@@ -354,6 +385,14 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
                 runner.orders = ReplayOrders(fixture)
             await job._execute_main_flow()
             if fixture.get("events") and not outcome.errors:
+                # Freeze the initial-run outputs/executed before any events frame
+                # re-executes or clears (executor M-8) a downstream branch, so the
+                # INITIAL fixture's expected/must_execute are judged on the initial
+                # run rather than the post-event final state. deepcopy because the
+                # frames mutate `context._outputs` in place.
+                outcome.main_outputs = {node: deepcopy(context.get_all_outputs(node))
+                                        for node in resolved.nodes}
+                outcome.main_executed = list(outcome.executed)
                 from programgarden.replay_events import replay_events
                 await replay_events(job, runner, fixture, outcome)
 
@@ -387,6 +426,8 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
             for error in job.get_structured_errors():
                 outcome.errors.append(error.model_dump(mode="json"))
             finite_json(outcome.outputs)
+            if outcome.main_outputs is not None:
+                finite_json(outcome.main_outputs, "main_outputs")
         except Exception as exc:
             outcome.errors.append(exc.as_dict() if isinstance(exc, ContractViolation) else {
                 "code": "REPLAY_EVIDENCE_FAILED", "message": type(exc).__name__ + ": " + str(exc)})

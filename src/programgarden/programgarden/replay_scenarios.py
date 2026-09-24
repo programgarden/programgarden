@@ -28,10 +28,15 @@ def check_final_expectations(result, fixture, graph):
     expected = fixture.get("expected")
     if not isinstance(expected,dict) or not expected:
         raise ContractViolation("expected", "Final replay requires independent expected-result assertions", "REPLAY_EXPECTATIONS_REQUIRED")
+    # The initial fixture's expectations describe the INITIAL run: evaluate them
+    # against the outputs/executed captured at the end of the main flow, before any
+    # events frame re-executed or cleared a downstream branch. Frame expectations
+    # (below) use each frame's own post-frame snapshot; the simulated book stays
+    # cumulative on the FINAL state.
     for node_id, schema in expected.items():
-        check_contract(result.outputs.get(node_id), schema, f"{node_id}.expected")
+        check_contract(result.initial_outputs.get(node_id), schema, f"{node_id}.expected")
     for node_id in fixture.get("must_execute", []):
-        if node_id not in result.executed:
+        if node_id not in result.initial_executed:
             raise ContractViolation(node_id, "Required path was not reached")
     from programgarden.replay_events import checked_events
     events = checked_events(fixture)
@@ -102,11 +107,13 @@ def scenario_receipt(result, fixture, graph):
         if passed:
             # Use existing independent value assertions as soon as their node is
             # actually executed. Waiting for finalization would mark a numerically
-            # wrong (but schema-valid) dependency VERIFIED in the meantime.
-            reached = set(result.executed) | set(result.setup_executed)
+            # wrong (but schema-valid) dependency VERIFIED in the meantime. The
+            # initial fixture's expected describes the initial run, so gate on the
+            # main-flow executed set and read the pre-events (initial) outputs.
+            reached = set(result.initial_executed)
             for node_id, schema in fixture.get("expected", {}).items():
                 if node_id in reached:
-                    check_contract(result.outputs.get(node_id), schema, f"{node_id}.expected")
+                    check_contract(result.initial_outputs.get(node_id), schema, f"{node_id}.expected")
             declared = fixture.get("events", [])
             for event in result.events:
                 index = event["index"]

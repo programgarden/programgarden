@@ -24,7 +24,9 @@ def counter():
     def expectation(count):
         return {"count": {"type": "object", "required": ["rows"], "properties": {
             "rows": {"type": "array", "const": [{"count": count}]}}}}
-    fixture = {"as_of": AS_OF, "expected": expectation(3), "must_execute": ["count"], "events": [
+    # The initial fixture's expected is the INITIAL run: one insert, so count == 1.
+    # Each schedule_tick frame appends again and asserts its own post-frame count (2, 3).
+    fixture = {"as_of": AS_OF, "expected": expectation(1), "must_execute": ["count"], "events": [
         {"as_of": f"2026-09-22T14:0{minute}:00Z", "type": "schedule_tick", "source_node_id": "schedule",
          "expected": expectation(minute + 1), "must_execute": ["count"]} for minute in (1, 2)]}
     return workflow, fixture
@@ -141,17 +143,24 @@ async def test_real_market_events_honor_if_and_clear_the_previous_branch():
             {"data": bars, "ohlcv_data": bars, "symbols": [feed["symbol"]]},
             {"type": "object", "required": ["data", "ohlcv_data", "symbols"]}, as_of=at)
     at = "2026-09-22T14:00:01Z"
+    # Initial run: price 110 > 100 so the guard takes the `yes` branch (`no` is
+    # skipped), so the INITIAL expected asserts `yes` and must_execute lists only it.
+    # The 90-price frame flips the guard to `no` AND clears the stale `yes` output —
+    # asserted in the frame's own expected, evaluated on the post-frame snapshot.
     fixture = {"as_of": AS_OF, "nodes": {"feed": record(AS_OF, 110),
         "broker": recording("OverseasStockBrokerNode", {}, {"connection": connection},
                             {"type": "object", "required": ["connection"]}, as_of=AS_OF)},
-        "expected": {"no": {"type": "object", "const": {"result": 0}}},
-        "must_execute": ["yes", "no"], "events": [{"as_of": at, "type": "market_data", "source_node_id": "feed",
+        "expected": {"yes": {"type": "object", "const": {"result": 1}}},
+        "must_execute": ["yes"], "events": [{"as_of": at, "type": "market_data", "source_node_id": "feed",
             "nodes": {"feed": record(at, 90)}, "must_execute": ["feed", "last", "guard", "no"],
             "expected": {"no": {"type": "object", "const": {"result": 0}},
                          "yes": {"type": "object", "const": {}}}}]}
     result = await replay(workflow, fixture)
     assert result.passed, result.errors
     check_final_expectations(result, fixture, workflow)
+    # The initial run took `yes`; the frame re-evaluated to `no` and cleared `yes`.
+    assert result.initial_outputs["yes"] == {"result": 1} and "no" not in result.initial_executed
+    assert result.outputs["yes"] == {} and result.outputs["no"] == {"result": 0}
     assert result.events[0]["executed"] == ["feed", "last", "guard", "no"]
 
 
