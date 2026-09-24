@@ -1,5 +1,3 @@
-## [1.31.1] - 2026-09-22
-
 ## [2.1.0] - 2026-09-24
 
 ### Added
@@ -12,14 +10,11 @@
 - Expression evaluation: an output port that shares its name with a
   NodeOutputProxy helper (for example `count`) resolves to the port value, not
   the helper method, so `{{ nodes.open_orders.count }}` compares as a number.
-- CodeNode accepts single-underscore literals in inline code; contract
-  diagnostics name the failing scenario.
-- Overseas-stock order node: a quote-derived limit price is quantized to the LS
-  precision rule (two decimals at or above USD 1) before submission, instead of
-  sending the raw quote the broker refuses (rsp_cd 00891).
-- Remove the nonexistent quote output ports from the three REST market-data
-  schemas; native output fields are compared against the real values-only
-  envelope.
+- CodeNode accepts single-underscore literals in inline code (documented
+  `_partial_failure` / `_source` keys can be read).
+- Overseas-stock order node guidance states the LS price precision rule (two
+  decimals at or above USD 1, rsp_cd 00891); the quantization itself lives in
+  the programgarden executor (2.1.0).
 - Example snippets in other node schemas (symbol query, new order, position
   sizing, SQLite, watchlist, display pitfalls) that still bound the removed
   `value` port now bind `values` / `values[0].price`, so every catalog example

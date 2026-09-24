@@ -25,7 +25,8 @@
   final state (realtime snapshot retention across a re-trigger is locked by
   tests).
 - Replay mirrors the live executor: no held-symbol refusal for stock buys;
-  replay error-key semantics match the live runtime.
+  replay error-key semantics match the live runtime; contract diagnostics name
+  the failing scenario.
 - Overseas-stock orders: honour modify `price_type`; quantize a quote-derived
   limit price to the LS precision rule; accept the broker's US business date on
   empty pending queries; map a single-character `BnsTpCode` side.
