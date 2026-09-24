@@ -178,6 +178,8 @@ class SQLiteNode(BaseNode):
         "Databases are scoped to /app/data/ directory; db_name selects the file",
         "Has a dedicated replay adapter (execute_sqlite) and takes no external recording; it runs against a file-backed database rooted at the run's storage directory",
         "State written on one tick or event frame persists to that database and stays visible on later frames within the run, so a durable duplicate guard can be built on it",
+        "Each execution runs exactly ONE SQL statement (execute_query and every simple-mode action call db.execute once); 'CREATE TABLE …; INSERT …' in one query fails with 'You can only execute one statement at a time'",
+        "Neither mode creates a table: an insert/select into a missing table fails with 'no such table'; create it first with a separate execute_query SQLiteNode (CREATE TABLE IF NOT EXISTS …) placed upstream, then read/write it here",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
