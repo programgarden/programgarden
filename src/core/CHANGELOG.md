@@ -35,6 +35,12 @@
 - Return the declared TradingHoursFilterNode `blocked` output consistently.
   Clarify waiting, timeout and immediate SessionGate alternatives in the schema.
 
+### Changed
+- TradingHoursFilterNode validates its configuration: an instant without a
+  timezone, days that are not explicit weekday names, window times that are
+  not HH:MM, and an overnight window (end before start, use SessionGateNode)
+  now raise ValueError instead of silently passing or waiting.
+
 ## [2.0.1] - 2026-09-22
 
 ### Removed

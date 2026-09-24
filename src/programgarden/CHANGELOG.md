@@ -39,6 +39,15 @@
   explicit blocked branches and independent work remain distinct.
 
 ### Changed
+- ScreenerNode (LS branch): zero matches is now a valid no-signal result
+  instead of a live-mode RuntimeError; unsupported or malformed inputs
+  (sector names on LS, non-symbol inputs, a market-cap filter without g3190
+  master data, missing credentials, quote identity mismatches) raise
+  ValueError instead of being logged as warnings and ignored.
+- Realtime traversal: a rate-limit, throttle or node error no longer breaks
+  the whole chain; the affected node's descendants are gated and independent
+  branches continue, Split re-drive follows topological order, and stale event
+  inputs are cleared between updates.
 - The FMP provider is retired from incremental authoring as well.
 - deps: programgarden-core ^2.1.0, programgarden-community ^2.1.0
   (programgarden-finance stays ^2.0.1; finance is unchanged in this release).
