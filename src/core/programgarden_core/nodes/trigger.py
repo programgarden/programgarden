@@ -488,7 +488,9 @@ class TradingHoursFilterNode(BaseNode):
         active_weekdays = [day_map[d.lower()] for d in self.days]
         # Reject malformed windows even on an inactive weekday.
         import re
-        if any(not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) for value in (self.start, self.end)):
+        # H:MM and HH:MM are both unambiguous ("9:30" was accepted before 2.1.0).
+        if any(not isinstance(value, str) or not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", value)
+               for value in (self.start, self.end)):
             raise ValueError("Trading-hours window requires HH:MM times")
         start_h, start_m = map(int, self.start.split(":"))
         end_h, end_m = map(int, self.end.split(":"))

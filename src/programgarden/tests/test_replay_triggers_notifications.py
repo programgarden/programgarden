@@ -84,6 +84,15 @@ def test_invalid_window_never_fails_open(change):
         node._is_trading_hours(as_of=datetime.fromisoformat(AS_OF))
 
 
+@pytest.mark.parametrize("change", [{"start": "9:30"}, {"start": "9:30", "end": "9:45"}, {"end": "16:00"}])
+def test_unpadded_hours_are_still_a_valid_window(change):
+    # 2.1.0 release audit: "9:30" was accepted before the validation was added;
+    # H:MM is unambiguous, so it stays valid rather than failing live workflows.
+    from datetime import datetime
+    node = TradingHoursFilterNode(id="hours", **change)
+    assert isinstance(node._is_trading_hours(as_of=datetime.fromisoformat(AS_OF)), bool)
+
+
 @pytest.mark.asyncio
 async def test_notification_is_request_bound_and_never_calls_transport():
     from programgarden_community.nodes.messaging.telegram import TelegramNode

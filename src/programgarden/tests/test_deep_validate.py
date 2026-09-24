@@ -665,7 +665,7 @@ async def test_faithful_workflow_passes_deep_validate():
                 "type": "PositionSizingNode",
                 "symbol": "{{ item }}",
                 "balance": "{{ nodes.account.balance.orderable_amount }}",
-                "market_data": "{{ nodes.market.value }}",
+                "market_data": "{{ nodes.market.values }}",
                 "method": "fixed_percent",
                 "max_percent": 10.0,
             },

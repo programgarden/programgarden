@@ -31,3 +31,13 @@ def test_resolved_port_values_are_json_serializable():
     import json
     value = _evaluator().evaluate("{{ nodes.open_orders.count }}")
     assert json.dumps({"open_count": value}) == '{"open_count": 1}'
+
+
+def test_calling_count_still_uses_the_helper_when_a_port_shadows_it():
+    # Release audit 2026-09-24: workflows written against the helper form
+    # `{{ nodes.open_orders.count() }}` must keep working on nodes that also
+    # declare a `count` port; the bare attribute is the port, the call is the helper.
+    ev = _evaluator()
+    assert ev.evaluate("{{ nodes.open_orders.count }}") == 1
+    assert ev.evaluate("{{ nodes.open_orders.count() }}") == 1
+    assert ev.evaluate("{{ nodes.open_orders.first().count }}") == 1

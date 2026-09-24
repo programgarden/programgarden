@@ -10,6 +10,8 @@
 - Expression evaluation: an output port that shares its name with a
   NodeOutputProxy helper (for example `count`) resolves to the port value, not
   the helper method, so `{{ nodes.open_orders.count }}` compares as a number.
+  Calling the helper form on such a node (`{{ nodes.open_orders.count() }}`)
+  still invokes the helper, so existing workflows keep working.
 - CodeNode accepts single-underscore literals in inline code (documented
   `_partial_failure` / `_source` keys can be read).
 - Overseas-stock order node guidance states the LS price precision rule (two
@@ -33,8 +35,9 @@
 ### Changed
 - TradingHoursFilterNode validates its configuration: an instant without a
   timezone, days that are not explicit weekday names, window times that are
-  not HH:MM, and an overnight window (end before start, use SessionGateNode)
-  now raise ValueError instead of silently passing or waiting.
+  not H:MM / HH:MM, and an overnight window (end before start, use
+  SessionGateNode) now raise ValueError instead of silently passing or
+  waiting. Unpadded hours such as "9:30" remain valid.
 
 ## [2.0.1] - 2026-09-22
 

@@ -963,6 +963,15 @@ class SafeEvaluator:
         # 함수 호출
         if isinstance(node, ast.Call):
             func = self._eval_node(node.func)
+            if not callable(func) and isinstance(node.func, ast.Attribute):
+                # `{{ nodes.open_orders.count() }}`: the bare attribute resolves to
+                # the `count` PORT (see the Attribute branch), but a CALL of that
+                # name still means the proxy helper, so workflows written against
+                # the helper keep working on nodes that also declare the port.
+                owner = self._eval_node(node.func.value)
+                helper = getattr(owner, node.func.attr, None) if isinstance(owner, NodeOutputProxy) else None
+                if callable(helper):
+                    func = helper
             if not callable(func):
                 raise ExpressionError(f"호출 불가능한 객체: {func}")
             args = [self._eval_node(arg) for arg in node.args]
