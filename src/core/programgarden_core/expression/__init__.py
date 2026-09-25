@@ -21,6 +21,7 @@ from programgarden_core.expression.evaluator import (
     FormatNamespace,
     ListNamespace,
 )
+from programgarden_core.expression.reference import expression_reference
 
 __all__ = [
     "ExpressionEvaluator",
@@ -31,4 +32,5 @@ __all__ = [
     "StatsNamespace",
     "FormatNamespace",
     "ListNamespace",
+    "expression_reference",
 ]

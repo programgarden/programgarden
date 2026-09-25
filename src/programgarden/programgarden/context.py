@@ -3395,10 +3395,11 @@ class ExecutionContext:
         Also provides `input` variable for workflow inputs.
 
         Available variables in expressions:
-        - {{ nodeId.port }}: Node output values
-        - {{ nodes.nodeId.method() }}: Node output with method chaining 
-        - {{ item }}, {{ item.field }}: Current iteration item 
-        - {{ index }}, {{ total }}: Iteration context 
+        - {{ nodes.nodeId.port }}: Node output values (the `nodes.` prefix is
+          required — a bare `{{ nodeId.port }}` is an undefined variable)
+        - {{ nodes.nodeId.method() }}: Node output with method chaining
+        - {{ item }}, {{ item.field }}: Current iteration item
+        - {{ index }}, {{ total }}: Iteration context
         - {{ input.xxx }}: Workflow input parameters
         - {{ context.xxx }}: Runtime context parameters
         """
