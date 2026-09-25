@@ -262,9 +262,9 @@ class MyListener(BaseExecutionListener):
 
 ---
 
-## 예제: MarketStatusNode를 Tool로 등록
+## 예제: 시세 조회 노드를 Tool로 등록
 
-`MarketStatusNode` 는 LS증권 JIF 기반 실시간 장운영정보 노드이며 `is_tool_enabled=True` 입니다. AI 에이전트에 tool 로 연결하면 자연어 질의 "지금 미국장 열려있어?", "코스피 지금 열려있어?" 등에 응답할 수 있습니다.
+`OverseasStockMarketDataNode` 는 `is_tool_enabled=True` 입니다. AI 에이전트에 tool 로 연결하면 자연어 질의 "AAPL 지금 얼마야?", "테슬라 현재가 알려줘" 등에 실시간 시세로 응답할 수 있습니다.
 
 ### 워크플로우 예제
 
@@ -274,72 +274,31 @@ class MyListener(BaseExecutionListener):
     {"id": "start", "type": "StartNode"},
     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred"},
     {"id": "llm", "type": "LLMModelNode", "credential_id": "llm_cred"},
-    {"id": "market_status", "type": "MarketStatusNode", "stay_connected": false},
+    {"id": "quote", "type": "OverseasStockMarketDataNode"},
     {"id": "agent", "type": "AIAgentNode",
-     "system_prompt": "You are a market operations assistant. Answer concisely in English.",
-     "user_prompt": "Is the US market open right now?",
+     "system_prompt": "You are a market data assistant. Answer concisely in English.",
+     "user_prompt": "What is AAPL trading at right now?",
      "output_format": "text"}
   ],
   "edges": [
     {"from": "start", "to": "broker"},
-    {"from": "broker", "to": "market_status"},
+    {"from": "broker", "to": "quote"},
     {"from": "llm", "to": "agent", "type": "ai_model"},
-    {"from": "market_status", "to": "agent", "type": "tool"}
+    {"from": "quote", "to": "agent", "type": "tool"}
   ]
 }
 ```
 
-`stay_connected=false` 는 AI 의 일회성 조회에 적합합니다 (스냅샷 1회 수신 후 구독 해제).
+시세 조회 노드는 브로커 세션이 필요하므로 BrokerNode 를 먼저 연결합니다.
 
-### 자연어 질의 예제 3종
-
-**1. 미국장 상태 — NASDAQ/NYSE/Dow 등 거래소명 혼용**
+### 자연어 질의 예제
 
 ```
-사용자 (ko): "지금 나스닥 열렸어?"
-  → LLM semantic query (en): "Is the US stock market open right now?"
-  → Tool call: market_status(markets=["US"], stay_connected=false)
-  → 결과 포트: us_is_open=True + statuses[0].jstatus_label="Market open"
-  → AI 응답 (en): "Yes, the US market is currently open (regular hours).
-      NASDAQ and NYSE share a single JIF feed, both are open."
+사용자 (ko): "AAPL 지금 얼마야?"
+  → LLM semantic query (en): "What is AAPL's current price?"
+  → Tool call: quote (symbol=AAPL)
+  → 결과: 최신 시세 (현재가 / 전일 대비 / 거래량)
+  → AI 응답 (ko 답변 요청 시): "AAPL 현재가는 $XXX.XX 입니다 (전일 대비 +X.X%)."
 ```
 
-JIF 는 미국 거래소를 거래소 단위(NASDAQ/NYSE 분리)로 제공하지 않으므로 AI 는 단일 `US` 코드로 답변합니다.
-
-**2. 코스피 세션 질의**
-
-```
-사용자 (ko): "코스피 지금 열려있어?"
-  → LLM semantic query (en): "Is KOSPI open now?"
-  → Tool call: market_status(markets=["KOSPI"], stay_connected=false)
-  → 결과 포트: kospi_is_open=False, statuses[0].jstatus_label="Market closed"
-  → AI 응답 (ko 답변 요청 시): "코스피는 현재 휴장입니다 (정규장 마감 상태)."
-```
-
-"한국장" 으로 광범위하게 물으면 AI 는 `markets=["KOSPI", "KOSDAQ"]` 로 두 시장 모두 확인합니다.
-
-**3. 홍콩 오후 세션 질의**
-
-```
-사용자 (ko): "홍콩 오후장 열렸나?"
-  → LLM semantic query (en): "Is the Hong Kong afternoon session open?"
-  → Tool call: market_status(markets=["HK_PM"], stay_connected=false)
-  → 결과 포트: statuses[0].jstatus=21 → is_regular_open=True
-  → AI 응답 (en): "Yes, the Hong Kong afternoon session (HK_PM) is open.
-      The morning session (HK_AM) is already closed for the day."
-```
-
-오전/오후를 구분하지 않고 "홍콩장" 으로 물으면 `markets=["HK_AM", "HK_PM"]` 로 편의 포트 `hk_is_open` 사용.
-
-### 제한 사항: 해외선물 질의 답변 불가
-
-> **This tool does not support overseas futures markets.**
-
-해외선물 관련 질의 (CME, HKEX Futures, SGX 등) 는 JIF 범위 밖이며 Pydantic `markets` Literal validation 에서 차단됩니다.
-
-```
-사용자 (ko): "CME 오늘 열려있어?"
-  → AI 응답: "I cannot check CME status — this Tool only supports the 12 JIF
-      markets (KOSPI/KOSDAQ/KRX_FUTURES/NXT/KRX_NIGHT/US/CN/HK/JP sessions).
-      CME trading hours should be checked separately."
-```
+> Tool 로 등록할 수 있는 노드는 `is_tool_enabled=True` 인 노드입니다 (시세·펀더멘털·계좌·미체결·조건 노드 등). 각 노드의 `_ai_metadata` 가 AI 에게 언제·어떻게 호출할지 알려줍니다.

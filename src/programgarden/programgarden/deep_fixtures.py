@@ -441,19 +441,6 @@ def futures_contract_fixture(
     }
 
 
-def market_status_fixture(config: Dict[str, Any]) -> Dict[str, Any]:
-    """MarketStatusNode deep fixture (markets open).
-
-    Real shape: ``{"statuses": [{market, status}]}``.
-    """
-    return {
-        "statuses": [
-            {"market": "NASDAQ", "status": "OPEN"},
-            {"market": "NYSE", "status": "OPEN"},
-        ],
-    }
-
-
 def broker_connection_fixture(
     node_type: str,
     config: Dict[str, Any],

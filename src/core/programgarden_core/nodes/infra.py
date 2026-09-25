@@ -972,7 +972,7 @@ class IfNode(BaseNode):
         ],
         "typical_scenarios": [
             "AccountNode.balance → IfNode (>= threshold) → true: OrderNode / false: SummaryDisplayNode (insufficient funds)",
-            "FearGreedIndexNode.value → IfNode (<= 25) → true: alert / false: normal flow",
+            "CodeNode.score → IfNode (<= 25) → true: alert / false: normal flow",
             "ConditionNode.passed → IfNode (== true) → true: NewOrderNode / false: LogNode",
         ],
     }
@@ -1029,35 +1029,44 @@ class IfNode(BaseNode):
             "expected_output": "If balance ≥ 1000 the order node executes; otherwise SummaryDisplayNode renders the insufficient-funds warning.",
         },
         {
-            "title": "Extreme fear alert from external market data",
-            "description": "Fear & Greed index below 25 triggers a risk alert, otherwise the normal dashboard branch continues.",
+            "title": "Risk-score alert from a computed signal",
+            "description": "A CodeNode computes a numeric risk score on a declared 'score' port; IfNode routes to a risk alert when the score is at or below 25, otherwise the normal dashboard branch continues.",
             "workflow_snippet": {
-                "id": "if-fear-alert",
-                "name": "If fear index ≤ 25 → alert / else dashboard",
+                "id": "if-score-alert",
+                "name": "If score ≤ 25 → alert / else dashboard",
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
-                    {"id": "fgi", "type": "FearGreedIndexNode"},
-                    {"id": "if_fear", "type": "IfNode", "left": "{{ nodes.fgi.value }}", "operator": "<=", "right": 25},
-                    {"id": "alert", "type": "SummaryDisplayNode", "title": "Extreme fear detected", "data": {"value": "{{ nodes.fgi.value }}", "action": "Reduce exposure"}},
-                    {"id": "normal", "type": "SummaryDisplayNode", "title": "Market sentiment OK", "data": {"value": "{{ nodes.fgi.value }}"}},
+                    {
+                        "id": "risk",
+                        "type": "CodeNode",
+                        "outputs": [{"name": "score", "type": "number"}],
+                        "code": (
+                            "async def execute(data, params, context):\n"
+                            "    return {'score': float(params.get('score', 0))}"
+                        ),
+                        "params": {"score": 20},
+                    },
+                    {"id": "if_score", "type": "IfNode", "left": "{{ nodes.risk.score }}", "operator": "<=", "right": 25},
+                    {"id": "alert", "type": "SummaryDisplayNode", "title": "Elevated risk detected", "data": {"score": "{{ nodes.risk.score }}", "action": "Reduce exposure"}},
+                    {"id": "normal", "type": "SummaryDisplayNode", "title": "Risk level OK", "data": {"score": "{{ nodes.risk.score }}"}},
                 ],
                 "edges": [
-                    {"from": "start", "to": "fgi"},
-                    {"from": "fgi", "to": "if_fear"},
-                    {"from": "if_fear", "to": "alert", "from_port": "true"},
-                    {"from": "if_fear", "to": "normal", "from_port": "false"},
+                    {"from": "start", "to": "risk"},
+                    {"from": "risk", "to": "if_score"},
+                    {"from": "if_score", "to": "alert", "from_port": "true"},
+                    {"from": "if_score", "to": "normal", "from_port": "false"},
                 ],
                 "credentials": [],
             },
-            "expected_output": "alert SummaryDisplay renders only when the fear index ≤ 25; otherwise normal SummaryDisplay renders.",
+            "expected_output": "alert SummaryDisplay renders only when the score ≤ 25; otherwise normal SummaryDisplay renders.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Bind `left` and (usually) `right` via `{{ nodes.X.Y }}` expressions. Operators that take no right-hand side — is_empty, is_not_empty — ignore `right`.",
-        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind `{{ nodes.if.result }}` as a boolean on a later node.",
+        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind the `result` boolean on a later node, e.g. `{{ nodes.gate.result }}` for an IfNode with id `gate`. Note the node id must be a plain identifier: `if` is a Python keyword, so `{{ nodes.if.result }}` is a syntax error — use a non-keyword id, or the bracket form `{{ nodes['if'].result }}`.",
         "common_combinations": [
             "AccountNode → IfNode (balance ≥ N) → OrderNode / Notification",
-            "FearGreedIndexNode → IfNode (value ≤ 25) → alert branch",
+            "CodeNode → IfNode (score ≤ 25) → alert branch",
             "ConditionNode.passed → IfNode (== true) → order branch",
         ],
         "pitfalls": [

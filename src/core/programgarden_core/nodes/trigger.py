@@ -310,7 +310,7 @@ class TradingHoursFilterNode(BaseNode):
             "Enforce a start-of-day / end-of-day window around a fixed trading body",
         ],
         "when_not_to_use": [
-            "Actual exchange status (holidays, circuit breakers) — use MarketStatusNode (JIF-backed) for authoritative market state",
+            "Actual exchange status (holidays, circuit breakers) — no static time filter knows these; rely on realtime market-data nodes, which stop delivering ticks when the exchange is closed",
             "Strict cron cadence without time windowing — ScheduleNode alone is enough",
             "Realtime-only workflows that naturally stop outside market hours (no ticks arrive) — filter adds no value",
         ],
@@ -331,7 +331,7 @@ class TradingHoursFilterNode(BaseNode):
         {
             "pattern": "Using TradingHoursFilterNode as a holiday / circuit-breaker check",
             "reason": "The node only knows HH:MM windows + day-of-week; it has no knowledge of US federal holidays or KRX short-sale suspensions.",
-            "alternative": "Chain MarketStatusNode (JIF) before TradingHoursFilterNode for authoritative exchange state.",
+            "alternative": "Rely on realtime market-data nodes (they only fire while the exchange is actually trading) rather than a static HH:MM filter for holiday / circuit-breaker awareness.",
         },
         {
             "pattern": "Missing timezone — defaulting to server time",
@@ -403,7 +403,7 @@ class TradingHoursFilterNode(BaseNode):
         ],
         "pitfalls": [
             "Always specify `timezone` — server default is not portable",
-            "For holidays / CB / market status use MarketStatusNode (JIF) instead of or alongside this node",
+            "For holidays / CB / actual market status, rely on realtime market-data nodes (no ticks arrive when the exchange is closed) rather than this static time filter",
             "`days` names are lowercase 3-letter: mon / tue / wed / thu / fri / sat / sun",
         ],
     }

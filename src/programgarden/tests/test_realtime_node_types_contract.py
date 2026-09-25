@@ -29,9 +29,8 @@ from programgarden_core.registry.node_registry import NodeTypeRegistry
 
 
 # Nodes that declare `stay_connected` but are deliberately NOT event sources.
-# MarketStatusNode holds a JIF subscription with its own lifecycle
-# (`_cleanup_jif_subscriptions`) and must not keep the job alive on its own.
-_NOT_EVENT_SOURCES = {"MarketStatusNode"}
+# Currently none — every stay_connected node is a realtime event source.
+_NOT_EVENT_SOURCES: set = set()
 
 
 def _declares_stay_connected(cls) -> bool:

@@ -58,12 +58,12 @@ class OverseasStockHistoricalDataNode(BaseNode):
         description="Symbol list [{exchange, symbol}] — manual literal list; symbol (single) and upstream input take precedence",
     )
     start_date: str = Field(
-        default="{{ months_ago_yyyymmdd(3) }}",
-        description="Start date (YYYY-MM-DD or {{ months_ago_yyyymmdd(N) }})",
+        default="{{ date.months_ago(3, format='yyyymmdd') }}",
+        description="Start date (YYYY-MM-DD or {{ date.months_ago(N, format='yyyymmdd') }})",
     )
     end_date: str = Field(
-        default="{{ today_yyyymmdd() }}",
-        description="End date (YYYY-MM-DD or {{ today_yyyymmdd() }})",
+        default="{{ date.today(format='yyyymmdd') }}",
+        description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
     )
     interval: str = Field(
         default="1d",
@@ -303,7 +303,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 type=FieldType.STRING,
                 display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.start_date",
                 description="i18n:fields.OverseasStockHistoricalDataNode.start_date",
-                default="{{ months_ago_yyyymmdd(3) }}",
+                default="{{ date.months_ago(3, format='yyyymmdd') }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
@@ -317,7 +317,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 type=FieldType.STRING,
                 display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.end_date",
                 description="i18n:fields.OverseasStockHistoricalDataNode.end_date",
-                default="{{ today_yyyymmdd() }}",
+                default="{{ date.today(format='yyyymmdd') }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,

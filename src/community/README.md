@@ -92,13 +92,12 @@ poetry add programgarden-community
 | DynamicStopLoss | ATR 기반 동적 손절 |
 | LevelTouch | 레벨 터치/돌파/역할전환 감지 |
 
-### 커뮤니티 노드 (4개)
+### 커뮤니티 노드 (2개)
 
 | 노드 | 카테고리 | 설명 |
 |------|----------|------|
 | TelegramNode | messaging | Telegram Bot API 메시지 전송 |
-| FearGreedIndexNode | market | CNN Fear & Greed Index 조회 |
-| FileReaderNode | data | 파일 파싱 (PDF, TXT, CSV, JSON, MD, DOCX, XLSX) |
+| PerformanceReportNode | analysis | 성과/리스크 리포트 (Sharpe, Sortino, drawdown, CAGR, beta) |
 
 ## 사용법
 

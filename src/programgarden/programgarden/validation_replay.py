@@ -39,7 +39,7 @@ FIXTURE_NODES = frozenset({
     for kind in ("Broker", "Account", "RealAccount", "MarketData", "HistoricalData",
                  "Fundamental", "SymbolQuery", "OpenOrders", "RealMarketData", "RealOrderEvent")
     if not (product == "OverseasFutures" and kind == "Fundamental")
-}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "MarketStatusNode", "CurrencyRateNode", "TelegramNode"}
+}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "TelegramNode"}
 
 
 def content_hash(value: Any) -> str:
@@ -251,6 +251,19 @@ class ReplayExecutor(WorkflowExecutor):
                         raise ContractViolation(node_id,"Completion evidence requires an existing request and broker observation node")
                     self.orders.apply_events(record["order_events"], node_type)
                 output = deepcopy(record["output"])
+                if isinstance(output, dict):
+                    # The live executor returns its ports in declaration order and the
+                    # auto-iteration fallback source is a node's FIRST output; a recording
+                    # written as {"count": 1, "open_orders": [...]} must not make replay pick
+                    # `count` where live picks the list (dev 5d9961de, 2026-09-25).
+                    from programgarden_core import NodeTypeRegistry
+                    try:
+                        declared = [port["name"] for port in NodeTypeRegistry().get_schema(node_type).outputs]
+                    except Exception:  # noqa: BLE001 — unknown schema keeps the recorded order
+                        declared = []
+                    ordered = {name: output[name] for name in declared if name in output}
+                    ordered.update({k: v for k, v in output.items() if k not in ordered})
+                    output = ordered
                 check_contract(output, record["contract"], f"{node_id}.output")
                 if node_type.endswith("OpenOrdersNode"):
                     # The snapshot SHAPE (unique non-empty order_ids, count == rows)

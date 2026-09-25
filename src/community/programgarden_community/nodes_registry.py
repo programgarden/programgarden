@@ -46,40 +46,6 @@ def register_all_nodes() -> None:
             # 이미 등록된 경우 무시 (중복 호출 방지)
             pass
 
-    # === Market Nodes ===
-    from programgarden_community.nodes.market import FearGreedIndexNode
-
-    market_nodes = [
-        FearGreedIndexNode,
-    ]
-
-    for node_class in market_nodes:
-        try:
-            registry.register_community(
-                node_class,
-                source="community",
-                trust_level="community",
-            )
-        except ValueError as e:
-            pass
-
-    # === Data Nodes ===
-    from programgarden_community.nodes.data import FileReaderNode
-
-    data_nodes = [
-        FileReaderNode,
-    ]
-
-    for node_class in data_nodes:
-        try:
-            registry.register_community(
-                node_class,
-                source="community",
-                trust_level="community",
-            )
-        except ValueError as e:
-            pass
-
     # === Analysis Nodes ===
     from programgarden_community.nodes.analysis import PerformanceReportNode
 
@@ -108,18 +74,6 @@ def get_community_node_list() -> list:
             "category": "messaging",
             "description": "Send messages via Telegram Bot API",
             "requires_credential": True,
-        },
-        {
-            "type": "FearGreedIndexNode",
-            "category": "market",
-            "description": "CNN Fear & Greed Index (0=Extreme Fear, 100=Extreme Greed)",
-            "requires_credential": False,
-        },
-        {
-            "type": "FileReaderNode",
-            "category": "data",
-            "description": "Read and parse files (PDF, TXT, CSV, JSON, MD)",
-            "requires_credential": False,
         },
         {
             "type": "PerformanceReportNode",

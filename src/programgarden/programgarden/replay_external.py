@@ -111,8 +111,13 @@ def request_identity(node_type, config):
         raise ContractViolation("request", "Invalid resolved recording request", "REPLAY_FIXTURE_INVALID") from exc
     # Reject unknown parameters instead of letting BaseModel's extra policy
     # silently remove a field the live executor may consume.
-    if set(config) - set(node_class.model_fields) - {"connection"} - _SCHEDULER_FIELDS - _PRESENTATION_FIELDS:
-        raise ContractViolation("request", "Unknown recording request fields", "REPLAY_FIXTURE_INVALID")
+    unknown = sorted(set(config) - set(node_class.model_fields) - {"connection"} - _SCHEDULER_FIELDS - _PRESENTATION_FIELDS)
+    if unknown:
+        # Name the keys: a builder that wrote `fields: ["price"]` on a market-data node
+        # (dev 5d9961de, 2026-09-25) retried the same config twice on the bare message.
+        accepted = sorted(set(node_class.model_fields) - _PRESENTATION_FIELDS - {"id", "type", "name", "description", "position", "category"})
+        raise ContractViolation("request", "Unknown recording request fields: " + ", ".join(unknown)
+                                + " (" + node_type + " accepts: " + ", ".join(accepted) + ")", "REPLAY_FIXTURE_INVALID")
     result = node.model_dump(mode="json", exclude=_PRESENTATION_FIELDS | _SCHEDULER_FIELDS | {"connection"})
     connection = config.get("connection")
     if connection is not None:
