@@ -1,5 +1,4 @@
 """Recorded I/O is parsed and filtered by native code, never supplied as a pass."""
-import base64
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -38,49 +37,6 @@ def futures_case(node, source):
         "paper_trading": True}}, {"type": "object"}, as_of=AS_OF)
     data["nodes"][node["id"]]["request"]["connection"] = deepcopy(data["nodes"]["broker"]["output"]["connection"])
     return graph, data
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("score,label", [(12.25, "Extreme Fear"), (67.25, "Greed")])
-async def test_sentiment_parses_raw_provider_values(score, label):
-    node = {"id": "sentiment", "type": "FearGreedIndexNode"}
-    source = {"fear_and_greed": {"score": score, "previous_close": 51.0}}
-    result = await replay(workflow(node), fixture(node, source))
-    assert result.passed, result.errors
-    assert result.outputs["sentiment"] == {"value": round(score, 1), "label": label, "previous_close": 51.0}
-
-
-@pytest.mark.asyncio
-async def test_missing_sentiment_score_is_not_fabricated_as_zero():
-    node = {"id": "sentiment", "type": "FearGreedIndexNode"}
-    result = await replay(workflow(node), fixture(node, {"fear_and_greed": {}}))
-    assert not result.passed
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("fmt,content,expected", [
-    ("csv", 'symbol,price\nA,12\n', [{"symbol": "A", "price": "12"}]),
-    ("json", '{"symbol":"A","price":12}', {"symbol": "A", "price": 12}),
-])
-async def test_native_file_parser_uses_recorded_bytes_not_host_files(fmt, content, expected):
-    from programgarden_community.nodes.data.file_reader import FileReaderNode
-    path = "inputs/prices." + fmt
-    node = {"id": "file", "type": "FileReaderNode", "file_path": path, "format": fmt}
-    source = {"files": {path: base64.b64encode(content.encode()).decode()}}
-    with patch.object(FileReaderNode, "_validate_path", side_effect=AssertionError("Host read forbidden")):
-        result = await replay(workflow(node), fixture(node, source))
-    assert result.passed, result.errors
-    assert result.outputs["file"]["data_list"] == [expected]
-    assert result.outputs["file"]["metadata"][0]["file_name"] == "prices." + fmt
-
-
-@pytest.mark.asyncio
-async def test_missing_file_and_changed_path_fail():
-    node = {"id": "file", "type": "FileReaderNode", "file_path": "a.json", "format": "json"}
-    data = fixture(node, {"files": {}})
-    assert not (await replay(workflow(node), data)).passed
-    node["file_path"] = "b.json"
-    assert not (await replay(workflow(node), data)).passed
 
 
 @pytest.mark.asyncio

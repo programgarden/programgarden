@@ -917,104 +917,6 @@ flowchart LR
 
 **주문 안전장치**: ExclusionListNode가 워크플로우에 있으면, NewOrderNode에서 제외 종목 주문을 **자동 차단**합니다 (`ignore_exclusion: true`로 비활성화 가능).
 
-### CurrencyRateNode (환율 조회)
-
-**credential 없이** 실시간 환율을 조회합니다. ECB 데이터 기반의 frankfurter.app API를 사용합니다.
-
-```json
-{
-  "id": "currency",
-  "type": "CurrencyRateNode",
-  "base_currency": "USD",
-  "target_currencies": ["KRW", "JPY", "EUR"]
-}
-```
-
-| 출력 | 타입 | 설명 |
-|------|------|------|
-| `rates` | array | `[{base, target, rate, timestamp}]` 배열 |
-| `krw_rate` | number | USD/KRW 환율 (KRW가 target에 포함된 경우) |
-
-### FearGreedIndexNode (공포/탐욕 지수)
-
-CNN의 Fear & Greed Index를 조회합니다. **credential 불필요**.
-
-```json
-{
-  "id": "fg",
-  "type": "FearGreedIndexNode"
-}
-```
-
-| 출력 | 타입 | 설명 |
-|------|------|------|
-| `value` | number | 0~100 (0=극도 공포, 100=극도 탐욕) |
-| `label` | string | Extreme Fear / Fear / Neutral / Greed / Extreme Greed |
-| `previous_close` | number | 전일 종가 지수 |
-
-> **팁**: IfNode와 연결하여 `value <= 25`이면 매수, `value >= 75`이면 매도하는 역발상 전략을 구성할 수 있습니다.
-
-> **공통**: 외부 시장 데이터 노드는 retry 기본 활성화, rate limit, 실시간 노드 직접 연결 차단 (ThrottleNode 경유 필수) 설정을 가집니다.
-
-### MarketStatusNode (실시간 장운영정보)
-
-LS증권 JIF TR 기반 **실시간 장운영정보** 노드. 12개 시장(KOSPI/KOSDAQ/KRX_FUTURES/NXT/KRX_NIGHT/US/CN_AM/CN_PM/HK_AM/HK_PM/JP_AM/JP_PM)의 개장·종가·서킷브레이커·사이드카 상태를 WebSocket 으로 수신. 브로커 상품 종류(해외주식/해외선물/국내주식) 무관하게 사용 가능 (BrokerNode 세션 공유, broker 없이는 불가).
-
-**⚠️ 해외선물 미지원**: CME, HKEX Futures, SGX 등은 JIF 범위 밖입니다. `markets` Literal 에서 명시적으로 제외되어 ValidationError 를 발생시킵니다.
-
-```json
-{
-  "id": "market_status",
-  "type": "MarketStatusNode",
-  "markets": ["US"],
-  "stay_connected": true,
-  "include_extended_hours": false
-}
-```
-
-| 필드 | 타입 | 기본값 | 설명 |
-|------|------|--------|------|
-| `markets` | `List[MarketKey]` | `[]` | 구독할 시장 필터. 빈 리스트는 12개 전체. `['US']`, `['KOSPI','KOSDAQ']` 등 부분 선택 가능. 해외선물 키(`CME`, `SGX` 등) 주입 시 Pydantic ValidationError |
-| `stay_connected` | bool | `true` | `true` 면 워크플로우 실행 내내 JIF 구독 유지 (실시간 전이 감지), `false` 면 첫 스냅샷 수신 후 해제 — AI Agent Tool 일회성 질의용 |
-| `include_extended_hours` | bool | `false` | `true` 면 프리마켓/시간외단일가/에프터마켓 등 시간외 세션도 `*_is_open` 편의 포트에서 `True` 로 반환 |
-
-| 출력 포트 | 타입 | 설명 |
-|-----------|------|------|
-| `statuses` | array | 각 시장 스냅샷 배열 `[{market, jangubun, jstatus, jstatus_label, is_open, is_regular_open, is_extended_open, updated_at}, ...]` |
-| `event` | object | 최근 전이 이벤트 `{market, prev_jstatus, jstatus, transition, label, timestamp}` |
-| `us_is_open` | boolean | 미국장(NASDAQ/NYSE/AMEX 통합) 개장 여부 |
-| `kospi_is_open` | boolean | 코스피 개장 여부 |
-| `kosdaq_is_open` | boolean | 코스닥 개장 여부 |
-| `krx_futures_is_open` | boolean | 코스피 파생 개장 여부 |
-| `hk_is_open` | boolean | 홍콩 개장 여부 (오전/오후 중 하나라도 열려있으면 True) |
-| `cn_is_open` | boolean | 중국 개장 여부 (오전/오후 OR) |
-| `jp_is_open` | boolean | 일본 개장 여부 (오전/오후 OR) |
-
-**주말/이벤트 미수신 시 초기값**: `stay_connected=true` 에서 bool 포트는 `False` 로 초기화 (보수적 기본값 — 주말 오주문 방지).
-
-**사용 예제 — 위험관리 매도 게이트**
-
-```json
-{
-  "nodes": [
-    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred"},
-    {"id": "market_status", "type": "MarketStatusNode", "markets": ["US"], "stay_connected": true},
-    {"id": "if_us_open", "type": "IfNode",
-     "left": "{{ nodes.market_status.us_is_open }}", "operator": "==", "right": true}
-  ],
-  "edges": [
-    {"from": "broker", "to": "market_status"},
-    {"from": "broker", "to": "if_us_open"},
-    {"from": "if_us_open", "to": "sell_order", "from_port": "true"},
-    {"from": "if_us_open", "to": "telegram_market_closed", "from_port": "false"}
-  ]
-}
-```
-
-**AI Agent Tool 등록**: `is_tool_enabled=True`. LLM 이 "미국장 지금 열려있어?" 같은 자연어 질의에서 `markets=['US']` 로 호출 후 `us_is_open` 포트 반환. 자세한 내용은 `ai_agent_guide.md` 참조.
-
-> **거래소 매핑 참고**: `US` 는 JIF 단일 코드로 NASDAQ, NYSE, AMEX, Dow Jones, S&P 500 등 모든 미국 거래소를 포함합니다. 거래소별 세분화(NASDAQ 만 / NYSE 만)는 JIF 레벨에서 제공되지 않습니다.
-
 ---
 
 ## 4. condition - 조건 평가
@@ -1609,36 +1511,6 @@ SQL 없이 테이블/액션/컬럼을 선택하여 사용합니다.
 
 ---
 
-### FileReaderNode (파일 리더)
-
-파일을 읽어 텍스트/데이터로 변환합니다. PDF, TXT, CSV, JSON, MD, DOCX, XLSX 포맷을 지원합니다. AIAgentNode의 도구로도 사용 가능합니다.
-
-```json
-{
-  "id": "reader",
-  "type": "FileReaderNode",
-  "file_paths": ["/app/data/report.pdf", "/app/data/prices.csv"],
-  "format": "auto"
-}
-```
-
-| 필드 | 설명 | 기본값 |
-|------|------|--------|
-| `file_paths` | 파일 경로 배열 | - |
-| `file_data_list` | Base64 인코딩 파일 데이터 배열 | - |
-| `format` | 포맷 (`auto`, `pdf`, `txt`, `csv`, `json`, `md`, `docx`, `xlsx`) | `auto` |
-| `pages` | PDF 페이지 범위 (예: `"1-5"`, `"1,3,5"`) | 전체 |
-| `encoding` | 텍스트 인코딩 | `utf-8` |
-| `extract_tables` | PDF 테이블 추출 (pdfplumber) | `false` |
-| `sheet_name` | XLSX 시트명 | 첫 번째 시트 |
-| `max_file_size_mb` | 파일당 최대 크기(MB) | `10` |
-
-**출력 포트**: `texts` (텍스트 배열), `data_list` (파싱된 데이터 배열), `metadata` (파일 메타데이터 배열)
-
-> **보안**: 파일 경로는 `/app/data/` 하위로 제한됩니다. 경로 탈출 공격이 자동 차단됩니다.
-
-> **팁**: 복수 파일을 한 번에 처리하면 출력이 배열이 되어 auto-iterate로 파일별 AI 분석이 가능합니다.
-
 ### CodeNode (커스텀 파이썬 코드)
 
 기존 타입 노드로 표현할 수 없는 커스텀 로직을 파이썬 코드로 실행합니다. `code`에 `async def execute(data, params, context)` 함수를 정의하면, 반환한 dict가 선언한 `outputs` 포트(미선언 시 단일 `result` 포트)로 매핑됩니다.
@@ -2062,12 +1934,12 @@ AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활�
 |----------|--------|------|----------|
 | `infra` | 8 | 시작/연결/흐름/분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
 | `account` | 12 | 계좌 조회 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
-| `market` | 23 | 시세/종목/펀더멘털/환율/심리/제외종목/장운영정보 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode, MarketStatusNode, FuturesContractNode, KoreaStock* |
+| `market` | 20 | 시세/종목/펀더멘털/제외종목 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, FuturesContractNode, KoreaStock* |
 | `condition` | 2 | 조건 평가 | ConditionNode, LogicNode |
 | `order` | 10 | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
 | `risk` | 1 | 리스크 관리 | PortfolioNode |
 | `schedule` | 2 | 스케줄/시간 | ScheduleNode, TradingHoursFilterNode |
-| `data` | 5 | 데이터 조회/저장/커스텀코드 | SQLiteNode, HTTPRequestNode, FieldMappingNode, FileReaderNode, CodeNode |
+| `data` | 4 | 데이터 조회/저장/커스텀코드 | SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode |
 | `display` | 6 | 시각화 | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | `analysis` | 3 | 백테스트/성과분석 | BacktestEngineNode, BenchmarkCompareNode, PerformanceReportNode |
 | `ai` | 2 | AI 에이전트 | LLMModelNode, AIAgentNode |
