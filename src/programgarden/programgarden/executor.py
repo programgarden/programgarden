@@ -21932,7 +21932,7 @@ class WorkflowJob:
                     config["_source_node_id"] = edge.from_node_id
                     break  # 첫 번째 상위 노드만 사용
             
-            # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
+            # Resolve expressions in config ({{ input.xxx }}, {{ nodes.nodeId.port }})
             config = self._resolve_config_expressions(config, node_id)
 
             # Auto-inject connection from matching BrokerNode (Phase 5)
@@ -23653,7 +23653,8 @@ class WorkflowJob:
 
         지원 표현식:
         - {{ input.xxx }}: 워크플로우 inputs 파라미터
-        - {{ nodeId.port }}: 이전 노드 출력값
+        - {{ nodes.nodeId.port }}: 이전 노드 출력값 (`nodes.` 접두사 필수 — 접두사 없는
+          `{{ nodeId.port }}` 는 정의되지 않은 변수 오류)
         - {{ context.xxx }}: 실행 컨텍스트 값
 
         Note: items 키는 제외 (ConditionNode의 _process_items_with_extract에서 별도 처리).

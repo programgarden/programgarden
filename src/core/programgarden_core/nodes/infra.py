@@ -1054,7 +1054,7 @@ class IfNode(BaseNode):
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Bind `left` and (usually) `right` via `{{ nodes.X.Y }}` expressions. Operators that take no right-hand side — is_empty, is_not_empty — ignore `right`.",
-        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind `{{ nodes.if.result }}` as a boolean on a later node.",
+        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind the `result` boolean on a later node, e.g. `{{ nodes.gate.result }}` for an IfNode with id `gate`. Note the node id must be a plain identifier: `if` is a Python keyword, so `{{ nodes.if.result }}` is a syntax error — use a non-keyword id, or the bracket form `{{ nodes['if'].result }}`.",
         "common_combinations": [
             "AccountNode → IfNode (balance ≥ N) → OrderNode / Notification",
             "FearGreedIndexNode → IfNode (value ≤ 25) → alert branch",
