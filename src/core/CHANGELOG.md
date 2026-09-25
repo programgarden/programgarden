@@ -1,3 +1,25 @@
+## [2.2.0] - 2026-09-25
+
+### Added
+- `NodeTypeSchema.execution`: a machine-readable execution block per node type
+  (role, emits, iteration mode and per-item recording key, reruns_on, time
+  rules, dead ports, reserved output ports), derived from the replay contracts
+  so schema consumers (AI authoring, validators) read structure instead of
+  inferring it from prose. Attached by `programgarden.replay_semantics`
+  through `registry_tools`.
+- Node `features` now state the execution and replay facts the code enforces:
+  StartNode runs once and never re-fires, IfNode gates only its branch,
+  TradingHoursFilterNode windows are venue-local and same-day, SQLiteNode runs
+  exactly one statement per execution and never creates a table, ScheduleNode
+  fires at the venue-local cron instants, market-data / historical / account /
+  open-orders / order / realtime / broker nodes describe their recording shape
+  and the session hours of each product (overseas stock day and night sessions,
+  overseas futures, domestic stock).
+
+### Fixed
+- Prose that the code contradicted (SessionGate wording, order node field
+  descriptions, account balance fields) now matches the executor.
+
 ## [2.1.0] - 2026-09-24
 
 ### Added

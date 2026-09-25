@@ -1,3 +1,17 @@
+## [2.2.0] - 2026-09-25
+
+### Added
+- `programgarden.replay_semantics`: `execution_for()`, `product_execution()`,
+  `execution_semantics_text()` and `attach_execution()` derive each node type's
+  execution block (role, emits, per-item iteration and recording key,
+  reruns_on, time rules, dead ports, reserved output ports) and each product's
+  session hours from the replay contracts, and attach them to the registry
+  schemas (`NodeTypeSchema.execution`, core 2.2.0). 404 tests pin the derived
+  facts against the executor.
+
+### Changed
+- deps: programgarden-core ^2.2.0.
+
 ## [2.1.0] - 2026-09-24
 
 ### Added
