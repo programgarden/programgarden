@@ -12574,7 +12574,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 "interval": config.get("interval", "1d"),
             }
         
-        # 기간 설정 ({{ today_yyyymmdd() }}, {{ days_ago_yyyymmdd(100) }} 바인딩 사용)
+        # 기간 설정 ({{ date.today(format='yyyymmdd') }}, {{ date.ago(100, format='yyyymmdd') }} 바인딩 사용)
         start_date = config.get("start_date", "")
         end_date = config.get("end_date", "")
         interval = config.get("interval", "1d")  # 1d, 1w, 1m, 1min 등
