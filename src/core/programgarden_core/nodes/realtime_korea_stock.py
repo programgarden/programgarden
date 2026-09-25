@@ -68,6 +68,11 @@ class KoreaStockRealMarketDataNode(BaseNode):
         "Symbol format: 6-digit KRX code (e.g., '005930') without exchange field — domestic market implied",
         "Item-based execution: one subscription per node; use multiple nodes to watch multiple domestic stocks",
         "Real-trading only — KoreaStock product does not support paper trading",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "In replay it records ohlcv_data (and its data alias) as a symbol-keyed object of bar lists keyed by the bare symbol, each bar carrying only date, open, high, low, close, volume",
+        "It does not record a top-level symbol port; the live node emits symbol only inside its event payload, so a recording that includes it is rejected",
+        "As a streaming source it emits market_data and realtime_update events; on each event only nodes downstream of it re-run, while upstream startup snapshots stay retained",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

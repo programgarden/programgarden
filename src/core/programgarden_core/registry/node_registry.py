@@ -98,6 +98,20 @@ class NodeTypeSchema(BaseModel):
             "- pitfalls: List[str] — connection caveats and shape requirements"
         ),
     )
+    execution: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Machine-readable execution/replay semantics block (closed value "
+            "sets), derived from the engine's own replay contract code — never "
+            "authored per class. Populated by "
+            "`programgarden.replay_semantics.attach_execution` when the schema is "
+            "served through the tool registry; the core registry itself leaves it "
+            "None (core must not import programgarden). Keys: role, replay, "
+            "request, iteration, reruns_on, emits_events, on_event, output_ports, "
+            "dead_ports, internal_ports, reserved_output_ports, gating, order, "
+            "time_rules, venue."
+        ),
+    )
 
     # === Version metadata (UI change detection) ===
     version: str = Field(

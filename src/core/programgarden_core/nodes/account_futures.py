@@ -65,6 +65,12 @@ class OverseasFuturesAccountNode(BaseNode):
         "Returns three ports: held_symbols (symbol list), balance (margin/equity summary), positions (per-contract P&L)",
         "is_tool_enabled=True — AI Agent can call this node as a tool to inspect futures portfolio state",
         "One-shot REST call; supports paper_trading mode via OverseasFuturesBrokerNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "Its recording (held_symbols, balance, positions) is what the workflow's guard reads; the replay's simulated ledger is seeded only from fixture.broker.account, and a holding used by a scenario must appear in both with the same integer quantity",
+        "A frame that submits no order must expect exactly the seeded cash and positions; an insufficient_cash case needs both the seeded cash and the recorded orderable_amount below quantity times the quoted price",
+        "Retained across realtime events (queried once at startup); re-runs on every schedule tick",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

@@ -71,6 +71,11 @@ class OverseasStockRealMarketDataNode(BaseNode):
         "Item-based execution: one subscription per node; use multiple nodes or SplitNode to watch several symbols",
         "Automatically re-subscribes after WebSocket reconnection events",
         "Does NOT include order book (bid/ask levels) — only trade (GSC) events; ask/bid from GSH are in the data port",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "In replay it records ohlcv_data (and its data alias) as a symbol-keyed object of bar lists keyed by the bare symbol, each bar carrying only date, open, high, low, close, volume",
+        "It does not record a top-level symbol port; the live node emits symbol only inside its event payload, so a recording that includes it is rejected",
+        "As a streaming source it emits market_data and realtime_update events; on each event only nodes downstream of it re-run, while upstream startup snapshots stay retained",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

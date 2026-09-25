@@ -66,6 +66,9 @@ class StartNode(BaseNode):
         "Zero configuration — no fields, no credentials",
         "Produces a simple trigger signal that flows through main edges",
         "Always completes instantly and never fails",
+        "Exactly one StartNode per workflow; a graph rooted at a ScheduleNode is rejected (MISSING_START_NODE)",
+        "Emits no subsequent event: a StartNode-only workflow runs once and cannot carry a duplicate or events scenario",
+        "The start port is a bare trigger signal; an output contract cannot assert a data type on it",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -75,7 +78,7 @@ class StartNode(BaseNode):
         },
         {
             "pattern": "Omitting StartNode and wiring ScheduleNode as the root",
-            "reason": "Works for scheduled workflows but some example templates and validators assume a StartNode anchor.",
+            "reason": "The engine rejects a graph rooted at a ScheduleNode (MISSING_START_NODE); a ScheduleNode is never the root.",
             "alternative": "Always include a StartNode and connect it to the ScheduleNode as the first main edge.",
         },
     ]
@@ -233,6 +236,9 @@ class ThrottleNode(BaseNode):
         "Two modes: 'skip' (drop during cooldown) and 'latest' (buffer newest, emit at window close)",
         "pass_first=True emits the first event immediately, useful for warm-start flows",
         "Emits _throttle_stats output for observability (received / passed / skipped counts)",
+        "Cooldown state persists in context.node_state, so it survives re-triggers within one execution: with pass_first=true the first event passes and a further event within interval_sec is throttled",
+        "While throttled it emits only its `_`-prefixed ports (_throttled/_throttle_stats), which never leak downstream, so a node placed after it does not re-execute",
+        "interval_sec is bounded between 0.1 and 300 seconds",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -974,7 +980,8 @@ class IfNode(BaseNode):
         "12 comparison operators including ==, !=, >, >=, <, <=, in, not_in, contains, not_contains, is_empty, is_not_empty",
         "Three outputs: `true` / `false` payloads + `result` boolean — edges use from_port to route",
         "Expression binding on both `left` and `right` operands — supports full `{{ nodes.X.Y }}` syntax",
-        "Cascading skip — downstream of the inactive branch is auto-skipped by the executor",
+        "Skips only descendants of the untaken port that have no other active path; a node also fed by a non-If upstream still runs when that upstream completes",
+        "Evaluates exactly one left/operator/right comparison per node; the untaken branch is the false port, and a CodeNode returning false skips nothing",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

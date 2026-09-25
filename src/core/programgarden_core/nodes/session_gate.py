@@ -59,7 +59,7 @@ class SessionGateNode(BaseNode):
         'when_not_to_use':['An authoritative exchange-open or holiday feed is required.','Wait until opening: use TradingHoursFilterNode.'],
         'typical_scenarios':['ScheduleNode -> SessionGateNode -> IfNode(allowed) -> strategy','Reservation -> SessionGateNode -> IfNode(allowed) -> OrderNode'],
     }
-    _features: ClassVar[list[str]] = ['No credentials or network.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.']
+    _features: ClassVar[list[str]] = ['No credentials or network.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.','Output is a pure function of the evaluation instant and the configuration (windows are start-inclusive and end-exclusive, plus days, closed_dates and the IANA timezone); replay evaluates it at the scenario as_of.','Two frames at the same instant produce the same allowed value; an outside-window scenario must sit at an instant outside the window.','allowed skips nothing by itself; bind it to an IfNode and hang the order chain on the IfNode true edge.']
     _anti_patterns: ClassVar[list[dict[str,str]]] = [{'pattern':'Connect directly to an order and assume an ordinary edge checks allowed.','reason':'Edges sequence execution; false output does not automatically skip successors.','alternative':'Bind allowed to IfNode and use its true edge.'}]
     _node_guide: ClassVar[dict[str,Any]] = {
         'input_handling':'Configure timezone, windows, days and optional closed_dates. No current-time override is accepted from workflow data.',

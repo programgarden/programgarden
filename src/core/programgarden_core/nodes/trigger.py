@@ -95,6 +95,12 @@ class ScheduleNode(BaseNode):
         "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
         "max_duration_hours caps total runtime; the scheduler exits cleanly at the limit",
         "enabled=False freezes the trigger without removing the node from the DAG",
+        "A tick re-executes the whole main flow: the ScheduleNode returns {trigger: true} without re-registering, so every node downstream of it runs again on each tick",
+        "Startup account and open-order snapshots are not retained across schedule ticks; they are retained only across realtime events",
+        "In replay a schedule_tick must fall on the cron's next firing instant after the previous frame, evaluated in this node's timezone (default America/New_York)",
+        "enabled=false emits no tick; ticks past count or max_duration_hours are refused; an invalid timezone is rejected at startup",
+        "Emits exactly one subsequent event type: schedule_tick",
+        "Requires exactly one StartNode upstream; the ScheduleNode is never the workflow root",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -319,6 +325,7 @@ class TradingHoursFilterNode(BaseNode):
         "`days` whitelist supports weekend-only or weekday-only flows",
         "Outside the window this node waits; `passed` activates on entry and `blocked` activates only on timeout/shutdown",
         "max_wait_hours safeguards long waits — the node timeouts instead of stalling forever",
+        "In replay an instant outside the window is refused (REPLAY_TIME_WAIT_BLOCKED); only in-window instants are replayable and the node then emits passed=true, so it cannot express an after-hours branch in a suite",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
