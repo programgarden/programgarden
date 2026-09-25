@@ -27,13 +27,13 @@ poetry add programgarden-core
 
 요구 사항: Python 3.12+
 
-## Node categories (11 categories, 73 core nodes)
+## Node categories (11 categories, 71 core nodes)
 
 | 카테고리 | 노드 수 | 대표 노드 |
 |----------|---------|----------|
 | infra | 8 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode, KoreaStockBrokerNode |
 | account | 13 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식) |
-| market | 22 | MarketDataNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ExclusionListNode, CurrencyRateNode, KoreaStock* |
+| market | 20 | MarketDataNode, HistoricalDataNode, RealMarketDataNode, WatchlistNode, ExclusionListNode, KoreaStock* |
 | condition | 2 | ConditionNode, LogicNode |
 | order | 10 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
 | risk | 1 | PortfolioNode |
@@ -43,7 +43,7 @@ poetry add programgarden-core
 | analysis | 2 | BacktestEngineNode, BenchmarkCompareNode |
 | ai | 2 | LLMModelNode, AIAgentNode |
 
-> Community adds four nodes: TelegramNode, FearGreedIndexNode, FileReaderNode and PerformanceReportNode, for 77 total.
+> Community adds two nodes: TelegramNode and PerformanceReportNode, for 73 total.
 
 ## 사용 예시
 

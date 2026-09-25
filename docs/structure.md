@@ -230,12 +230,12 @@ BrokerNode는 엣지로 연결된 하위 노드들에게 **자동으로 증권�
 |----------|------|----------|
 | `infra` | 워크플로우 시작, 증권사 연결, 흐름 제어, 조건 분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
 | `account` | 잔고, 포지션, 미체결 주문 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode |
-| `market` | 시세, 종목, 과거 데이터, 펀더멘털, 환율, 심리, 제외종목 | WatchlistNode, MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, ScreenerNode, ExclusionListNode, CurrencyRateNode, FearGreedIndexNode |
+| `market` | 시세, 종목, 과거 데이터, 펀더멘털, 제외종목 | WatchlistNode, MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, ScreenerNode, ExclusionListNode |
 | `condition` | 매매 조건 판단, 논리 조합 | ConditionNode, LogicNode |
 | `order` | 신규/정정/취소 주문 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode |
 | `risk` | 포트폴리오 배분, 리밸런싱 | PortfolioNode |
 | `schedule` | 스케줄 트리거, 거래시간 필터 | ScheduleNode, TradingHoursFilterNode |
-| `data` | DB 저장/조회, 외부 API, 필드 매핑, 파일 파싱, 커스텀 코드 실행 | SQLiteNode, HTTPRequestNode, FieldMappingNode, FileReaderNode, CodeNode |
+| `data` | DB 저장/조회, 외부 API, 필드 매핑, 커스텀 코드 실행 | SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode |
 | `display` | 차트, 테이블, 요약 시각화 | TableDisplayNode, LineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
 | `analysis` | 백테스트, 벤치마크 비교 | BacktestEngineNode, BenchmarkCompareNode |
 | `ai` | AI 에이전트 (GPT, Claude 등) | LLMModelNode, AIAgentNode |

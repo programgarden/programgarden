@@ -39,7 +39,7 @@ FIXTURE_NODES = frozenset({
     for kind in ("Broker", "Account", "RealAccount", "MarketData", "HistoricalData",
                  "Fundamental", "SymbolQuery", "OpenOrders", "RealMarketData", "RealOrderEvent")
     if not (product == "OverseasFutures" and kind == "Fundamental")
-}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "MarketStatusNode", "CurrencyRateNode", "TelegramNode"}
+}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "TelegramNode"}
 
 
 def content_hash(value: Any) -> str:

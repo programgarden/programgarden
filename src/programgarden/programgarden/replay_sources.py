@@ -4,13 +4,12 @@ These records are scenario assumptions, not evidence of provider availability.
 The independent suite owns the inputs. No adapter reads a live file or transport.
 """
 from copy import deepcopy
-from pathlib import PurePosixPath
 
 from programgarden.replay_contracts import ContractViolation, check_contract
 from programgarden.replay_external import external_record
 from programgarden.replay_triggers import fixture_instant
 
-SOURCE_NODES = frozenset({"FileReaderNode", "FearGreedIndexNode", "MarketUniverseNode",
+SOURCE_NODES = frozenset({"MarketUniverseNode",
     "FuturesContractNode", "ScreenerNode", "OverseasFuturesOrderableQuantityNode"})
 
 
@@ -30,16 +29,6 @@ def source_contract_catalog():
             "type": "array", "items": {"type": "object", "properties": {
                 "google": {"type": "string"}, "currency": {"type": "string"}}}}}}
     return {
-        "FearGreedIndexNode": {"source_schema": {"type": "object", "required": ["fear_and_greed"],
-            "properties": {"fear_and_greed": {"type": "object", "required": ["score"], "properties": {
-                "score": {"type": "number", "minimum": 0, "maximum": 100},
-                "previous_close": {"type": "number"}}}}},
-            "notes": "Native parser maps score to value/label and reads previous_close. Synthetic inputs only."},
-        "FileReaderNode": {"source_schema": {"type": "object", "properties": {"files": {
-            "type": "object", "additionalProperties": {"type": "string"}}}},
-            "notes": "files maps each requested relative upload path to base64 encoded bytes. The native "
-                     "format parser reads those bytes; do not supply parsed data. Inline file_data uses "
-                     "native configuration. Absolute paths and parent traversal are forbidden."},
         "MarketUniverseNode": {"source_schema": {"type": "object", "required": ["index", "stocks"],
             "properties": {"index": {"type": "string"}, "stocks": {"type": "array", "items": stock}}},
             "index_mapping": dict(MarketUniverseNodeExecutor.INDEX_MAPPING),
@@ -92,33 +81,6 @@ async def execute_source(node, config, fixture, context):
     source = deepcopy(record["source"])
     if not isinstance(source, dict):
         raise ContractViolation(node.id, "Source envelope must be an object")
-    if node.type == "FearGreedIndexNode":
-        check_contract(source, {"type": "object", "required": ["fear_and_greed"], "properties": {
-            "fear_and_greed": {"type": "object", "required": ["score"], "properties": {
-                "score": {"type": "number", "minimum": 0, "maximum": 100}}}}}, node.id)
-        return node.parse_response(source)
-    if node.type == "FileReaderNode":
-        # Materialize the exact recorded bytes through the native base64 path.
-        # Preserve format/name selection; never read /app/data or a host path.
-        paths, data, names = node._normalize_inputs()
-        files = source.get("files", {})
-        for index, path in enumerate(paths):
-            if not path:
-                continue
-            parsed = PurePosixPath(path)
-            if parsed.is_absolute() or ".." in parsed.parts:
-                raise ContractViolation(node.id, "Replay file paths must stay relative to the upload directory")
-            if path not in files or not isinstance(files[path], str):
-                raise ContractViolation(node.id, "Requested file has no recorded bytes", "REPLAY_FIXTURE_REQUIRED")
-            while len(data) <= index:
-                data.append("")
-            while len(names) <= index:
-                names.append("")
-            data[index] = files[path]
-            names[index] = names[index] or PurePosixPath(path).name
-        local = node.model_copy(update={"file_paths": [], "file_path": None,
-            "file_data_list": data, "file_data": None, "file_names": names, "file_name": None})
-        return await local.execute(context)
     if node.type == "MarketUniverseNode":
         from programgarden.executor import MarketUniverseNodeExecutor
         executor = MarketUniverseNodeExecutor()
