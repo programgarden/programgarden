@@ -1,3 +1,34 @@
+## [2.3.0] - 2026-09-25
+
+### Added
+- `programgarden_core.expression.expression_reference()`: a machine-readable,
+  code-verified reference of the `{{ }}` expression language (grammar, roots,
+  NodeOutputProxy helpers and port-vs-helper precedence, every date / finance /
+  stats / format / lst function with signature and semantics, builtins,
+  literals, node-id rules, auto-iteration facts, live-vs-replay error
+  behaviour, pitfalls). Names are introspected from the evaluator so the
+  reference cannot drift; `tests/test_expression_reference.py` pins it.
+- LLMModelNode / AIAgentNode features and input guidance state the credential
+  template (llm_openai / llm_anthropic / llm_deepseek / llm_google), that the
+  user must register their own provider API key before a real run, that LLM
+  credentials are never auto-bound, what fails without one, how to match the
+  kind to the model string, and that the key never reaches outputs or logs.
+
+### Fixed
+- Historical data nodes: `start_date` / `end_date` defaulted to helpers that do
+  not exist (`months_ago_yyyymmdd`, `today_yyyymmdd`), so a node left at its
+  defaults silently fetched a single day; the defaults, field descriptions and
+  guidance now use `date.months_ago(3, format='yyyymmdd')` and
+  `date.today(format='yyyymmdd')`.
+- IfNode guidance no longer shows a Python-keyword node id (`nodes.if.result`);
+  keyword ids need `nodes['if'].port`.
+
+### Removed
+- `CurrencyRateNode` and `MarketStatusNode` (owner 2026-09-25: keep the library
+  to what auto-trading needs; SessionGateNode / TradingHoursFilterNode cover
+  market-hours gating). Existing graphs that reference them fail schema
+  resolution and must be edited.
+
 ## [2.2.0] - 2026-09-25
 
 ### Added

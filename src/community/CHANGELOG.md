@@ -1,3 +1,12 @@
+## [2.2.0] - 2026-09-25
+
+### Removed
+- `FearGreedIndexNode` and `FileReaderNode` (owner 2026-09-25: keep the
+  library to what auto-trading needs).
+
+### Changed
+- deps: programgarden-core ^2.3.0.
+
 ## [2.1.0] - 2026-09-24
 
 ### Changed

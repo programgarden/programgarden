@@ -1,3 +1,27 @@
+## [2.3.0] - 2026-09-25
+
+### Fixed
+- Validation replay applies a recording's output ports in the registry's
+  declared order before exposing them. The live executor returns ports in
+  declaration order and the auto-iteration fallback source is a node's FIRST
+  output, so a recording written as `{"count": 1, "open_orders": [...]}` made
+  replay skip an iteration the live run performs.
+- `request_identity` names the unknown request fields and the fields the node
+  accepts instead of a bare "Unknown recording request fields".
+- `docs/expression_guide.md` and `docs/auto_iterate_guide.md` match the code:
+  `finance.pct` is part/total*100, `lst.flatten` needs the nested key, a live
+  expression error keeps the literal and warns while only validation replay
+  aborts, `{{ nodeId.port }}` without the `nodes.` prefix is not supported,
+  keyword node ids, NodeOutputProxy has no len()/iteration, date format presets,
+  30-day months. Docstrings in context.py / executor.py corrected likewise.
+
+### Removed
+- Executors, replay sources and fixtures for `CurrencyRateNode`,
+  `MarketStatusNode`, `FearGreedIndexNode` and `FileReaderNode`.
+
+### Changed
+- deps: programgarden-core ^2.3.0, programgarden-community ^2.2.0.
+
 ## [2.2.0] - 2026-09-25
 
 ### Added
