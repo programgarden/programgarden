@@ -1,3 +1,17 @@
+## [2.4.0] - 2026-09-26
+
+### Changed
+- ScheduleNodeExecutor no longer applies a default cycle cap (was 1000) or
+  wall-clock cap (was 24 h). When `count` / `max_duration_hours` are absent the
+  cron loop runs until `context.is_running` turns false (the user stops the
+  workflow); a provided bound is still honoured exactly as before.
+- Validation replay enforces only a *provided* limit: startup
+  (`replay_triggers`) rejects `count < 1` or `max_duration_hours <= 0` when set,
+  recorded ticks (`replay_events`) are refused past a set bound, and omitted
+  bounds mean unbounded. The `replay_semantics` limits rule and the AI-facing
+  schedule bullet say "optional; omit both and the schedule runs until stopped".
+- deps: programgarden-core ^2.4.0.
+
 ## [2.3.0] - 2026-09-25
 
 ### Fixed

@@ -49,8 +49,13 @@ async def schedule_startup(node, config, context):
         ZoneInfo(node.timezone)
     except (ValueError, KeyError):
         raise ContractViolation(node.id, "Invalid schedule timezone") from None
-    if node.count < 1 or node.max_duration_hours <= 0:
-        raise ContractViolation(node.id, "Schedule safety limits must be positive")
+    # count / max_duration_hours are optional (None = unbounded, run until the
+    # workflow is stopped). Only a provided value is bounded (count >= 1,
+    # max_duration_hours > 0).
+    if (node.count is not None and node.count < 1) or (
+        node.max_duration_hours is not None and node.max_duration_hours <= 0
+    ):
+        raise ContractViolation(node.id, "Schedule safety limits must be positive when set")
     proxy = _StartupContext(context)
     try:
         return await ScheduleNodeExecutor().execute(node.id, node.type, config, proxy)

@@ -50,17 +50,29 @@ class ScheduleNode(BaseNode):
         default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
     )
     enabled: bool = Field(default=True, description="Schedule enabled")
-    max_duration_hours: float = Field(
-        default=24.0,
-        description="최대 실행 시간 (시간). 초과 시 스케줄 자동 종료.",
+    # None (omitted) = unbounded: run until the workflow is stopped. Owner
+    # decision 2026-09-26: when the investor names no duration, the bot keeps
+    # running on its cron until the user stops the workflow. A provided value
+    # is still enforced (> 0) as a cap.
+    max_duration_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "최대 실행 시간 (시간). 생략(None)하면 사용자가 워크플로우를 멈출 때까지 "
+            "계속 실행한다. 값을 지정하면 초과 시 스케줄 자동 종료 (지정 시 반드시 > 0)."
+        ),
     )
     # ⑭ count was read by the executor (config.get("count", 1000)) but not
     # declared on the model — that schema/executor duality meant a canonical
-    # field was invisible to validation. Declared here (default matches the
-    # executor's safety cap) so the model is the single source of truth.
-    count: int = Field(
-        default=1000,
-        description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
+    # field was invisible to validation. Now declared here. None (omitted) =
+    # unbounded: run until the workflow is stopped (owner 2026-09-26). A
+    # provided value is enforced (>= 1) as a cycle cap.
+    count: Optional[int] = Field(
+        default=None,
+        description=(
+            "Max number of schedule cycles before the scheduler exits. Omit "
+            "(None) to run until the workflow is stopped; set only when the "
+            "investor named a fixed number of cycles (>= 1)."
+        ),
     )
 
     _inputs: List[InputPort] = []
@@ -76,7 +88,7 @@ class ScheduleNode(BaseNode):
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
             "Run the main flow on a cron schedule (every N minutes, daily at 09:30 ET, weekly market close, …)",
-            "Bound long-running workflows with max_duration_hours to avoid runaway schedulers",
+            "Run indefinitely until the user stops the workflow — omit max_duration_hours and count; set them only when the investor named a duration or cycle count",
             "Combine with TradingHoursFilterNode to fire only on weekdays within market hours",
         ],
         "when_not_to_use": [
@@ -93,12 +105,12 @@ class ScheduleNode(BaseNode):
     _features: ClassVar[List[str]] = [
         "Standard 5-field cron expression — minute / hour / day / month / weekday",
         "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
-        "max_duration_hours caps total runtime; the scheduler exits cleanly at the limit",
+        "max_duration_hours and count are optional bounds: omit both and the schedule runs until the workflow is stopped; set one and the scheduler exits cleanly at that limit",
         "enabled=False freezes the trigger without removing the node from the DAG",
         "A tick re-executes the whole main flow: the ScheduleNode returns {trigger: true} without re-registering, so every node downstream of it runs again on each tick",
         "Startup account and open-order snapshots are not retained across schedule ticks; they are retained only across realtime events",
         "In replay a schedule_tick must fall on the cron's next firing instant after the previous frame, evaluated in this node's timezone (default America/New_York)",
-        "enabled=false emits no tick; ticks past count or max_duration_hours are refused; an invalid timezone is rejected at startup",
+        "enabled=false emits no tick; when count / max_duration_hours are set, ticks past them are refused; when both are omitted the schedule is unbounded (runs until stopped); an invalid timezone is rejected at startup",
         "Emits exactly one subsequent event type: schedule_tick",
         "Requires exactly one StartNode upstream; the ScheduleNode is never the workflow root",
     ]
@@ -177,7 +189,7 @@ class ScheduleNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, `max_duration_hours`.",
+        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, and the optional bounds `max_duration_hours` / `count` (omit both to run until the workflow is stopped).",
         "output_consumption": "`trigger` output carries `{fired_at, cycle_index}`. Downstream nodes usually just need an incoming edge; explicit binding is optional.",
         "common_combinations": [
             "StartNode → ScheduleNode → trading body (plain cron workflow)",
@@ -187,7 +199,7 @@ class ScheduleNode(BaseNode):
         "pitfalls": [
             "Always set `timezone` explicitly — server defaults are not portable",
             "Pair with TradingHoursFilterNode when the cron expression does not already encode market hours",
-            "max_duration_hours caps the total runtime; for indefinite bots set it generously (up to 720h)",
+            "For a bot that should run until the user stops it, omit max_duration_hours and count; set them only when the investor named a duration (max_duration_hours > 0) or a cycle count (count >= 1)",
         ],
     }
 
@@ -237,9 +249,11 @@ class ScheduleNode(BaseNode):
                 name="max_duration_hours",
                 type=FieldType.NUMBER,
                 description="i18n:fields.ScheduleNode.max_duration_hours",
-                default=24.0,
+                # No default and NO max_value: omit for an unbounded schedule
+                # that runs until the workflow is stopped (owner 2026-09-26).
+                # Only a provided value is bounded (> 0).
+                default=None,
                 min_value=0.1,
-                max_value=720.0,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
                 expected_type="float",
@@ -248,8 +262,9 @@ class ScheduleNode(BaseNode):
             "count": FieldSchema(
                 name="count",
                 type=FieldType.INTEGER,
-                description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
-                default=1000,
+                description="Max number of schedule cycles before the scheduler exits. Omit for an unbounded schedule that runs until the workflow is stopped; set only when a fixed number of cycles is intended.",
+                # No default: omitted = unbounded (owner 2026-09-26).
+                default=None,
                 min_value=1,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,

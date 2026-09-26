@@ -2253,8 +2253,10 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         cron_expr = cron_expr.strip()
         tz_name = config.get("timezone", "America/New_York")
         enabled = config.get("enabled", True)
-        count = config.get("count", 1000)  # 최대 반복 횟수 (M-6: 기본값 축소; 모델 필드로 편입)
-        max_duration_hours = config.get("max_duration_hours", 24.0)
+        # None/absent = unbounded: run until the workflow is stopped (owner
+        # 2026-09-26). A provided value is enforced as a cap in the loop below.
+        count = config.get("count")  # None → no cycle cap
+        max_duration_hours = config.get("max_duration_hours")  # None → no wall-clock cap
         
         if not enabled:
             context.log("info", f"Schedule disabled: {cron_expr}", node_id)
@@ -2289,7 +2291,8 @@ class ScheduleNodeExecutor(NodeExecutorBase):
             import time as _time
             cnt = 0
             start_mono = _time.monotonic()
-            max_duration_sec = max_duration_hours * 3600
+            # None = unbounded; only compute a wall-clock cap when a bound was set.
+            max_duration_sec = max_duration_hours * 3600 if max_duration_hours is not None else None
             try:
                 # second_at_beginning=True로 초 단위 cron도 지원
                 try:
@@ -2297,7 +2300,7 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                 except TypeError:
                     itr = croniter(cron_expr, datetime.now(tz))
 
-                while cnt < count and context.is_running:
+                while (count is None or cnt < count) and context.is_running:
                     # dry_run: 루프 진입 즉시 1회 emit 후 종료
                     if context.is_dry_run:
                         cnt += 1
@@ -2317,8 +2320,9 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                             },
                         )
                         break
-                    # M-6: max_duration_hours 초과 시 스케줄 종료
-                    if (_time.monotonic() - start_mono) >= max_duration_sec:
+                    # M-6: max_duration_hours 초과 시 스케줄 종료 (한도가 설정된 경우에만;
+                    # None 이면 사용자가 워크플로우를 멈출 때까지 계속 실행)
+                    if max_duration_sec is not None and (_time.monotonic() - start_mono) >= max_duration_sec:
                         context.log(
                             "warning",
                             f"Schedule max_duration_hours={max_duration_hours}h 초과 - "

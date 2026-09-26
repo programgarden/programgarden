@@ -45,12 +45,37 @@ def test_schedule_model_cron_is_required():
 
 
 def test_schedule_count_is_declared_field_not_executor_only():
-    """count (executor safety cap) is a declared model + schema field now."""
+    """count (executor safety cap) is a declared model + schema field now.
+
+    Owner 2026-09-26: the default is None (unbounded — run until the workflow is
+    stopped), not 1000. count remains a declared field so it is visible to
+    validation (schema/executor duality removed)."""
     node = ScheduleNode(id="s", cron="0 9 * * *")
-    assert node.count == 1000  # default matches the executor's cap
+    assert node.count is None  # omitted = unbounded (no cycle cap)
     fs = ScheduleNode.get_field_schema()
     assert "count" in fs, "count must be exposed in the schema (duality removed)"
-    assert fs["count"].default == 1000
+    assert fs["count"].default is None
+
+
+def test_schedule_omitted_bounds_report_none_and_validate():
+    """Owner 2026-09-26 (a): a ScheduleNode with no count / max_duration_hours
+    constructs fine and reports None for both (unbounded — runs until stopped)."""
+    node = ScheduleNode(id="s", cron="0 9 * * *")
+    assert node.count is None
+    assert node.max_duration_hours is None
+    # A provided value is still accepted.
+    bounded = ScheduleNode(id="s2", cron="0 9 * * *", count=5, max_duration_hours=3.0)
+    assert bounded.count == 5
+    assert bounded.max_duration_hours == 3.0
+
+
+def test_schedule_max_duration_hours_has_no_720_upper_bound():
+    """Owner 2026-09-26 (d): the catalog schema no longer caps max_duration_hours
+    at 720 — an omitted value means unbounded, so there is no max_value to expose."""
+    fs = ScheduleNode.get_field_schema()
+    md = fs["max_duration_hours"]
+    assert md.max_value is None, "max_duration_hours must not advertise a 720h ceiling"
+    assert md.default is None, "max_duration_hours default is None (unbounded)"
 
 
 def test_schedule_anti_patterns_flag_mode_schedule_keys():
