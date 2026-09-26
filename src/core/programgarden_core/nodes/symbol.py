@@ -111,10 +111,10 @@ class WatchlistNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}, {"symbol": "NVDA", "exchange": "NASDAQ"}]},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.watchlist.symbols }}"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.watchlist.symbols }}'},
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ nodes.split.item }}"},
-                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.value }}"},
-                ],
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -122,7 +122,7 @@ class WatchlistNode(BaseNode):
                     {"from": "split", "to": "market"},
                     {"from": "broker", "to": "market"},
                     {"from": "market", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -138,7 +138,7 @@ class WatchlistNode(BaseNode):
         },
         {
             "title": "Watchlist with exclusion filter before ordering",
-            "description": "WatchlistNode provides candidates; ExclusionListNode removes blacklisted symbols; remaining symbols go to an order node.",
+            "description": 'WatchlistNode provides candidates; ExclusionListNode removes blacklisted symbols; remaining symbols go to an order node. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "watchlist_exclusion_order",
                 "name": "Watchlist Exclusion Order",
@@ -147,9 +147,9 @@ class WatchlistNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "AMZN", "exchange": "NASDAQ"}]},
                     {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 100.0},
-                ],
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.exclusion.filtered }}'},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'order_type': 'limit', 'side': 'buy', 'order': {'symbol': '{{ nodes.split.item.symbol }}', 'exchange': '{{ nodes.split.item.exchange }}', 'quantity': 1, 'price': 100.0}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -157,7 +157,7 @@ class WatchlistNode(BaseNode):
                     {"from": "exclusion", "to": "split"},
                     {"from": "split", "to": "order"},
                     {"from": "broker", "to": "order"},
-                ],
+                {'from': 'order', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -392,7 +392,7 @@ class ScreenerNode(BaseNode):
     description: str = "i18n:nodes.ScreenerNode.description"
 
     # 입력 종목 리스트 (선택사항) - 바인딩 또는 직접 입력
-    symbols: Optional[Union[List[Dict[str, str]], str]] = Field(
+    symbols: Optional[Union[List[Dict[str, Any]], str]] = Field(
         default=None,
         description="필터링할 종목 리스트. 없으면 전체 시장에서 검색",
     )
@@ -592,6 +592,10 @@ class ScreenerNode(BaseNode):
             "KoreaStockBrokerNode → KoreaStockSymbolQueryNode → ScreenerNode(market='korea_stock') → SplitNode",
         ],
         "pitfalls": [
+            "LS screening requires an explicit exchange for each symbol and a connected broker credential. It does not guess NASDAQ for unknown exchanges.",
+            "LS sector filtering is unsupported: choose data_source='yfinance' for sector names. A sector condition is never silently removed in LS mode.",
+            "LS market-cap filters require numeric market_cap from a g3190 master upstream. A watchlist plus g3101 cannot supply market cap; missing data raises an error.",
+            "Valid observations with no matching symbols produce count=0. Missing quotes, wrong response identity or unavailable filter data are errors, not a no-signal result.",
             "ScreenerNode relies on Yahoo Finance data (or LS g3190/g3101 for overseas_stock) which may have delays or inconsistencies with realtime broker data.",
             "Setting no filters returns all symbols up to max_results — always set at least one filter for production strategies.",
             "data_source='ls' is only effective for overseas_stock. Other markets log a warning and fall back to yfinance — set data_source='yfinance' explicitly to silence the warning.",
@@ -600,9 +604,9 @@ class ScreenerNode(BaseNode):
         ],
     }
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Preserve numeric master fields; bind LS quotes and fail unavailable filters without treating zero matches as errors."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -879,7 +883,7 @@ class ExclusionListNode(BaseNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Static blacklist blocks order placement",
-            "description": "TSLA is statically blacklisted; ExclusionListNode filters it out from the watchlist; the remaining symbols proceed to the order node. TSLA order is automatically blocked.",
+            "description": 'TSLA is statically blacklisted; ExclusionListNode filters it out from the watchlist; the remaining symbols proceed to the order node. TSLA order is automatically blocked. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "exclusion_order_block",
                 "name": "Exclusion List Order Block",
@@ -888,9 +892,9 @@ class ExclusionListNode(BaseNode):
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "TSLA", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
                     {"id": "exclusion", "type": "ExclusionListNode", "symbols": [{"symbol": "TSLA", "exchange": "NASDAQ", "reason": "high volatility blacklist"}], "input_symbols": "{{ nodes.watchlist.symbols }}"},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.exclusion.filtered }}"},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ nodes.split.item.symbol }}", "exchange": "{{ nodes.split.item.exchange }}", "order_type": "limit", "side": "buy", "quantity": 1, "price": 150.0},
-                ],
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.exclusion.filtered }}'},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'order_type': 'limit', 'side': 'buy', 'order': {'symbol': '{{ nodes.split.item.symbol }}', 'exchange': '{{ nodes.split.item.exchange }}', 'quantity': 1, 'price': 150.0}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
@@ -898,7 +902,7 @@ class ExclusionListNode(BaseNode):
                     {"from": "exclusion", "to": "split"},
                     {"from": "split", "to": "order"},
                     {"from": "broker", "to": "order"},
-                ],
+                {'from': 'order', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

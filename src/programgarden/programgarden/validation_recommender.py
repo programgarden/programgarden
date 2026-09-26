@@ -72,8 +72,6 @@ ACCOUNT_NODES: Set[str] = {
 EXTERNAL_API_NODES: Set[str] = {
     "HTTPRequestNode",
     "TelegramNode",
-    "FundamentalDataNode",
-    "FearGreedIndexNode",
 }
 
 AGGREGATE_NODES: Set[str] = {"AggregateNode", "FieldMappingNode", "ConditionNode", "SplitNode"}

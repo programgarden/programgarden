@@ -389,8 +389,18 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         "Supports extended price_type options: LOO, LOC, MOO, MOC for open/close auction orders",
         "is_tool_enabled=True — AI Agent can call this node as a tool to place orders autonomously",
         "retry is disabled by default (resilience.retry.enabled=False); only pure network-connection failures may be retried, never a submitted order",
-        "US daytime (Blue Ocean) session accepts LIMIT orders only — a market order is refused at intake with rsp_cd=00891 and no order number. A workflow scheduled across both the daytime and the regular overnight session must therefore use order_type='limit' for it to work in both.",
+        "US daytime (Blue Ocean) session accepts LIMIT orders only — a market order is refused at intake with rsp_cd=00891 and no order number (00891 is a generic order-price rejection: it was also observed on 2026-09-24 for a price of 1 USD or more sent with more than two decimals — '주문단가 오류. $1이상은 소수점 2째 자리까지 입력가능합니다'). A workflow scheduled across both the daytime and the regular overnight session must therefore use order_type='limit' for it to work in both.",
         "A limit order needs a price. Buy orders fall back to a current-price lookup, and so do sell orders since engine 1.37.3, but that lookup (g3101) only accepts exchange codes 81/82 — it fails for a holding listed on any other market. Prefer feeding the price the account balance already carries: price='{{ item.current_price }}'.",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "Every executed new-order node places an order, booked in replay as SIM-<node_id> (SIM-<node_id>#2 on a repeat, SIM-REPLACE-<modify_node> for a replacement); a node behind a false IfNode books nothing, and one intended order maps to one new-order node",
+        "The result port is an array of one order object {order_id, exchange, symbol, side, quantity, price, status}",
+        "A rejected order is still booked with status rejected; a timeout books unknown and reserves the cost; cash is debited on fills only; live_order_count is always 0 in replay",
+        "It may depend only on its gating IfNode; any other upstream completion triggers it even when the gate is false",
+        "The engine does not refuse a buy for a held symbol; only a workflow guard can block buying while holding",
+        "An overseas-stock market buy is submitted live as a limit order at the current price (LS accepts limit buys only; sells may be market or limit); replay mirrors it, so the booked intent is order_type limit at the quote",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -427,7 +437,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Signal-driven buy order via PositionSizingNode",
-            "description": "RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy.",
+            "description": 'RSI oversold signal triggers PositionSizingNode to compute the order size, then OverseasStockNewOrderNode places the buy. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_new_order_rsi_buy",
                 "name": "RSI Buy Order",
@@ -438,7 +448,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
                     {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "fields": ["price"]},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1d", "count": 20},
                     {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold_threshold": 30}},
-                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": "{{ nodes.market.value.current_price }}", "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "price": '{{ nodes.market.values[0].price }}', "symbol": {"symbol": "AAPL", "exchange": "NASDAQ"}},
                     {"id": "order", "type": "OverseasStockNewOrderNode", "side": "buy", "order_type": "limit", "order": "{{ nodes.sizing.order }}"},
                 ],
                 "edges": [
@@ -468,7 +478,7 @@ class OverseasStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Basket sell order — auto-iterate over positions array",
-            "description": "Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold.",
+            "description": 'Fetch held positions and auto-iterate to place a sell order for every position above a profit threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_stock_basket_sell",
                 "name": "Basket Sell",
@@ -659,6 +669,12 @@ class OverseasStockModifyOrderNode(BaseModifyOrderNode):
         "Modifies price and/or quantity of a single open order identified by original_order_id + symbol + exchange",
         "Retry disabled by default (same safety rationale as new-order nodes — a duplicate modify can cause unintended fills)",
         "Rate-limited to 1 concurrent execution with 5-second minimum interval to prevent rapid repeated modifications",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A modify is only acknowledged in the tick; the original order is replaced only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
+        "Replay supports limit-to-limit modification only; the replacement order is booked as SIM-REPLACE-<node_id>",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -946,6 +962,11 @@ class OverseasStockCancelOrderNode(BaseModifyOrderNode):
         "Cancels a single open order identified by original_order_id + symbol + exchange; auto-iterate to cancel multiple",
         "Retry disabled by default — a duplicate cancel on an already-cancelled order returns an error from the broker",
         "Rate-limited to 1 concurrent execution with 5-second minimum interval",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A cancel is only acknowledged in the tick; the order is cancelled only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -1184,6 +1205,15 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
         "is_tool_enabled=True — AI Agent can call this node as a tool to place futures orders",
         "Retry disabled by default to prevent duplicate futures contract positions",
         "Rate-limited to 1 concurrent execution with 5-second minimum interval",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "Every executed new-order node places an order, booked in replay as SIM-<node_id> (SIM-<node_id>#2 on a repeat, SIM-REPLACE-<modify_node> for a replacement); a node behind a false IfNode books nothing, and one intended order maps to one new-order node",
+        "The result port is an array of one order object {order_id, exchange, symbol, side, quantity, price, status}",
+        "A rejected order is still booked with status rejected; a timeout books unknown and reserves the cost; cash is debited on fills only; live_order_count is always 0 in replay",
+        "It may depend only on its gating IfNode; any other upstream completion triggers it even when the gate is false",
+        "The simulator refuses a futures order that adds to a same-direction position; position reversal is not supported",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -1210,7 +1240,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Place a CME NQ futures buy order",
-            "description": "Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME.",
+            "description": 'Trend signal triggers a buy order for one NASDAQ-100 Mini futures contract on CME. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_nq_buy",
                 "name": "NQ Futures Buy",
@@ -1242,7 +1272,7 @@ class OverseasFuturesNewOrderNode(BaseOrderNode):
         },
         {
             "title": "HKEX mini-futures basket order via auto-iterate",
-            "description": "Place orders for multiple HKEX futures contracts by auto-iterating over a signals array.",
+            "description": 'Place orders for multiple HKEX futures contracts by auto-iterating over a signals array. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "overseas_futures_new_order_hkex_basket",
                 "name": "HKEX Futures Basket",
@@ -1433,6 +1463,12 @@ class OverseasFuturesModifyOrderNode(BaseModifyOrderNode):
         "Modifies price and/or quantity of a single open futures order by original_order_id + symbol + exchange",
         "Supports the same exchanges as OverseasFuturesNewOrderNode (CME, EUREX, SGX, HKEX)",
         "Retry disabled by default — duplicate modify on a futures order can create unexpected position delta",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A modify is only acknowledged in the tick; the original order is replaced only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
+        "Replay supports limit-to-limit modification only; the replacement order is booked as SIM-REPLACE-<node_id>",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -1697,6 +1733,11 @@ class OverseasFuturesCancelOrderNode(BaseModifyOrderNode):
         "Cancels a single open futures order by original_order_id + symbol + exchange; auto-iterate for batch cancellation",
         "Retry disabled by default — a duplicate cancel returns a broker error if the order was already cancelled",
         "Rate-limited to 1 concurrent execution with 5-second minimum interval",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A cancel is only acknowledged in the tick; the order is cancelled only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -1935,6 +1976,15 @@ class KoreaStockNewOrderNode(BaseOrderNode):
         "is_tool_enabled=True — AI Agent can call this node as a tool to place Korean stock orders",
         "Real-market only — paper_trading mode is not supported for Korean domestic stocks; KoreaStockBrokerNode enforces this",
         "Retry disabled by default to prevent duplicate KRW-denominated orders",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "Every executed new-order node places an order, booked in replay as SIM-<node_id> (SIM-<node_id>#2 on a repeat, SIM-REPLACE-<modify_node> for a replacement); a node behind a false IfNode books nothing, and one intended order maps to one new-order node",
+        "The result port is an array of one order object {order_id, exchange, symbol, side, quantity, price, status}",
+        "A rejected order is still booked with status rejected; a timeout books unknown and reserves the cost; cash is debited on fills only; live_order_count is always 0 in replay",
+        "It may depend only on its gating IfNode; any other upstream completion triggers it even when the gate is false",
+        "The engine does not refuse a buy for a held symbol; only a workflow guard can block buying while holding",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -1961,7 +2011,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "RSI-driven buy order for Samsung Electronics",
-            "description": "RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode.",
+            "description": 'RSI oversold signal on daily data triggers a buy order for Samsung stock via PositionSizingNode. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_new_order_rsi_buy",
                 "name": "Korea Stock RSI Buy",
@@ -2009,7 +2059,7 @@ class KoreaStockNewOrderNode(BaseOrderNode):
         },
         {
             "title": "Market sell order for all held Korean stocks",
-            "description": "Fetch account positions and auto-iterate to place a market sell for every held stock.",
+            "description": 'Fetch account positions and auto-iterate to place a market sell for every held stock. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "korea_stock_basket_sell",
                 "name": "Korea Stock Basket Sell",
@@ -2194,6 +2244,12 @@ class KoreaStockModifyOrderNode(BaseModifyOrderNode):
         "Modifies price and/or quantity of a single open Korean stock order by original_order_id + symbol",
         "No exchange field required — Korean stock symbol (6-digit code) uniquely identifies the instrument",
         "Retry disabled by default to prevent double-modification risk in KRW-denominated orders",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A modify is only acknowledged in the tick; the original order is replaced only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
+        "Replay supports limit-to-limit modification only; the replacement order is booked as SIM-REPLACE-<node_id>",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -2447,6 +2503,11 @@ class KoreaStockCancelOrderNode(BaseModifyOrderNode):
         "Cancels a single open Korean stock order by original_order_id + symbol; auto-iterate for batch cancellation",
         "No exchange field required — Korean stock symbols uniquely identify KOSPI/KOSDAQ instruments",
         "Retry disabled by default — a duplicate cancel returns an error if the order was already cancelled",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "A cancel is only acknowledged in the tick; the order is cancelled only when a matching completion is observed via a downstream *OpenOrdersNode recording's top-level order_events array",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

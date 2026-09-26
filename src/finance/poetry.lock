@@ -754,18 +754,19 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-core"
-version = "1.30.1"
+version = "2.0.1"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-1.30.1-py3-none-any.whl", hash = "sha256:ec724677743a9c22379f646e117e4024a731aa101b6fd073f21a11c8af597f28"},
-    {file = "programgarden_core-1.30.1.tar.gz", hash = "sha256:7b59522f55934aba13b49ef54ca7d55cb81d6559e98067008e837100196a63a0"},
+    {file = "programgarden_core-2.0.1-py3-none-any.whl", hash = "sha256:905d700f0cd51ae8e8362fda79b13add8c5fa3b41b6a07adde3ff77c17cc782e"},
+    {file = "programgarden_core-2.0.1.tar.gz", hash = "sha256:1de19da492f3c9d28947f62f33cf3dafdd422eba0565683a5dbdb0a848627e10"},
 ]
 
 [package.dependencies]
-pydantic = ">=2.0.0,<3.0.0"
+pydantic = ">=2.0.1,<3.0.0"
+tzdata = ">=2025.2,<2026.0"
 
 [[package]]
 name = "propcache"
@@ -1193,6 +1194,18 @@ files = [
 typing-extensions = ">=4.15.0"
 
 [[package]]
+name = "tzdata"
+version = "2025.3"
+description = "Provider of IANA time zone data"
+optional = false
+python-versions = ">=2"
+groups = ["main"]
+files = [
+    {file = "tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1"},
+    {file = "tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7"},
+]
+
+[[package]]
 name = "urllib3"
 version = "2.7.0"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -1411,4 +1424,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "ffacd437afd48c448173ddda8ece7adf294d0a8ba16aa9d23ea30397870a90ab"
+content-hash = "2ca67c3814c041f406c3bbd5b6dcd24623ba14baf59bfd90dfb4cd7e51a3a4e3"

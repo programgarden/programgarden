@@ -37,6 +37,12 @@ flowchart LR
 
 WatchlistNode이 3개 종목을 출력하면, HistoricalDataNode은 각 종목에 대해 3번 실행됩니다.
 
+> **트리거 조건**: 반복은 입력이 **비어있지 않은 배열**이고 노드 타입이 제외 목록에 없을 때 일어납니다.
+> 설정에 `{{ item }}` 이 **없어도** N번 반복됩니다(계좌 노드는 암묵적 반복 소스로 쓰이지 않습니다).
+> `item` 은 **반복 중에만** 정의됩니다 — 반복 밖에서 `{{ item }}` 을 쓰면 오류입니다. 반면
+> `index`/`total` 은 반복 밖에서도 오류 없이 `0` 입니다. 반복 대상 키(`{{ item ... }}` 를 담은 값)는
+> 반복 시작 전까지 평가가 지연됩니다.
+
 ***
 
 ## ⚠️ Broker 명시적 엣지 주의사항
@@ -156,6 +162,13 @@ Auto-Iterate가 자동으로 동작하지만, **SplitNode**을 사용하면 더 
 }
 ```
 
+> **주의 (프록시 함정)**: 이 프록시(NodeOutputProxy)는 `len()`/반복/`__bool__` 을 지원하지 않습니다.
+> - 개수는 `len(...)` 이 아니라 **`.count()`** (`len(proxy)` 는 오류).
+> - 비어있는지 확인은 `{{ nodes.x.positions.count() == 0 }}` (빈데도 프록시는 항상 truthy).
+> - `x in proxy`, `sorted(proxy)`, `list(proxy)` 는 **멈춥니다** — 먼저 `.all()` 로 리스트로 바꾸세요.
+> - `.filter()` 는 **비교 하나**만 받습니다(`and`/`or` 불가) — 두 번 체이닝하세요.
+> - 헬퍼와 같은 이름의 출력 포트가 있으면 맨 속성은 포트값, **호출**(`.count()`)은 헬퍼입니다.
+
 ***
 
 ## 함수 네임스페이스
@@ -177,10 +190,14 @@ Auto-Iterate가 자동으로 동작하지만, **SplitNode**을 사용하면 더 
 
 | 함수                             | 설명      | 예시                                            |
 | ------------------------------ | ------- | --------------------------------------------- |
-| `finance.pct_change(a, b)`     | 변화율 (%) | `{{ finance.pct_change(100, 110) }}` → `10.0` |
-| `finance.pct(value, pct)`      | 비율 계산   | `{{ finance.pct(1000, 10) }}` → `100`         |
-| `finance.discount(price, pct)` | 할인가     | `{{ finance.discount(100, 5) }}` → `95`       |
-| `finance.markup(price, pct)`   | 할증가     | `{{ finance.markup(100, 5) }}` → `105`        |
+| `finance.pct_change(old, new)` | 변화율 (%) | `{{ finance.pct_change(100, 110) }}` → `10.0` |
+| `finance.pct(part, total)`     | **part 가 total 의 몇 %인지** `(part/total*100)` | `{{ finance.pct(50, 200) }}` → `25.0` |
+| `finance.discount(price, pct)` | 할인가     | `{{ finance.discount(100, 5) }}` → `95.0`     |
+| `finance.markup(price, pct)`   | 할증가     | `{{ finance.markup(100, 5) }}` → `105.0`      |
+
+> **⚠️ `finance.pct` 오해 주의**: "값의 몇 %"가 아니라 **part ÷ total × 100** 입니다.
+> `finance.pct(1000, 10)` 은 `100` 이 아니라 **`10000.0`** 입니다. "잔고의 10%"를 원하면
+> `finance.pct` 대신 곱셈을 쓰세요: `{{ nodes.account.balance.orderable_amount * 0.1 }}`.
 
 ### stats - 통계
 
@@ -206,4 +223,11 @@ Auto-Iterate가 자동으로 동작하지만, **SplitNode**을 사용하면 더 
 | `lst.last(arr)`       | 마지막   | `{{ lst.last(items) }}`          |
 | `lst.count(arr)`      | 개수    | `{{ lst.count(items) }}`         |
 | `lst.pluck(arr, key)` | 필드 추출 | `{{ lst.pluck(items, 'name') }}` |
-| `lst.flatten(arr)`    | 평탄화   | `{{ lst.flatten(nested) }}`      |
+| `lst.flatten(arr, key)` | 중첩 배열 평탄화(부모 필드 유지, **key 필수**) | `{{ lst.flatten(items, 'bars') }}` |
+
+> **⚠️ `lst.flatten` 인자**: `key`(중첩 배열 필드명)는 **필수**입니다. `lst.flatten(items)` 처럼
+> 하나만 주면 "필수 인자 누락" 오류입니다. 항상 `lst.flatten(items, '중첩키')`.
+
+> `date.*` 의 `format` 은 `'yyyymmdd'`/`'iso'` 프리셋 또는 실제 strftime 패턴만 받습니다.
+> `'yyyy-mm-dd'` 같은 자리표시자는 그 글자 그대로 돌아옵니다. 전체 규칙·함정은
+> [expression_guide.md](./expression_guide.md) 참고.

@@ -87,6 +87,11 @@ class OverseasStockMarketDataNode(BaseNode):
         "is_tool_enabled=True — AI Agent can call this node to look up live prices autonomously",
         "Broker connection is auto-injected via DAG traversal — no explicit binding needed",
         "REST-based polling; for continuous streaming use OverseasStockRealMarketDataNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "In replay the one-shot quote records its `values` port as a flat row list at nodes.<id>.output.values; this is not the realtime symbol-keyed ohlcv_data shape",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -197,26 +202,6 @@ class OverseasStockMarketDataNode(BaseNode):
     ]
     _outputs: List[OutputPort] = [
         OutputPort(
-            name="value",
-            type="market_data",
-            description="i18n:ports.market_data_value",
-            fields=PRICE_DATA_FIELDS,
-            example={
-                "symbol": "AAPL",
-                "exchange": "NASDAQ",
-                "price": 187.45,
-                "change": -2.34,
-                "change_pct": -1.23,
-                "volume": 12_345_678,
-                "open": 189.10,
-                "high": 190.02,
-                "low": 186.90,
-                "close": 187.45,
-                "per": 28.5,
-                "eps": 6.57,
-            },
-        ),
-        OutputPort(
             name="values",
             type="array",
             description="Array of per-symbol market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
@@ -224,9 +209,9 @@ class OverseasStockMarketDataNode(BaseNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Remove nonexistent singular quote output; bind the values array."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:

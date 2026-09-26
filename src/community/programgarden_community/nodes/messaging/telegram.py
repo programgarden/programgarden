@@ -46,7 +46,7 @@ class TelegramNode(BaseMessagingNode):
     """
     
     type: Literal["TelegramNode"] = "TelegramNode"
-    description: str = "Send messages via Telegram Bot API"
+    description: str = "Send Telegram messages using a registered bot token and receiving chat ID; key-free drafts can be saved before linking credentials."
     
     # 노드 아이콘 (텔레그램 로고)
     _img_url: ClassVar[str] = "https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg"
@@ -61,7 +61,7 @@ class TelegramNode(BaseMessagingNode):
         "when_not_to_use": [
             "As the primary data source — TelegramNode only sends outbound messages, it cannot receive or read messages",
             "For high-frequency per-tick notifications — combine with ThrottleNode or IfNode to limit message volume",
-            "When no Telegram bot credential is available — credential_id with bot_token and chat_id is required",
+            "Live sending without a Telegram credential — both bot_token and receiving chat_id are required. An unlinked draft can be saved and validated offline; that does not verify delivery.",
         ],
         "typical_scenarios": [
             "ConditionNode (signal=True) → TelegramNode (alert with symbol and RSI value)",
@@ -202,8 +202,8 @@ class TelegramNode(BaseMessagingNode):
     }
 
     # credential에서 자동 주입됨 (exclude=True로 UI/스키마에서 제외)
-    bot_token: Optional[str] = Field(default=None, exclude=True)
-    chat_id: Optional[str] = Field(default=None, exclude=True)
+    bot_token: Optional[str] = Field(default=None, exclude=True, repr=False)
+    chat_id: Optional[str] = Field(default=None, exclude=True, repr=False)
     
     # BaseNotificationNode의 _outputs 확장
     _outputs: List[OutputPort] = [
@@ -234,7 +234,7 @@ class TelegramNode(BaseMessagingNode):
         - template: BOTH (고정값 또는 {{ }} 표현식 모두 사용 가능)
         - credential_id: FIXED_ONLY (고정값만 허용)
         """
-        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
         return {
             # === PARAMETERS: 핵심 설정 ===
             "template": FieldSchema(
@@ -252,7 +252,9 @@ class TelegramNode(BaseMessagingNode):
             "credential_id": FieldSchema(
                 name="credential_id",
                 type=FieldType.STRING,
-                description="텔레그램 봇 credential ID. credentials 섹션에 {bot_token, chat_id} 정의 필요",
+                description="텔레그램 봇 토큰과 수신 채팅 ID가 등록된 인증정보를 선택하세요. 노드에서 연결 해제·교체할 수 있습니다. 키 없이 초안 저장은 가능하며, 실제 메시지 전송 전에 연결해야 합니다.",
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
+                credential_types=["telegram_bot", "telegram"],
                 required=True,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.PARAMETERS,
@@ -278,7 +280,12 @@ class TelegramNode(BaseMessagingNode):
             }
         """
         import aiohttp
-        
+
+        # Direct node invocation must also avoid sending validation messages.
+        if getattr(context, "is_deep_validate", False) is True or getattr(context, "is_dry_run", False) is True:
+            return {"sent": False, "message_id": "", "simulation_skipped": True,
+                    "live_delivery_verified": False}
+
         # 1. 필수 필드 검증 (credential에서 자동 주입되어 있어야 함)
         if not self.bot_token:
             return {"sent": False, "error": "bot_token is required (set credential_id)"}
@@ -328,7 +335,7 @@ class TelegramNode(BaseMessagingNode):
                         }
         
         except aiohttp.ClientError as e:
-            return {"sent": False, "error": f"Network error: {str(e)}"}
+            return {"sent": False, "error": "Telegram network request failed", "error_code": "TELEGRAM_NETWORK_ERROR"}
         except Exception as e:
-            return {"sent": False, "error": f"Unexpected error: {str(e)}"}
+            return {"sent": False, "error": "Telegram response could not be processed", "error_code": "TELEGRAM_RESPONSE_ERROR"}
 

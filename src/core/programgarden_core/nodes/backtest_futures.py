@@ -58,12 +58,12 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         description="Symbol list [{exchange, symbol}] — manual literal list; symbol (single) and upstream input take precedence",
     )
     start_date: str = Field(
-        default="{{ months_ago_yyyymmdd(3) }}",
-        description="Start date (YYYY-MM-DD or {{ months_ago_yyyymmdd(N) }})",
+        default="{{ date.months_ago(3, format='yyyymmdd') }}",
+        description="Start date (YYYY-MM-DD or {{ date.months_ago(N, format='yyyymmdd') }})",
     )
     end_date: str = Field(
-        default="{{ today_yyyymmdd() }}",
-        description="End date (YYYY-MM-DD or {{ today_yyyymmdd() }})",
+        default="{{ date.today(format='yyyymmdd') }}",
+        description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
     )
     interval: str = Field(
         default="1d",
@@ -102,6 +102,13 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         "adjust=True applies roll-adjusted prices for continuous contract backtesting",
         "is_tool_enabled=True — AI Agent can fetch futures history for technical analysis autonomously",
         "Item-based execution: pair with SplitNode to fetch OHLCV for multiple contracts",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "The value port is one row object whose time_series lists bars of exactly {date, open, high, low, close, volume}; the values port is the array of such rows",
+        "This ohlcv_data is not the realtime shape: a *RealMarketDataNode records ohlcv_data as a symbol-keyed object of bar lists, although both are typed ohlcv_data",
+        "A previous close is the close of the corresponding bar in time_series; a change cannot be computed from a single bar",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -125,17 +132,17 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "ESH26", "exchange": "CME"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'ESH26', 'exchange': 'CME'}]},
                     {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": False},
                     {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 20, "std": 2.0, "direction": "below_lower"}},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "historical"},
                     {"from": "broker", "to": "historical"},
                     {"from": "historical", "to": "condition"},
-                ],
+                {'from': 'condition', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -158,17 +165,17 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "MHIH26", "exchange": "HKEX"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MHIH26', 'exchange': 'HKEX'}]},
                     {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(10, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1h", "adjust": False},
                     {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "historical"},
                     {"from": "broker", "to": "historical"},
                     {"from": "historical", "to": "condition"},
-                ],
+                {'from': 'condition', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -259,7 +266,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 type=FieldType.STRING,
                 display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.start_date",
                 description="i18n:fields.OverseasFuturesHistoricalDataNode.start_date",
-                default="{{ months_ago_yyyymmdd(3) }}",
+                default="{{ date.months_ago(3, format='yyyymmdd') }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,
@@ -273,7 +280,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 type=FieldType.STRING,
                 display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.end_date",
                 description="i18n:fields.OverseasFuturesHistoricalDataNode.end_date",
-                default="{{ today_yyyymmdd() }}",
+                default="{{ date.today(format='yyyymmdd') }}",
                 required=True,
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.BOTH,

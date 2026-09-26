@@ -50,17 +50,29 @@ class ScheduleNode(BaseNode):
         default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
     )
     enabled: bool = Field(default=True, description="Schedule enabled")
-    max_duration_hours: float = Field(
-        default=24.0,
-        description="최대 실행 시간 (시간). 초과 시 스케줄 자동 종료.",
+    # None (omitted) = unbounded: run until the workflow is stopped. Owner
+    # decision 2026-09-26: when the investor names no duration, the bot keeps
+    # running on its cron until the user stops the workflow. A provided value
+    # is still enforced (> 0) as a cap.
+    max_duration_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "최대 실행 시간 (시간). 생략(None)하면 사용자가 워크플로우를 멈출 때까지 "
+            "계속 실행한다. 값을 지정하면 초과 시 스케줄 자동 종료 (지정 시 반드시 > 0)."
+        ),
     )
     # ⑭ count was read by the executor (config.get("count", 1000)) but not
     # declared on the model — that schema/executor duality meant a canonical
-    # field was invisible to validation. Declared here (default matches the
-    # executor's safety cap) so the model is the single source of truth.
-    count: int = Field(
-        default=1000,
-        description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
+    # field was invisible to validation. Now declared here. None (omitted) =
+    # unbounded: run until the workflow is stopped (owner 2026-09-26). A
+    # provided value is enforced (>= 1) as a cycle cap.
+    count: Optional[int] = Field(
+        default=None,
+        description=(
+            "Max number of schedule cycles before the scheduler exits. Omit "
+            "(None) to run until the workflow is stopped; set only when the "
+            "investor named a fixed number of cycles (>= 1)."
+        ),
     )
 
     _inputs: List[InputPort] = []
@@ -76,7 +88,7 @@ class ScheduleNode(BaseNode):
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
             "Run the main flow on a cron schedule (every N minutes, daily at 09:30 ET, weekly market close, …)",
-            "Bound long-running workflows with max_duration_hours to avoid runaway schedulers",
+            "Run indefinitely until the user stops the workflow — omit max_duration_hours and count; set them only when the investor named a duration or cycle count",
             "Combine with TradingHoursFilterNode to fire only on weekdays within market hours",
         ],
         "when_not_to_use": [
@@ -93,8 +105,14 @@ class ScheduleNode(BaseNode):
     _features: ClassVar[List[str]] = [
         "Standard 5-field cron expression — minute / hour / day / month / weekday",
         "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
-        "max_duration_hours caps total runtime; the scheduler exits cleanly at the limit",
+        "max_duration_hours and count are optional bounds: omit both and the schedule runs until the workflow is stopped; set one and the scheduler exits cleanly at that limit",
         "enabled=False freezes the trigger without removing the node from the DAG",
+        "A tick re-executes the whole main flow: the ScheduleNode returns {trigger: true} without re-registering, so every node downstream of it runs again on each tick",
+        "Startup account and open-order snapshots are not retained across schedule ticks; they are retained only across realtime events",
+        "In replay a schedule_tick must fall on the cron's next firing instant after the previous frame, evaluated in this node's timezone (default America/New_York)",
+        "enabled=false emits no tick; when count / max_duration_hours are set, ticks past them are refused; when both are omitted the schedule is unbounded (runs until stopped); an invalid timezone is rejected at startup",
+        "Emits exactly one subsequent event type: schedule_tick",
+        "Requires exactly one StartNode upstream; the ScheduleNode is never the workflow root",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -115,7 +133,7 @@ class ScheduleNode(BaseNode):
         {
             "pattern": "No TradingHoursFilterNode downstream for time-sensitive trading",
             "reason": "Cron fires exactly at the cron cadence, including weekends and holidays; orders may slip onto a closed market.",
-            "alternative": "Chain `ScheduleNode → TradingHoursFilterNode (from_port='passed') → trading body` so cron-after-hours is silently blocked.",
+            "alternative": "Use SessionGateNode → IfNode for immediate off-hours refusal, or TradingHoursFilterNode to wait until the window opens. Neither supplies an exchange holiday calendar.",
         },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
@@ -171,7 +189,7 @@ class ScheduleNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, `max_duration_hours`.",
+        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, and the optional bounds `max_duration_hours` / `count` (omit both to run until the workflow is stopped).",
         "output_consumption": "`trigger` output carries `{fired_at, cycle_index}`. Downstream nodes usually just need an incoming edge; explicit binding is optional.",
         "common_combinations": [
             "StartNode → ScheduleNode → trading body (plain cron workflow)",
@@ -181,7 +199,7 @@ class ScheduleNode(BaseNode):
         "pitfalls": [
             "Always set `timezone` explicitly — server defaults are not portable",
             "Pair with TradingHoursFilterNode when the cron expression does not already encode market hours",
-            "max_duration_hours caps the total runtime; for indefinite bots set it generously (up to 720h)",
+            "For a bot that should run until the user stops it, omit max_duration_hours and count; set them only when the investor named a duration (max_duration_hours > 0) or a cycle count (count >= 1)",
         ],
     }
 
@@ -231,9 +249,11 @@ class ScheduleNode(BaseNode):
                 name="max_duration_hours",
                 type=FieldType.NUMBER,
                 description="i18n:fields.ScheduleNode.max_duration_hours",
-                default=24.0,
+                # No default and NO max_value: omit for an unbounded schedule
+                # that runs until the workflow is stopped (owner 2026-09-26).
+                # Only a provided value is bounded (> 0).
+                default=None,
                 min_value=0.1,
-                max_value=720.0,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
                 expected_type="float",
@@ -242,8 +262,9 @@ class ScheduleNode(BaseNode):
             "count": FieldSchema(
                 name="count",
                 type=FieldType.INTEGER,
-                description="Max number of schedule cycles before the scheduler exits (safety cap alongside max_duration_hours).",
-                default=1000,
+                description="Max number of schedule cycles before the scheduler exits. Omit for an unbounded schedule that runs until the workflow is stopped; set only when a fixed number of cycles is intended.",
+                # No default: omitted = unbounded (owner 2026-09-26).
+                default=None,
                 min_value=1,
                 expression_mode=ExpressionMode.FIXED_ONLY,
                 category=FieldCategory.SETTINGS,
@@ -304,27 +325,28 @@ class TradingHoursFilterNode(BaseNode):
             "Enforce a start-of-day / end-of-day window around a fixed trading body",
         ],
         "when_not_to_use": [
-            "Actual exchange status (holidays, circuit breakers) — use MarketStatusNode (JIF-backed) for authoritative market state",
+            "Actual exchange status (holidays, circuit breakers) — no static time filter knows these; rely on realtime market-data nodes, which stop delivering ticks when the exchange is closed",
             "Strict cron cadence without time windowing — ScheduleNode alone is enough",
             "Realtime-only workflows that naturally stop outside market hours (no ticks arrive) — filter adds no value",
         ],
         "typical_scenarios": [
             "ScheduleNode → TradingHoursFilterNode → trading body (passed branch)",
-            "TradingHoursFilterNode → IfNode(reason='...') for per-reason branching",
+            "TradingHoursFilterNode blocked port → IfNode for timeout handling",
             "Start → TradingHoursFilterNode → long-running realtime subscription (cleanup at close)",
         ],
     }
     _features: ClassVar[List[str]] = [
         "Configurable start / end in HH:MM form and IANA timezone",
         "`days` whitelist supports weekend-only or weekday-only flows",
-        "Dual outputs: `passed` (within hours) and `blocked` (outside) for explicit branching",
+        "Outside the window this node waits; `passed` activates on entry and `blocked` activates only on timeout/shutdown",
         "max_wait_hours safeguards long waits — the node timeouts instead of stalling forever",
+        "In replay an instant outside the window is refused (REPLAY_TIME_WAIT_BLOCKED); only in-window instants are replayable and the node then emits passed=true, so it cannot express an after-hours branch in a suite",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
             "pattern": "Using TradingHoursFilterNode as a holiday / circuit-breaker check",
             "reason": "The node only knows HH:MM windows + day-of-week; it has no knowledge of US federal holidays or KRX short-sale suspensions.",
-            "alternative": "Chain MarketStatusNode (JIF) before TradingHoursFilterNode for authoritative exchange state.",
+            "alternative": "Rely on realtime market-data nodes (they only fire while the exchange is actually trading) rather than a static HH:MM filter for holiday / circuit-breaker awareness.",
         },
         {
             "pattern": "Missing timezone — defaulting to server time",
@@ -356,11 +378,11 @@ class TradingHoursFilterNode(BaseNode):
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
             },
-            "expected_output": "Cron fires every 5 min; account query runs only during US trading hours on weekdays. Off-hours cycles hit the blocked branch and skip downstream.",
+            "expected_output": "Account query runs after the trading window opens. Outside the window the node waits up to max_wait_hours; timeout skips the trading branch.",
         },
         {
             "title": "Branch on blocked path for after-hours notification",
-            "description": "TradingHoursFilterNode forks: passed branch runs trading body, blocked branch sends an after-hours notice.",
+            "description": "TradingHoursFilterNode waits for the window: passed runs the trading body; blocked handles timeout. Use SessionGateNode plus IfNode for an immediate closed-window decision.",
             "workflow_snippet": {
                 "id": "hours-filter-notify",
                 "name": "Trading hours fork",
@@ -383,12 +405,12 @@ class TradingHoursFilterNode(BaseNode):
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
             },
-            "expected_output": "Hourly cron; within hours → account query; outside hours → SummaryDisplay renders the closed notice.",
+            "expected_output": "Within hours → account query; outside hours → wait; on timeout → SummaryDisplay renders the blocked notice.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Trigger edge from upstream (ScheduleNode or StartNode). Window is configured via start / end / timezone / days.",
-        "output_consumption": "`passed` port runs during-hours branches; `blocked` runs after-hours branches. Use edge `from_port` to pick which downstream fires.",
+        "output_consumption": "`passed` and default edges run after entering the window; explicit `blocked` edges run on timeout. Outside the window the node waits first.",
         "common_combinations": [
             "ScheduleNode → TradingHoursFilterNode → trading body",
             "TradingHoursFilterNode → OverseasStockRealMarketDataNode (start realtime only in-hours)",
@@ -396,7 +418,7 @@ class TradingHoursFilterNode(BaseNode):
         ],
         "pitfalls": [
             "Always specify `timezone` — server default is not portable",
-            "For holidays / CB / market status use MarketStatusNode (JIF) instead of or alongside this node",
+            "For holidays / CB / actual market status, rely on realtime market-data nodes (no ticks arrive when the exchange is closed) rather than this static time filter",
             "`days` names are lowercase 3-letter: mon / tue / wed / thu / fri / sat / sun",
         ],
     }
@@ -413,7 +435,7 @@ class TradingHoursFilterNode(BaseNode):
             "start": FieldSchema(
                 name="start",
                 type=FieldType.STRING,
-                description="Start time in HH:MM format (24-hour). Signals before this time are blocked.",
+                description="Start time in HH:MM format (24-hour). Wait until the window opens, bounded by max_wait_hours.",
                 default="09:30",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -424,7 +446,7 @@ class TradingHoursFilterNode(BaseNode):
             "end": FieldSchema(
                 name="end",
                 type=FieldType.STRING,
-                description="End time in HH:MM format (24-hour). Signals after this time are blocked.",
+                description="Inclusive end minute in HH:MM format (24-hour). Afterward wait for the next configured window, bounded by max_wait_hours.",
                 default="16:00",
                 required=True,
                 category=FieldCategory.PARAMETERS,
@@ -468,31 +490,36 @@ class TradingHoursFilterNode(BaseNode):
             ),
         }
 
-    def _is_trading_hours(self) -> bool:
-        """Check if current time is within trading hours"""
+    def _is_trading_hours(self, *, as_of: Optional[datetime] = None) -> bool:
+        """Use the live window predicate with an optional aware replay instant."""
+        if as_of is not None and (as_of.tzinfo is None or as_of.utcoffset() is None):
+            raise ValueError("Trading-hours instant must include a timezone")
         try:
             import pytz
         except ImportError:
-            # pytz 없으면 UTC 기준으로 체크
-            now = datetime.utcnow()
-            tz = None
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self.timezone)
         else:
             tz = pytz.timezone(self.timezone)
-            now = datetime.now(tz)
+        now = as_of.astimezone(tz) if as_of is not None else datetime.now(tz)
         
         # 요일 체크
         day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-        active_weekdays = [day_map[d.lower()] for d in self.days if d.lower() in day_map]
+        if not self.days or any(d.lower() not in day_map for d in self.days):
+            raise ValueError("Trading days must use explicit weekday names")
+        active_weekdays = [day_map[d.lower()] for d in self.days]
+        # Reject malformed windows even on an inactive weekday.
+        import re
+        # H:MM and HH:MM are both unambiguous ("9:30" was accepted before 2.1.0).
+        if any(not isinstance(value, str) or not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", value)
+               for value in (self.start, self.end)):
+            raise ValueError("Trading-hours window requires HH:MM times")
+        start_h, start_m = map(int, self.start.split(":"))
+        end_h, end_m = map(int, self.end.split(":"))
+        if (end_h, end_m) < (start_h, start_m):
+            raise ValueError("Use SessionGateNode for an overnight window")
         if now.weekday() not in active_weekdays:
             return False
-        
-        # 시간 체크
-        try:
-            start_h, start_m = map(int, self.start.split(":"))
-            end_h, end_m = map(int, self.end.split(":"))
-        except ValueError:
-            # 파싱 실패 시 통과
-            return True
         
         current_minutes = now.hour * 60 + now.minute
         start_minutes = start_h * 60 + start_m
@@ -513,7 +540,7 @@ class TradingHoursFilterNode(BaseNode):
         # dry_run: 거래시간 대기 없이 즉시 통과
         if getattr(context, "is_dry_run", False):
             context.log("info", "[dry_run] TradingHoursFilter bypassed", self.id)
-            return {"passed": True, "reason": "dry_run_bypass"}
+            return {"passed": True, "blocked": False, "reason": "dry_run_bypass"}
 
         check_interval = 60  # 1분마다 체크
         wait_start = _time.monotonic()
@@ -523,7 +550,7 @@ class TradingHoursFilterNode(BaseNode):
             # graceful shutdown 체크
             if hasattr(context, 'is_running') and not context.is_running:
                 context.log("info", "Shutdown requested, exiting trading hours wait", self.id)
-                return {"passed": False, "reason": "shutdown"}
+                return {"passed": False, "blocked": True, "reason": "shutdown"}
 
             # M-7: max_wait_hours 초과 체크
             if (_time.monotonic() - wait_start) >= max_wait_sec:
@@ -532,10 +559,10 @@ class TradingHoursFilterNode(BaseNode):
                     f"거래시간 대기 timeout: max_wait_hours={self.max_wait_hours}h 초과",
                     self.id,
                 )
-                return {"passed": False, "reason": "timeout"}
+                return {"passed": False, "blocked": True, "reason": "timeout"}
 
             context.log("debug", f"Outside trading hours, waiting... (next check in {check_interval}s)", self.id)
             await asyncio.sleep(check_interval)
 
         context.log("info", "Trading hours active, passing through", self.id)
-        return {"passed": True}
+        return {"passed": True, "blocked": False}

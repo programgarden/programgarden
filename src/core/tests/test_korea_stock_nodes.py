@@ -137,10 +137,10 @@ class TestKoreaStockNodePorts:
         assert "open_orders" in names
         assert "count" in names
 
-    def test_market_data_output_is_value(self):
+    def test_market_data_output_matches_runtime_values(self):
         node = KoreaStockMarketDataNode(id="m")
         names = [p.name for p in node._outputs]
-        assert "value" in names
+        assert names == ["values"]
 
     def test_market_data_has_symbol_input(self):
         node = KoreaStockMarketDataNode(id="m")

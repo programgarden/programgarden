@@ -142,9 +142,9 @@ async def test_infinite_loop_times_out(monkeypatch):
 async def test_context_has_no_credential_accessors():
     # The sandboxed context must not expose credential access — the code path
     # simply does not exist (hasattr is False), and there are no keys anyway.
-    # (Underscore names like _secrets can't even be *written* in CodeNode code —
-    # the screener rejects underscore string literals — so we probe only the
-    # public accessor names here; the underscore path is covered by the screen.)
+    # (Single-underscore string literals are allowed now — they name native data
+    # markers — so an underscore presence-probe runs but reveals nothing on the
+    # scrubbed context; actual extraction stays screened, covered below.)
     out = await _run_code(
         code=(
             "async def execute(data, params, context):\n"
@@ -160,16 +160,22 @@ async def test_context_has_no_credential_accessors():
 
 
 @pytest.mark.asyncio
-async def test_underscore_credential_probe_is_screened_out():
-    # Even *attempting* to reference a private/credential attr by string is
-    # blocked at the screen — a defense-in-depth reinforcement of the scrub.
+async def test_underscore_string_probe_cannot_extract_secrets():
+    # A bare single-underscore string is allowed (it names native data markers
+    # such as balance["_partial_failure"]), so a hasattr presence-probe now runs
+    # — but on the SCRUBBED context it reveals nothing, and every actual
+    # extraction path (getattr, underscore attribute access) stays screened.
     from programgarden.executor import CodeNodeError
-    with pytest.raises(CodeNodeError) as ei:
-        await _run_code(
-            code="async def execute(data, params, context):\n    return {'x': hasattr(context, '_secrets')}",
-            outputs=[{"name": "x", "type": "boolean"}],
-        )
-    assert ei.value.error_code.value == "CODE_NODE_FORBIDDEN"
+    out = await _run_code(
+        code="async def execute(data, params, context):\n    return {'x': hasattr(context, '_secrets')}",
+        outputs=[{"name": "x", "type": "boolean"}])
+    assert out == {"x": False}
+    for extraction in ("getattr(context, '_secrets', None)", "context._secrets"):
+        with pytest.raises(CodeNodeError) as ei:
+            await _run_code(
+                code=f"async def execute(data, params, context):\n    return {{'x': {extraction}}}",
+                outputs=[{"name": "x", "type": "any"}])
+        assert ei.value.error_code.value == "CODE_NODE_FORBIDDEN"
 
 
 def test_ctx_snapshot_excludes_secrets():
@@ -297,3 +303,32 @@ async def test_whole_array_passed_in_one_call():
     out = job.context.get_all_outputs("c")
     assert out.get("count") == 2
     assert out.get("syms") == ["AAPL", "MSFT"]
+
+
+@pytest.mark.parametrize('bad', [len, float('nan'), {'nested': object()}])
+def test_non_json_input_is_rejected_before_worker_dispatch(bad, monkeypatch):
+    from programgarden import code_worker
+    def forbidden():
+        raise AssertionError('Invalid input reached worker pool')
+    monkeypatch.setattr(code_worker, 'get_code_worker_pool', forbidden)
+    result=code_worker.run_code_node_sandboxed(
+        code='def execute(data, params, context): return data',
+        node_id='invalid_input', data=bad, params={}, ctx_snapshot={},
+    )
+    assert result['ok'] is False
+    assert result['message']=='CodeNode input must contain only finite JSON-safe values.'
+
+
+@pytest.mark.asyncio
+async def test_single_underscore_marker_dict_key_runs():
+    # The documented native failure marker read as a dict key both compiles past
+    # the screen AND runs, returning the value (the reported six-repair blocker).
+    out = await _run_code(
+        code=(
+            "async def execute(data, params, context):\n"
+            "    balance = {'_partial_failure': True, 'orderable_amount': None}\n"
+            "    return {'flagged': balance.get('_partial_failure'), 'raw': balance['_partial_failure']}"
+        ),
+        outputs=[{"name": "flagged", "type": "boolean"}, {"name": "raw", "type": "boolean"}],
+    )
+    assert out == {"flagged": True, "raw": True}

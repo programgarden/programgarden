@@ -1,3 +1,33 @@
+## [2.2.0] - 2026-09-25
+
+### Removed
+- `FearGreedIndexNode` and `FileReaderNode` (owner 2026-09-25: keep the
+  library to what auto-trading needs).
+
+### Changed
+- deps: programgarden-core ^2.3.0.
+
+## [2.1.0] - 2026-09-24
+
+### Changed
+- FearGreedIndexNode: response normalization moved into `parse_response(data)` so
+  a recorded provider response can be parsed without network transport (replay).
+  Live behaviour is unchanged.
+- deps: programgarden-core ^2.1.0.
+
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Remove provider-specific transport, fixtures and examples. Keep financial plugins with verified-input requirements and Telegram credentials intact.
+
+
+### Fixed
+- Expose FMP and Telegram credential selectors and setup requirements. Preserve injected FMP keys privately and exercise financial records with offline deep-validation fixtures. Prevent direct Telegram validation sends and redact provider-network errors.
+
 ## [1.15.3] - 2026-09-12
 ### Fixed
 - **상태 기반 플러그인 5종의 트래커 메서드명 정렬 (time_based_exit / pair_trading / beta_hedge / correlation_guard /

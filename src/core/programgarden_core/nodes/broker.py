@@ -101,6 +101,10 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         "Creates and caches the LS-Sec session so every downstream overseas_stock node shares the same login",
         "`connection` output is auto-injected into every overseas_stock node by the executor — no manual binding required",
         "credential_types=['broker_ls_overseas_stock'] ensures only the correct credential is selected",
+        "On the first run its recording's request carries no connection; its output is {\"connection\": {provider, product, paper_trading, broker_node_id, and credential_id only when the account is linked}}, and an unlinked account has no credential_id key (never null)",
+        "On a schedule tick the executor injects this broker's own retained output.connection into its request, so a broker tick recording must repeat that connection or the replay refuses it",
+        "Downstream product-scoped nodes reference it by request.connection.broker_node_id set to this node's id; the compiler completes provider/product/paper_trading (and credential_id) from this broker's recorded output.connection",
+        "paper_trading must be false; the executor raises if it is true",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -150,7 +154,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
         },
         {
             "title": "Broker → Historical → Condition → Order",
-            "description": "Full trading path: broker session feeds historical data, a condition plugin decides, then the order node fires when the condition passes.",
+            "description": 'Full trading path: broker session feeds historical data, a condition plugin decides, then the order node fires when the condition passes. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "broker-stock-trade",
                 "name": "Broker + RSI + order",
@@ -181,7 +185,7 @@ class OverseasStockBrokerNode(BaseBrokerNode):
                         },
                         "fields": {"period": 14, "threshold": 30, "direction": "below"},
                     },
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "AAPL", "exchange": "NASDAQ", "side": "buy", "quantity": 1, "price": 150.0},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'buy', 'order': {'symbol': 'AAPL', 'exchange': 'NASDAQ', 'quantity': 1, 'price': 150.0}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},
@@ -264,7 +268,10 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
     LS증권 OpenAPI를 통해 해외선물 거래를 위한 브로커 연결을 생성합니다.
 
     Note:
-    - 해외선물은 모의투자 지원
+    - 해외선물은 **실거래와 모의투자 둘 다** 지원한다. 등록 폼에서 모드를 고르는 유일한
+      상품이며, ``paper_trading`` 은 등록한 자격증명의 모드를 따른다. (모의투자를 자주
+      쓰는 것은 증거금 비용 때문이지, 실거래가 안 되기 때문이 아니다.)
+    - 계좌가 여는 거래소(CME 등)는 **계좌마다 다르다** — 주문 가능 종목 조회로만 알 수 있다.
     - credential_types: broker_ls_overseas_futures
     """
 
@@ -295,6 +302,9 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
         "Only broker that natively supports LS-Sec paper trading (set paper_trading=True)",
         "Auto-injects the connection into every overseas_futures node in the same workflow",
         "credential_types=['broker_ls_overseas_futures'] keeps the selector scoped",
+        "On the first run its recording's request carries no connection; its output is {\"connection\": {provider, product, paper_trading, broker_node_id, and credential_id only when the account is linked}}, and an unlinked account has no credential_id key (never null)",
+        "On a schedule tick the executor injects this broker's own retained output.connection into its request, so a broker tick recording must repeat that connection or the replay refuses it",
+        "Downstream product-scoped nodes reference it by request.connection.broker_node_id set to this node's id; the compiler completes provider/product/paper_trading (and credential_id) from this broker's recorded output.connection",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -455,6 +465,9 @@ class KoreaStockBrokerNode(BaseBrokerNode):
         "Dedicated credential type `broker_ls_korea_stock` keeps KRX credentials isolated from overseas ones",
         "Auto-injects connection into every korea_stock scoped node",
         "Executes the Korean-specific workflow P&L tracker (KRW-denominated) when account nodes are wired",
+        "On the first run its recording's request carries no connection; its output is {\"connection\": {provider, product, paper_trading, broker_node_id, and credential_id only when the account is linked}}, and an unlinked account has no credential_id key (never null)",
+        "On a schedule tick the executor injects this broker's own retained output.connection into its request, so a broker tick recording must repeat that connection or the replay refuses it",
+        "Downstream product-scoped nodes reference it by request.connection.broker_node_id set to this node's id; the compiler completes provider/product/paper_trading (and credential_id) from this broker's recorded output.connection",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {

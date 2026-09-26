@@ -3,6 +3,179 @@
 - Deliver brokerage PnL callbacks on the workflow event loop, including SDK websocket worker-thread notifications and shutdown races.
 - Retain explicitly reported TC3 currency in standalone futures fill records without inferring a monetary accounting basis.
 
+## [2.4.1] - 2026-09-27
+
+### Fixed
+- `MISSING_REQUIRED_BROKER` now names the broker node of the node's *own* product
+  scope. Up to 2.4.0 every non-`overseas_stock` scope was labelled
+  `overseas_futures` / `OverseasFuturesBrokerNode`, so a `KoreaStockAccountNode`
+  without an upstream broker was told to "Add OverseasFuturesBrokerNode" (and the
+  AI authoring loop followed that advice). The message now reads
+  `requires a korea_stock broker` with `Add KoreaStockBrokerNode …`, and
+  `details.expected_broker_node` carries the same scope-correct name
+  (`programgarden/resolver.py`, `_BROKER_NODE_BY_SCOPE`). Regression test:
+  `tests/test_missing_required_broker_label.py`.
+
+## [2.4.0] - 2026-09-26
+
+### Changed
+- ScheduleNodeExecutor no longer applies a default cycle cap (was 1000) or
+  wall-clock cap (was 24 h). When `count` / `max_duration_hours` are absent the
+  cron loop runs until `context.is_running` turns false (the user stops the
+  workflow); a provided bound is still honoured exactly as before.
+- Validation replay enforces only a *provided* limit: startup
+  (`replay_triggers`) rejects `count < 1` or `max_duration_hours <= 0` when set,
+  recorded ticks (`replay_events`) are refused past a set bound, and omitted
+  bounds mean unbounded. The `replay_semantics` limits rule and the AI-facing
+  schedule bullet say "optional; omit both and the schedule runs until stopped".
+- deps: programgarden-core ^2.4.0.
+
+## [2.3.0] - 2026-09-25
+
+### Fixed
+- Validation replay applies a recording's output ports in the registry's
+  declared order before exposing them. The live executor returns ports in
+  declaration order and the auto-iteration fallback source is a node's FIRST
+  output, so a recording written as `{"count": 1, "open_orders": [...]}` made
+  replay skip an iteration the live run performs.
+- `request_identity` names the unknown request fields and the fields the node
+  accepts instead of a bare "Unknown recording request fields".
+- `docs/expression_guide.md` and `docs/auto_iterate_guide.md` match the code:
+  `finance.pct` is part/total*100, `lst.flatten` needs the nested key, a live
+  expression error keeps the literal and warns while only validation replay
+  aborts, `{{ nodeId.port }}` without the `nodes.` prefix is not supported,
+  keyword node ids, NodeOutputProxy has no len()/iteration, date format presets,
+  30-day months. Docstrings in context.py / executor.py corrected likewise.
+
+### Removed
+- Executors, replay sources and fixtures for `CurrencyRateNode`,
+  `MarketStatusNode`, `FearGreedIndexNode` and `FileReaderNode`.
+
+### Changed
+- deps: programgarden-core ^2.3.0, programgarden-community ^2.2.0.
+
+## [2.2.0] - 2026-09-25
+
+### Added
+- `programgarden.replay_semantics`: `execution_for()`, `product_execution()`,
+  `execution_semantics_text()` and `attach_execution()` derive each node type's
+  execution block (role, emits, per-item iteration and recording key,
+  reruns_on, time rules, dead ports, reserved output ports) and each product's
+  session hours from the replay contracts, and attach them to the registry
+  schemas (`NodeTypeSchema.execution`, core 2.2.0). 404 tests pin the derived
+  facts against the executor.
+
+### Changed
+- deps: programgarden-core ^2.2.0.
+
+## [2.1.0] - 2026-09-24
+
+### Added
+- Incremental replay validation: `incremental_build` / `validation_replay` and
+  the `replay_*` modules replay a workflow node by node against independently
+  recorded fixtures with a simulated order book, including recorded subsequent
+  events (schedule ticks, realtime market data, order events) through the real
+  scheduler and modify/cancel completion evidence. Credential-free; no live
+  provider call.
+- Replay diagnostics report field-level recording mismatches, reserved-key node
+  failures, unsupported recorded event types (with the node's emittable types),
+  duplicate ids or count mismatches in open-orders snapshots, and null broker
+  identity keys treated as absent.
+- Describe native raw-source fixture envelopes and SDK field contracts for
+  independent scenario preparation; no live provider call or PASS implication.
+- Validate independently prepared assertion schemas before candidate execution.
+- Revision-checked node removal and native-schema header edits invalidate old
+  replay proof without discarding validation attempt history or task identity.
+
+### Fixed
+- Simulated order ids are node-based (`SIM-<node>`, `SIM-<node>#n`,
+  `SIM-REPLACE-<modify node>`) instead of count-based, so a suite can name them.
+- The open-orders snapshot shape is enforced at the recorded node; initial
+  fixture expectations are judged on the main-flow snapshot, not the post-event
+  final state (realtime snapshot retention across a re-trigger is locked by
+  tests).
+- Replay mirrors the live executor: no held-symbol refusal for stock buys;
+  replay error-key semantics match the live runtime; contract diagnostics name
+  the failing scenario.
+- Overseas-stock orders: honour modify `price_type`; quantize a quote-derived
+  limit price to the LS precision rule; accept the broker's US business date on
+  empty pending queries; map a single-character `BnsTpCode` side.
+- Preserve the initial simulated cash/holdings when a trading graph takes a
+  no-signal branch. No order submission is needed to verify unchanged state.
+- Separate consecutive validation failures from successful edits. Node/final
+  validation retains total accounting while PASS clears only its failure streak.
+  Removing or changing a node does not reset a failed-repair budget.
+- Enforce disabled schedules and trading-hours decisions in startup, Split and
+  realtime traversals. A timed-out time filter cannot run its trading branch;
+  explicit blocked branches and independent work remain distinct.
+
+### Changed
+- ScreenerNode (LS branch): zero matches is now a valid no-signal result
+  instead of a live-mode RuntimeError; unsupported or malformed inputs
+  (sector names on LS, non-symbol inputs, a market-cap filter without g3190
+  master data, missing credentials, quote identity mismatches) raise
+  ValueError instead of being logged as warnings and ignored.
+- Realtime traversal: a rate-limit, throttle or node error no longer breaks
+  the whole chain; the affected node's descendants are gated and independent
+  branches continue, Split re-drive follows topological order, and stale event
+  inputs are cleared between updates.
+- The FMP provider is retired from incremental authoring as well.
+- deps: programgarden-core ^2.1.0, programgarden-community ^2.1.0
+  (programgarden-finance stays ^2.0.1; finance is unchanged in this release).
+
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Preserve strict CodeNode output validation and configured per-symbol inputs during simulated iteration. Invalid legacy FMP graphs receive actionable replacement guidance.
+
+
+### SDK maintenance
+- Finance 1.10.7 corrects expiry-versus-delisting and status/dividend field guidance. Finance-only metadata patch; engine/core/community and trading behavior are unchanged.
+- Finance 1.10.6 preserves the complete CDPCQ04700 schema and private raw evidence, with sparse-field and internal-conversion guidance. This is a finance-only release; no engine version, dependency floor or trading behavior changes.
+
+## [1.41.3] - 2026-09-22
+
+### Fixed
+- Validate fixed order/price types and resolved new-order payloads before deep simulation reports success. Preserve confirmed no-signal skips and dynamic futures close sides.
+- Report missing sizing symbols/prices, empty required indicator fields, all-error indicator results and per-item execution failures. Later successful iterations no longer erase earlier failures.
+- Preserve position quantity when deep validation exercises an inactive exit signal. Long lookbacks require adequate explicit fixtures instead of treating insufficient data as a valid signal.
+- Defer nested item bindings until iteration and omit whole-array warnings when quote/chart executors already select the current symbol. No customer strategy, allocation, graph or runtime order routing is changed.
+- Correct canonical orders-array, price-type, position-quantity and chart-row guidance.
+
+## [1.41.2] - 2026-09-21
+
+### Fixed
+- Preserve the selected exchange in overseas-stock historical requests even when there are no holdings; NYSE symbols no longer fall back to NASDAQ.
+- Skip item-bound execution when the selected upstream list is explicitly empty, including SymbolFilter outputs. Preserve reporting consumers, condition gates, declared output ports and no-signal order-result rows.
+- No workflow definition or strategy-level duplicate-entry changes. Existing unresolved-template order protection remains enabled.
+
+## [1.41.1] - 2026-09-21
+
+### Fixed
+- Accept the observed COSOQ00201 authenticated no-data response at BrokerNode startup, retaining strict raw-block, pagination, query-scope and pending-order checks. Prevent valid empty accounts from failing before the strategy runs.
+- Add actual broker-reconciliation regression cases for empty accounts and contradictory/incomplete evidence. Workflow definitions and strategy-level duplicate-entry behavior are unchanged.
+
+## [1.41.0] - 2026-09-21
+
+### Added
+- Native immediate SessionGateNode support without automatic array iteration.
+
+### Fixed
+- Apply IfNode routing inside Split branches, keeping decisions and skipped outputs local to each item. Preserve collection of an active alternative when its sibling is skipped. A false outer gate now skips Split execution before its special handler.
+- Serialize Split branches containing IfNode or order nodes even if parallel=true was requested, preventing shared-context item/gate races; emit an explicit warning. Other parallel branches retain existing behavior.
+- Reject non-JSON/nonfinite CodeNode inputs before subprocess dispatch, including a bound array helper accidentally passed without parentheses. Preserve subprocess credential isolation.
+- Correct AI-facing core examples and metadata so generated workflows reference actual output fields and pair Split with Aggregate.
+
+### Dependencies
+- Require programgarden-core ^1.31.0; finance ^1.10.5 and community ^1.15.3 remain unchanged.
+
+### Scope
+- Session windows do not establish exchange holiday/halts or guarantee execution. Persistent order reservations belong to application examples and must use account-isolated durable storage.
+
 ## [1.40.1] - 2026-09-16
 ### Fixed
 - Preserve editor node labels (`customLabel`) and dimensions (`size`) during strict deep validation. Unknown execution settings and misspelled metadata keys still fail validation.
@@ -2320,7 +2493,7 @@ LS 브로커 필드 의미를 오너가 확인해준 사실(체결번호·AP처�
 - feat: ScreenerNode sector 정규화 (대소문자, 띄어쓰기 무시)
 - feat: 노드 스키마 ENUM 필드를 STRING 타입으로 변경 (expression 바인딩 지원)
 
-## [2.0.0] - 2026-01-06
+## [2.0.1] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 아키텍처로 전면 재설계
 - feat: Python 3.12 최소 버전으로 상향

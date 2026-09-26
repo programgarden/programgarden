@@ -8,6 +8,14 @@ deterministic self-correction without parsing free-form strings.
 
 from typing import Optional, List, Dict, Any, Set, Tuple
 
+# product_scope 값 → 그 스코프의 브로커 노드 타입. MISSING_REQUIRED_BROKER 안내에 쓴다.
+# (ProductScope.ALL 은 브로커가 필요 없으므로 없다.)
+_BROKER_NODE_BY_SCOPE: Dict[str, str] = {
+    "overseas_stock": "OverseasStockBrokerNode",
+    "overseas_futures": "OverseasFuturesBrokerNode",
+    "korea_stock": "KoreaStockBrokerNode",
+}
+
 from programgarden_core import (
     ErrorCode,
     ErrorInfo,
@@ -193,7 +201,14 @@ class WorkflowResolver:
                     f"Unknown node type '{node_type}'",
                     location=ErrorLocation(node_id=node_id, node_type=node_type),
                     available_values=suggest_close_match(node_type or "", known_types),
-                    suggestion="Pick a node type from the registered list.",
+                    suggestion=(
+                        "FundamentalDataNode (FMP) was removed. For LS overseas-stock PER/EPS, "
+                        "use OverseasStockFundamentalNode and rebind its value/values outputs. "
+                        "It does not supply financial statements or cash-flow history; "
+                        "do not silently substitute missing data."
+                        if node_type == "FundamentalDataNode" else
+                        "Pick a node type from the registered list."
+                    ),
                 )
             )
 
@@ -328,6 +343,9 @@ class WorkflowResolver:
         # 10.8 Display 노드 columns 키가 상류 출력 스키마에 실재하는지 (없는 키는 표에 '-' 만 찍힌다)
         self._validate_display_columns(workflow, registry, result)
 
+        # Order routing choices are literals, never prices or item bindings.
+        self._validate_order_enums(workflow, registry, result)
+
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
             workflow,
@@ -343,6 +361,39 @@ class WorkflowResolver:
         finalize_result(result, limits=limits, expand_cascade=expand_cascade)
 
         return result
+
+    def _validate_order_enums(self, workflow, registry, result) -> None:
+        """Enforce fixed price/order types without changing dynamic close sides."""
+        from programgarden_core.models.field_binding import ExpressionMode
+
+        for node in workflow.nodes:
+            node_type = node.get("type", "")
+            if not node_type.endswith(("NewOrderNode", "ModifyOrderNode", "CancelOrderNode")):
+                continue
+            node_class = registry.get(node_type)
+            if node_class is None:
+                continue
+            for name, field in node_class.get_field_schema().items():
+                if (
+                    name not in {"price_type", "order_type"}
+                    or name not in node
+                    or field.expression_mode != ExpressionMode.FIXED_ONLY
+                    or not field.enum_values
+                    or node[name] in field.enum_values
+                ):
+                    continue
+                result.add(build_error(
+                    ErrorCode.INVALID_FIELD_ENUM,
+                    f"Order field '{name}' requires a fixed value from its enum.",
+                    location=ErrorLocation(
+                        node_id=node.get("id"), node_type=node_type, field_path=name,
+                    ),
+                    available_values=field.enum_values,
+                    suggestion=(
+                        "Use a listed literal value. Put an order's numeric price in "
+                        "order.price, not price_type or order_type."
+                    ),
+                ))
 
     def _attach_inline_recommendations(self, result: ValidationResult, workflow) -> None:
         """Augment specific ErrorInfo entries with related Recommendation hints.
@@ -1040,6 +1091,18 @@ class WorkflowResolver:
                 continue
             node_id = node.get("id")
 
+            # A mapping-shaped declaration was previously silently ignored by
+            # the executor, wrapping a named result twice and disabling signals.
+            from programgarden.replay_contracts import ContractViolation, check_codenode_ports
+            try:
+                check_codenode_ports(node.get("outputs", []))
+            except ContractViolation as exc:
+                result.add(build_error(
+                    ErrorCode.INVALID_FIELD_TYPE, str(exc),
+                    location=ErrorLocation(node_id=node_id, node_type="CodeNode", field_path="outputs"),
+                    suggestion="Use a list such as [{\"name\":\"result\",\"type\":\"object\"}], or omit outputs for one whole-result port.",
+                ))
+
             # 1. credential_id ban
             if node.get("credential_id"):
                 result.add(
@@ -1608,8 +1671,11 @@ class WorkflowResolver:
 
             # product_scope match
             if scope.value not in available_brokers:
-                product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
-                broker_node = "OverseasStockBrokerNode" if scope == ProductScope.STOCK else "OverseasFuturesBrokerNode"
+                # 스코프별 브로커 노드 매핑. 2.4.0 까지는 STOCK 이 아닌 모든 스코프를 해외선물로
+                # 표기해 국내주식 노드에 "OverseasFuturesBrokerNode 를 추가하라" 고 안내했다
+                # (AI 저작 루프가 그 말을 믿고 헤맴 — 2026-09-27 dev smoke).
+                product_label = scope.value
+                broker_node = _BROKER_NODE_BY_SCOPE.get(scope, "OverseasFuturesBrokerNode")
                 result.add(
                     build_error(
                         ErrorCode.MISSING_REQUIRED_BROKER,

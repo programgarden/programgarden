@@ -88,6 +88,7 @@ __all__ = [
     # Nodes - Trigger
     "ScheduleNode",
     "TradingHoursFilterNode",
+    "SessionGateNode",
     # Nodes - Condition
     "ConditionNode",
     "LogicNode",

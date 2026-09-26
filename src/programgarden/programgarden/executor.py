@@ -93,6 +93,59 @@ OVERSEAS_STOCK_MARKET_CODES = {
 #    (지금은 "해당 종목번호가 없습니다" 라는 엉뚱한 브로커 메시지로 나타나 원인 파악을 가린다).
 
 
+def ls_overseas_business_dates(now=None) -> set:
+    """Calendar dates (YYYYMMDD) that an LS overseas-stock query may echo as its business date.
+
+    Observed live 2026-09-24 04:17 KST (COSAQ00102, empty account): the node sent
+    OrdDt=20260924 (naive local KST date) but the broker echoed OrdDt=20260923 —
+    the US trading-session date. During the overnight session the KST calendar day
+    is one ahead of the broker's business day, so an empty-result check that
+    demands `echo.OrdDt == local today` fails and a legitimate "no pending orders"
+    answer (rsp_cd 02679) was reported as fetch_failed. Accept either the Seoul or
+    the New York date, both computed with explicit zones.
+    """
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _Z
+    moment = now or _dt.now(_Z("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_Z("Asia/Seoul"))
+    return {moment.astimezone(_Z("Asia/Seoul")).strftime("%Y%m%d"),
+            moment.astimezone(_Z("America/New_York")).strftime("%Y%m%d")}
+
+
+def ls_overseas_stock_side(code) -> str:
+    """Map an LS overseas-stock BnsTpCode to buy/sell/unknown.
+
+    Observed live 2026-09-24: COSAQ00102 block3 returns the code as a single
+    character ("2" for a buy — the same row carried OrdPtnNm "매수정정"), while the
+    documented values are written zero-padded ("01" 매도, "02" 매수). Comparing
+    against "02" only labelled every buy as a sell. Leading zeros are ignored and
+    anything else is reported as "unknown" so a guard can refuse it instead of
+    silently treating it as a sell.
+    """
+    text = str(code or "").strip().lstrip("0")
+    return {"2": "buy", "1": "sell"}.get(text, "unknown")
+
+
+def ls_overseas_stock_limit_price(price: float, side: str) -> float:
+    """Quantize a quote-derived limit price to the LS overseas-stock precision rule.
+
+    Observed live 2026-09-24 (COSAT00301, rsp_cd 00891): a price of 1 USD or more may
+    carry at most two decimals ("$1이상은 소수점 2째 자리까지 입력가능합니다"); the
+    engine had sent the raw quote 2.055 for a market buy converted to a limit order
+    and the broker refused it with no order number. A buy converted from a market
+    intent must stay marketable, so it rounds UP to the cent; a sell rounds DOWN.
+    Prices below 1 USD are passed through unchanged (the rule for that range was not
+    observed; do not invent one).
+    """
+    from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+    value = Decimal(str(price))
+    if value < 1:
+        return float(value)
+    rounding = ROUND_FLOOR if str(side).lower() == "sell" else ROUND_CEILING
+    return float(value.quantize(Decimal("0.01"), rounding=rounding))
+
+
 def resolve_overseas_stock_order_market(
     exchange: Any, symbol: Any = ""
 ) -> "tuple[Optional[str], Optional[str]]":
@@ -1486,6 +1539,13 @@ class ThrottleNodeExecutor(NodeExecutorBase):
     - pending_data: Latest data waiting to be processed (latest mode only)
     """
 
+    @staticmethod
+    def _now(context, node_id):
+        if getattr(context, "is_replay_validation", False):
+            from programgarden.replay_triggers import fixture_instant
+            return fixture_instant(context, node_id)
+        return datetime.now()
+
     async def execute(
         self,
         node_id: str,
@@ -1518,13 +1578,13 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         # validation pass runs the flow once — gating would swallow the data and
         # break the downstream flow. Pass input straight through so integrity can
         # be checked end-to-end.
-        if context.is_dry_run:
+        if context.is_dry_run and not getattr(context, "is_replay_validation", False):
             input_data = self._collect_input_data(node_id, config, context)
             return await self._pass_through(
                 node_id, node_type, context, input_data, throttle_state, state_key
             )
         
-        now = datetime.now()
+        now = self._now(context, node_id)
         last_passed = throttle_state.get("last_passed_at")
         
         # Collect input data from upstream nodes
@@ -1621,7 +1681,7 @@ class ThrottleNodeExecutor(NodeExecutorBase):
         """Process data pass-through"""
         from programgarden_core.bases.listener import NodeState
 
-        now = datetime.now()
+        now = self._now(context, node_id)
 
         # 상류에 흘릴 실데이터가 없으면(예: 실시간 시세 노드가 아직 틱 대기) '통과했다'고
         # data-형 output 을 내지 않는다. 예전엔 여기서 outputs={} 에 _throttle_stats 만
@@ -2193,8 +2253,10 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         cron_expr = cron_expr.strip()
         tz_name = config.get("timezone", "America/New_York")
         enabled = config.get("enabled", True)
-        count = config.get("count", 1000)  # 최대 반복 횟수 (M-6: 기본값 축소; 모델 필드로 편입)
-        max_duration_hours = config.get("max_duration_hours", 24.0)
+        # None/absent = unbounded: run until the workflow is stopped (owner
+        # 2026-09-26). A provided value is enforced as a cap in the loop below.
+        count = config.get("count")  # None → no cycle cap
+        max_duration_hours = config.get("max_duration_hours")  # None → no wall-clock cap
         
         if not enabled:
             context.log("info", f"Schedule disabled: {cron_expr}", node_id)
@@ -2229,7 +2291,8 @@ class ScheduleNodeExecutor(NodeExecutorBase):
             import time as _time
             cnt = 0
             start_mono = _time.monotonic()
-            max_duration_sec = max_duration_hours * 3600
+            # None = unbounded; only compute a wall-clock cap when a bound was set.
+            max_duration_sec = max_duration_hours * 3600 if max_duration_hours is not None else None
             try:
                 # second_at_beginning=True로 초 단위 cron도 지원
                 try:
@@ -2237,7 +2300,7 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                 except TypeError:
                     itr = croniter(cron_expr, datetime.now(tz))
 
-                while cnt < count and context.is_running:
+                while (count is None or cnt < count) and context.is_running:
                     # dry_run: 루프 진입 즉시 1회 emit 후 종료
                     if context.is_dry_run:
                         cnt += 1
@@ -2257,8 +2320,9 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                             },
                         )
                         break
-                    # M-6: max_duration_hours 초과 시 스케줄 종료
-                    if (_time.monotonic() - start_mono) >= max_duration_sec:
+                    # M-6: max_duration_hours 초과 시 스케줄 종료 (한도가 설정된 경우에만;
+                    # None 이면 사용자가 워크플로우를 멈출 때까지 계속 실행)
+                    if max_duration_sec is not None and (_time.monotonic() - start_mono) >= max_duration_sec:
                         context.log(
                             "warning",
                             f"Schedule max_duration_hours={max_duration_hours}h 초과 - "
@@ -2720,51 +2784,55 @@ class MarketUniverseNodeExecutor(NodeExecutorBase):
             
             stocks = list(pts.get_stocks_by_index(index_name))
             
-            # 기본 거래소 결정
-            default_exchange = self.INDEX_EXCHANGE_MAPPING.get(index_name, "")
-            
-            symbols = []
-            for stock in stocks:
-                symbol = stock.get("symbol", "")
-                if not symbol:
-                    continue
-                
-                # 거래소 결정 — `google` 접두사가 실제 상장 거래소다 ("NASDAQ:AMGN", "NYSE:MMM").
-                #
-                # 예전엔 symbols 배열의 **첫 항목**만 보고 yahoo 접미사로 힌트를 뽑은 뒤 break 했다.
-                # pytickersymbols 는 해외 상장분을 첫 자리에 두는 경우가 많아(AMGN → "AMG.F"),
-                # DOW30 30종목 중 29개가 FRA(프랑크푸르트)로 오염됐다. 그리고 하류
-                # EXCHANGE_CODES 는 FRA 를 몰라 조용히 82(NASDAQ)로 폴백 → 진짜 NYSE 종목이
-                # 무음 유실됐다(실측: 예제 08 이 회당 30종목 중 8건만 수신).
-                exchange = default_exchange
-                resolved_exchange = ""
-                for sym_info in (stock.get("symbols") or []):
-                    google_sym = (sym_info.get("google") or "").strip()
-                    if ":" not in google_sym:
-                        continue
-                    prefix = google_sym.split(":", 1)[0].strip().upper()
-                    if prefix not in self.US_EXCHANGES:
-                        continue
-                    # USD 상장분이 곧 LS 가 조회할 미국 원장이다 — 있으면 최우선.
-                    if (sym_info.get("currency") or "").strip().upper() == "USD":
-                        resolved_exchange = prefix
-                        break
-                    resolved_exchange = resolved_exchange or prefix
+            return self.parse_constituents(stocks, index_name)
 
-                if resolved_exchange:
-                    exchange = resolved_exchange
-
-                symbols.append({
-                    "exchange": exchange,
-                    "symbol": symbol,
-                    "name": stock.get("name", ""),
-                })
-            
-            return symbols
-        
         # 동기 호출을 thread pool에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(_sync_fetch)
         return result
+
+    def parse_constituents(self, stocks, index_name):
+        """Normalize provider rows with the same exchange policy in every mode."""
+        # 기본 거래소 결정
+        default_exchange = self.INDEX_EXCHANGE_MAPPING.get(index_name, "")
+
+        symbols = []
+        for stock in stocks:
+            symbol = stock.get("symbol", "")
+            if not symbol:
+                continue
+
+            # 거래소 결정 — `google` 접두사가 실제 상장 거래소다 ("NASDAQ:AMGN", "NYSE:MMM").
+            #
+            # 예전엔 symbols 배열의 **첫 항목**만 보고 yahoo 접미사로 힌트를 뽑은 뒤 break 했다.
+            # pytickersymbols 는 해외 상장분을 첫 자리에 두는 경우가 많아(AMGN → "AMG.F"),
+            # DOW30 30종목 중 29개가 FRA(프랑크푸르트)로 오염됐다. 그리고 하류
+            # EXCHANGE_CODES 는 FRA 를 몰라 조용히 82(NASDAQ)로 폴백 → 진짜 NYSE 종목이
+            # 무음 유실됐다(실측: 예제 08 이 회당 30종목 중 8건만 수신).
+            exchange = default_exchange
+            resolved_exchange = ""
+            for sym_info in (stock.get("symbols") or []):
+                google_sym = (sym_info.get("google") or "").strip()
+                if ":" not in google_sym:
+                    continue
+                prefix = google_sym.split(":", 1)[0].strip().upper()
+                if prefix not in self.US_EXCHANGES:
+                    continue
+                # USD 상장분이 곧 LS 가 조회할 미국 원장이다 — 있으면 최우선.
+                if (sym_info.get("currency") or "").strip().upper() == "USD":
+                    resolved_exchange = prefix
+                    break
+                resolved_exchange = resolved_exchange or prefix
+
+            if resolved_exchange:
+                exchange = resolved_exchange
+
+            symbols.append({
+                "exchange": exchange,
+                "symbol": symbol,
+                "name": stock.get("name", ""),
+            })
+
+        return symbols
 
 
 class ScreenerNodeExecutor(NodeExecutorBase):
@@ -2773,6 +2841,28 @@ class ScreenerNodeExecutor(NodeExecutorBase):
     
     Yahoo Finance API를 활용하여 시가총액, 거래량 등 조건으로 종목을 검색합니다.
     """
+
+    @staticmethod
+    def quote_info(ticker):
+        """Read a provider snapshot; replay overrides only this I/O boundary."""
+        import yfinance as yf
+        return yf.Ticker(ticker).info
+
+    @staticmethod
+    def resolve_connection(context, node_id, market, connection=None):
+        """Share the native ancestor selection with request-bound validation."""
+        if connection:
+            return connection, connection.get("product")
+        brokers = {"overseas_stock": "OverseasStockBrokerNode",
+                   "overseas_futures": "OverseasFuturesBrokerNode", "korea_stock": "KoreaStockBrokerNode"}
+        products = brokers if market == "auto" else [market]
+        for product in products:
+            broker = brokers.get(product)
+            parent = context.find_parent_output(node_id, broker) if broker else None
+            if parent and parent.get("connection"):
+                value = parent["connection"]
+                return value, value.get("product") or product
+        return {}, None
 
     async def execute(
         self,
@@ -2805,26 +2895,8 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             "korea_stock": "KoreaStockBrokerNode",
         }
 
-        connection: Dict[str, Any] = config.get("connection") or {}
-        resolved_product: Optional[str] = None
-
-        if not connection:
-            if market_choice == "auto":
-                for product, broker_type in BROKER_BY_PRODUCT.items():
-                    parent = context.find_parent_output(node_id, broker_type)
-                    if parent and parent.get("connection"):
-                        connection = parent["connection"]
-                        resolved_product = connection.get("product") or product
-                        break
-            else:
-                broker_type = BROKER_BY_PRODUCT.get(market_choice)
-                if broker_type:
-                    parent = context.find_parent_output(node_id, broker_type)
-                    if parent and parent.get("connection"):
-                        connection = parent["connection"]
-                        resolved_product = connection.get("product") or market_choice
-        else:
-            resolved_product = connection.get("product")
+        connection, resolved_product = self.resolve_connection(
+            context, node_id, market_choice, config.get("connection"))
 
         # market='auto' + broker 못 찾음 → overseas_stock 가정 (기존 동작 호환)
         effective_market = resolved_product or (
@@ -2931,7 +3003,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                 symbols = await self._filter_via_ls_overseas_stock(
                     input_symbols, market_cap_min, market_cap_max,
                     volume_min, price_min, price_max, sector, exchange, max_results,
-                    context, node_id,
+                    context, node_id, connection=connection,
                 )
             elif input_symbols:
                 # 입력 종목에서 필터링 (yfinance)
@@ -2955,321 +3027,134 @@ class ScreenerNodeExecutor(NodeExecutorBase):
             context.log("error", f"Screener failed: {e}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
 
+    @staticmethod
+    def stock_quote_request(symbol):
+        """Use the SDK example's complete g3101 request without guessing a market."""
+        from programgarden_finance.ls.overseas_stock.market.g3101.blocks import G3101InBlock
+        exchange = OVERSEAS_STOCK_MARKET_CODES.get(str(symbol.get("exchange", "")).upper())
+        ticker = symbol.get("symbol")
+        if exchange is None or not isinstance(ticker, str) or not ticker.strip():
+            raise ValueError("Screener quote requires an explicit supported exchange and symbol")
+        return G3101InBlock(delaygb="R", keysymbol=exchange + ticker,
+                           exchcd=exchange, symbol=ticker)
+
+    @staticmethod
+    def stock_quote_values(block, request):
+        """Validate SDK identity and numeric fields before applying any filter."""
+        from math import isfinite
+        if (block.symbol != request.symbol or block.exchcd != request.exchcd
+                or block.keysymbol != request.keysymbol):
+            raise ValueError("Screener quote identity does not match the request")
+        price = float(block.price)
+        volume = block.volume
+        if not isfinite(price) or price <= 0 or type(volume) is not int or volume < 0:
+            raise ValueError("Screener quote has an invalid price or volume")
+        return price, volume
+
+    def _stock_quote_client(self, context, node_id, connection=None):
+        connection = connection or (context.find_parent_output(node_id, "OverseasStockBrokerNode") or {}).get("connection", {})
+        credential = context.get_credential(connection.get("credential_id", "credential_id")) or {}
+        if not credential.get("appkey") or not credential.get("appsecret"):
+            raise ValueError("Screener quote credentials are unavailable")
+        ls, success, error = ensure_ls_login(
+            credential["appkey"], credential["appsecret"], connection.get("paper_trading", False),
+            context, node_id, "overseas_stock")
+        if not success:
+            raise ValueError("Screener quote login failed")
+        return ls
+
+    async def _read_stock_quote(self, client, request):
+        """Single transport boundary; replay supplies an SDK response block here."""
+        result = await client.overseas_stock().market().현재가조회(request).req_async()
+        if (result is None or result.block is None or result.error_msg or result.rsp_cd != "00000"
+                or result.status_code is not None and result.status_code >= 400):
+            raise ValueError("Screener quote response is unavailable")
+        return result.block
+
     async def _filter_via_ls_overseas_stock(
-        self,
-        symbols: List[Dict],
-        market_cap_min: Optional[float],
-        market_cap_max: Optional[float],
-        volume_min: Optional[int],
-        price_min: Optional[float],
-        price_max: Optional[float],
-        sector: Optional[str],
-        exchange: Optional[str],
-        max_results: int,
-        context: ExecutionContext,
-        node_id: str,
-    ) -> List[Dict[str, Any]]:
-        """LS API 분기 — overseas_stock 전용 (g3190 + g3101).
+        self, symbols, market_cap_min, market_cap_max, volume_min,
+        price_min, price_max, sector, exchange, max_results, context, node_id,
+        connection=None,
+    ):
+        """Filter actual LS observations; zero matches is a valid no-signal result.
 
-        향후 _filter_via_ls_overseas_futures / _filter_via_ls_korea_stock 추가 예정.
-
-        입력 contract:
-            - 정석 경로: 상위 노드가 g3190 마스터 조회 결과를 그대로 전달
-              (symbol/exchange/price/market_cap/suspend/sellonly 포함).
-            - watchlist 경로: 상위 WatchlistNode 가 {symbol, exchange} 만 전달.
-              이 경우 g3101 (현재가 스냅샷) 으로 price/volume 을 종목별 enrich 한 뒤
-              필터링. market_cap_min/max 명시 시에는 watchlist 경로에서 충족 불가
-              (g3101 에 market_cap 없음) → 명시 경고 + market_cap 필터 무시.
-
-        silent failure 차단:
-            - 입력은 비어있지 않은데 enrich + 필터링 후 0건 + 실 운영 모드 →
-              RuntimeError raise.
-            - dry_run 모드에서는 raise 하지 않음 (mocked LS 환경에서 false positive
-              차단).
-
-        Note:
-            - g3190 응답에는 거래량(volume)이 없음. volume_min 명시 시 g3101을 종목별로 호출하여 거래량 확인.
-            - sector 필터는 g3190에 산업코드(indusury)는 있으나 yfinance 식 sector 이름과 매핑되지 않아 현재 미지원.
-              명시되면 무시하고 경고만 출력.
+        Missing/invalid data never silently disables a requested condition. Quote
+        failures are distinct from successful observations excluded by filters.
         """
         if sector:
-            context.log(
-                "warning",
-                "ScreenerNode[LS]: sector 필터는 LS 모드에서 미지원입니다. 무시하고 진행합니다.",
-                node_id,
-            )
-
-        # 0단계: 입력이 g3190-enriched 인지 감지. price 와 market_cap 이 모두 0/없음 이면
-        # watchlist 등에서 온 raw 입력 → g3101 로 price+volume enrich.
-        def _has_ls_enrichment(entry: Dict) -> bool:
-            if not isinstance(entry, dict):
-                return False
-            try:
-                if float(entry.get("price") or 0.0) > 0:
-                    return True
-                if float(entry.get("market_cap") or 0) > 0:
-                    return True
-            except (TypeError, ValueError):
-                return False
-            return False
-
-        non_dict_skipped = sum(1 for s in symbols if not isinstance(s, dict))
-        dict_inputs = [s for s in symbols if isinstance(s, dict)]
-        needs_g3101_enrichment = (
-            len(dict_inputs) > 0
-            and not any(_has_ls_enrichment(s) for s in dict_inputs)
-        )
-
-        working_symbols: List[Dict[str, Any]] = list(dict_inputs)
-
-        if needs_g3101_enrichment:
-            if market_cap_min is not None or market_cap_max is not None:
-                context.log(
-                    "warning",
-                    "ScreenerNode[LS]: 입력이 g3190 마스터 조회 결과가 아니라 "
-                    "market_cap 필터를 적용할 수 없습니다 (g3101 에는 시가총액 없음). "
-                    "market_cap_min/max 명시는 이번 실행에서 무시됩니다. "
-                    "상위에 OverseasStockSymbolQueryNode 를 두거나 data_source='yfinance' "
-                    "로 전환하세요.",
-                    node_id,
-                )
-                # mcap 필터 이 호출 한정 비활성
-                market_cap_min = None
-                market_cap_max = None
-            working_symbols = await self._enrich_price_volume_via_g3101(
-                working_symbols, max_results, context, node_id,
-            )
-
-        # 1단계: 가격/시총 정보로 빠르게 필터
-        prefilter: List[Dict[str, Any]] = []
-        for sym in working_symbols:
-            # 거래정지/매도전용 종목 자동 제외 (g3190 enriched 입력에만 존재)
-            if (sym.get("suspend") or "").upper() == "Y":
+            raise ValueError("LS screener does not support sector names; select yfinance")
+        if any(not isinstance(symbol, dict) for symbol in symbols):
+            raise ValueError("Screener input must contain symbol objects")
+        working = [dict(symbol) for symbol in symbols]
+        for symbol in working:
+            self.stock_quote_request(symbol)
+        if market_cap_min is not None or market_cap_max is not None:
+            for symbol in working:
+                cap = symbol.get("market_cap")
+                from math import isfinite
+                if type(cap) not in (int, float) or not isfinite(cap) or cap <= 0:
+                    raise ValueError("LS market-cap filter requires g3190 master data")
+        # Mixed master/watchlist input must enrich each missing observation.
+        missing = [symbol for symbol in working if not symbol.get("price")]
+        quoted = set()
+        if missing:
+            enriched = await self._enrich_price_volume_via_g3101(
+                missing, max_results, context, node_id, connection)
+            replacements = {(s["exchange"], s["symbol"]): s for s in enriched}
+            quoted = set(replacements)
+            for index, symbol in enumerate(working):
+                if not symbol.get("price"):
+                    key = (symbol["exchange"], symbol["symbol"])
+                    if key not in replacements:
+                        # The bounded query budget is not proof of the remaining symbols.
+                        raise ValueError("Screener quote budget did not cover every input symbol")
+                    working[index] = replacements[key]
+        prefilter = []
+        from math import isfinite
+        for symbol in working:
+            if str(symbol.get("suspend", "")).upper() == "Y" or str(symbol.get("sellonly", "")).upper() == "Y":
                 continue
-            if (sym.get("sellonly") or "").upper() == "Y":
+            price = float(symbol["price"])
+            if not isfinite(price) or price <= 0:
+                raise ValueError("Screener master price is invalid")
+            cap = float(symbol.get("market_cap") or 0)
+            if (price_min is not None and price < price_min or price_max is not None and price > price_max
+                    or market_cap_min is not None and cap < market_cap_min
+                    or market_cap_max is not None and cap > market_cap_max
+                    or exchange and exchange.upper() not in str(symbol.get("exchange", "")).upper()):
                 continue
+            prefilter.append({"exchange": symbol["exchange"], "symbol": symbol["symbol"],
+                "price": price, "market_cap": cap, "volume": symbol.get("volume", 0),
+                "name": symbol.get("name", "") or "", "market": symbol.get("market", "") or "",
+                "sector": symbol.get("sector", "") or ""})
+        if volume_min and prefilter:
+            # Reuse observations from this invocation only; do not double-query
+            # newly enriched inputs or trust a master row's absent volume.
+            observed = [s for s in prefilter if (s["exchange"], s["symbol"]) in quoted]
+            pending = [s for s in prefilter if (s["exchange"], s["symbol"]) not in quoted]
+            checked = await self._enrich_volume_via_g3101(
+                pending, volume_min, max_results, context, node_id, connection) if pending else []
+            prefilter = [s for s in observed if s["volume"] >= volume_min] + checked
+        prefilter.sort(key=lambda value: value["market_cap"], reverse=True)
+        return prefilter[:max_results]
 
-            try:
-                price = float(sym.get("price") or 0.0)
-                mcap = float(sym.get("market_cap") or 0)
-            except (TypeError, ValueError):
-                continue
-
-            if price_min is not None and price < price_min:
-                continue
-            if price_max is not None and price > price_max:
-                continue
-            if market_cap_min and mcap < market_cap_min:
-                continue
-            if market_cap_max and mcap > market_cap_max:
-                continue
-            if exchange and exchange.upper() not in (sym.get("exchange") or "").upper():
-                continue
-
-            prefilter.append({
-                "exchange": sym.get("exchange", ""),
-                "symbol": sym.get("symbol", ""),
-                "price": price,
-                "market_cap": mcap,
-                # g3101 enrich 시 volume 이 채워졌을 수 있음
-                "volume": int(sym.get("volume") or 0),
-                # 상류가 준 값 통과 (없으면 빈 문자열). LS 마스터에는 섹터가 없다.
-                # 그래도 키는 내보낸다 — yfinance 분기와 키 집합이 다르면 같은 포트가
-                # 분기마다 다른 모양이 되고, 선언이 어느 쪽을 적든 반대 분기에서 거짓말이 된다.
-                "name": sym.get("name", "") or "",
-                "market": sym.get("market", "") or "",
-                "sector": sym.get("sector", "") or "",
-            })
-
-        # 2단계: volume_min 명시 시 g3101로 거래량 확인 (이미 enrich 된 경우 skip)
-        if volume_min and prefilter and not needs_g3101_enrichment:
-            prefilter = await self._enrich_volume_via_g3101(
-                prefilter, volume_min, max_results, context, node_id,
-            )
-        elif volume_min and prefilter and needs_g3101_enrichment:
-            # 이미 g3101 enrich 한 결과에서 volume_min 적용
-            prefilter = [p for p in prefilter if p.get("volume", 0) >= volume_min]
-
-        # 시가총액 큰 순으로 정렬 + max_results 절단
-        prefilter.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
-        result = prefilter[:max_results]
-
-        # silent failure 차단: 입력은 있었는데 결과 0 + 실 운영 모드 → 명시 raise
-        if (
-            len(dict_inputs) > 0
-            and len(result) == 0
-            and not context.is_dry_run
-        ):
-            raise RuntimeError(
-                f"ScreenerNode[LS:overseas_stock]: input had {len(dict_inputs)} symbols "
-                f"({non_dict_skipped} non-dict entries skipped) but produced 0 results. "
-                f"Common causes: (1) input lacked g3190 price/market_cap and g3101 "
-                f"enrichment also failed (check LS credentials / market hours); "
-                f"(2) all symbols were filtered out by price_min/price_max/volume_min. "
-                f"Inspect node logs for per-symbol g3101 errors, or set "
-                f"data_source='yfinance' to bypass the LS branch."
-            )
-
-        return result
-
-    async def _enrich_price_volume_via_g3101(
-        self,
-        candidates: List[Dict[str, Any]],
-        max_results: int,
-        context: ExecutionContext,
-        node_id: str,
-    ) -> List[Dict[str, Any]]:
-        """입력 종목 각각에 g3101 (현재가 스냅샷) 으로 price + volume 부착.
-
-        watchlist 등에서 온 raw {symbol, exchange} 입력을 LS 분기에서 처리하기 위한
-        on-the-fly enrichment. dry_run 모드에서는 LS 호출이 mocked 라 enrich 결과가
-        무효 — 그대로 통과 (호출자가 dry_run 분기에서 silent failure 안 잡도록).
-        """
-        try:
-            from programgarden_finance import LS, g3101  # noqa: F401
-        except ImportError:
-            context.log(
-                "warning",
-                "programgarden_finance import 실패 — g3101 price 부착 스킵",
-                node_id,
-            )
-            return candidates
-
-        cred = context.get_credential("credential_id") or {}
-        appkey = cred.get("appkey")
-        appsecret = cred.get("appsecret")
-        if not appkey or not appsecret:
-            context.log(
-                "warning",
-                "ScreenerNode[LS]: g3101 호출에 필요한 credential 없음 — price 부착 스킵",
-                node_id,
-            )
-            return candidates
-
-        ls, success, error = ensure_ls_login(
-            appkey, appsecret, False, context, node_id, "overseas_stock",
-        )
-        if not success:
-            context.log(
-                "warning",
-                f"LS 로그인 실패 — g3101 price 부착 스킵: {error}",
-                node_id,
-            )
-            return candidates
-
-        # max_results 의 2배까지만 enrich (속도 보호)
-        limit = max_results * 2
-        enriched: List[Dict[str, Any]] = []
-        enrich_failures = 0
-
-        for sym in candidates[:limit]:
-            ticker = sym.get("symbol", "")
-            if not ticker:
-                continue
-            try:
-                query = ls.overseas_stock().시세().현재가조회(
-                    g3101.G3101InBlock(symbol=ticker)
-                )
-                result = await query.req_async()
-                price_val = 0.0
-                vol_val = 0
-                if result and hasattr(result, "block") and result.block:
-                    block = result.block
-                    raw_price = getattr(block, "price", "") or ""
-                    try:
-                        price_val = float(raw_price) if raw_price else 0.0
-                    except (TypeError, ValueError):
-                        price_val = 0.0
-                    vol_val = int(getattr(block, "volume", 0) or 0)
-                if price_val > 0 or vol_val > 0:
-                    new_entry = dict(sym)
-                    new_entry["price"] = price_val
-                    new_entry["volume"] = vol_val
-                    new_entry.setdefault("market_cap", 0)
-                    enriched.append(new_entry)
-                else:
-                    enrich_failures += 1
-            except Exception as e:
-                enrich_failures += 1
-                context.log(
-                    "debug",
-                    f"g3101 enrich {ticker} 실패: {e}",
-                    node_id,
-                )
-                continue
-
-        if enrich_failures and not enriched:
-            context.log(
-                "warning",
-                f"ScreenerNode[LS]: g3101 enrich 가 모든 {enrich_failures} 종목에서 "
-                f"실패했습니다. 실 운영에서는 후속 silent-failure 가드가 RuntimeError "
-                f"로 raise 합니다.",
-                node_id,
-            )
-
+    async def _enrich_price_volume_via_g3101(self, candidates, max_results, context, node_id, connection=None):
+        if len(candidates) > max_results * 2:
+            raise ValueError("Screener quote input exceeds its bounded query budget")
+        client = self._stock_quote_client(context, node_id, connection)
+        enriched = []
+        for symbol in candidates:
+            request = self.stock_quote_request(symbol)
+            block = await self._read_stock_quote(client, request)
+            price, volume = self.stock_quote_values(block, request)
+            enriched.append({**symbol, "price": price, "volume": volume})
         return enriched
 
-    async def _enrich_volume_via_g3101(
-        self,
-        candidates: List[Dict[str, Any]],
-        volume_min: int,
-        max_results: int,
-        context: ExecutionContext,
-        node_id: str,
-    ) -> List[Dict[str, Any]]:
-        """후보 종목별로 g3101(현재가 스냅샷)을 호출하여 거래량 필터 적용."""
-        try:
-            from programgarden_finance import LS, g3101
-        except ImportError:
-            context.log("warning", "programgarden_finance import 실패 — volume 필터 스킵", node_id)
-            return candidates
+    async def _enrich_volume_via_g3101(self, candidates, volume_min, max_results, context, node_id, connection=None):
+        enriched = await self._enrich_price_volume_via_g3101(
+            candidates, max_results, context, node_id, connection)
+        return [symbol for symbol in enriched if symbol["volume"] >= volume_min]
 
-        cred = context.get_credential("credential_id") or {}
-        appkey = cred.get("appkey")
-        appsecret = cred.get("appsecret")
-        if not appkey or not appsecret:
-            context.log(
-                "warning",
-                "ScreenerNode[LS]: g3101 호출에 필요한 credential 없음 — volume 필터 스킵",
-                node_id,
-            )
-            return candidates
-
-        ls, success, error = ensure_ls_login(
-            appkey, appsecret, False, context, node_id, "overseas_stock",
-        )
-        if not success:
-            context.log("warning", f"LS 로그인 실패 — volume 필터 스킵: {error}", node_id)
-            return candidates
-
-        # max_results의 2배까지만 검사 (속도 보호)
-        limit = max_results * 2
-        passed: List[Dict[str, Any]] = []
-
-        for sym in candidates[:limit]:
-            ticker = sym.get("symbol", "")
-            if not ticker:
-                continue
-            try:
-                query = ls.overseas_stock().시세().현재가조회(
-                    g3101.G3101InBlock(symbol=ticker)
-                )
-                result = await query.req_async()
-                vol = 0
-                if result and hasattr(result, 'block') and result.block:
-                    # g3101 OutBlock.volume = 누적 거래량
-                    vol = int(getattr(result.block, 'volume', 0) or 0)
-                if vol >= volume_min:
-                    sym["volume"] = vol
-                    passed.append(sym)
-                    if len(passed) >= max_results:
-                        break
-            except Exception as e:
-                context.log("debug", f"g3101 {ticker} 호출 실패: {e}", node_id)
-                continue
-
-        return passed
-    
     async def _filter_symbols(
         self,
         symbols: List[Dict],
@@ -3333,7 +3218,6 @@ class ScreenerNodeExecutor(NodeExecutorBase):
 
         # yfinance 동기 호출을 thread pool에서 실행 (이벤트 루프 블로킹 방지)
         def _sync_filter():
-            import yfinance as yf
             filtered = []
             attempted = 0
             info_succeeded = 0
@@ -3343,8 +3227,7 @@ class ScreenerNodeExecutor(NodeExecutorBase):
                     continue
                 attempted += 1
                 try:
-                    stock = yf.Ticker(yf_ticker)
-                    info = stock.info
+                    info = self.quote_info(yf_ticker)
 
                     # 가격: 정규시장가 → 현재가 → 전일종가. 셋 다 없으면 yfinance 응답 무효.
                     price = (
@@ -3470,7 +3353,7 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         from programgarden_core.models.exchange import ProductType
-        
+
         # product_type 필드에서 상품 유형 확인 (UI에서 선택)
         # node_type으로 기본값 결정 (KoreaStockSymbolQueryNode → korea_stock)
         if "KoreaStock" in node_type:
@@ -3480,11 +3363,11 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         else:
             default_product_type = "overseas_stock"
         product_type = config.get("product_type", default_product_type)
-        
+
         # connection에서 paper_trading 확인 (fallback)
         connection = config.get("connection", {})
         paper_trading = connection.get("paper_trading", False)
-        
+
         # BrokerNode가 set_secret()으로 저장한 credential 가져오기
         cred = context.get_credential("credential_id")
         if cred:
@@ -3494,13 +3377,13 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         else:
             appkey = ""
             appsecret = ""
-        
+
         if not appkey or not appsecret:
             context.log("error", "SymbolQueryNode requires valid connection with appkey/appsecret", node_id)
             return {"symbols": [], "count": 0, "error": "Missing credentials"}
-        
+
         max_results = config.get("max_results", 500)
-        
+
         # product_type 필드 기준으로 API 분기
         if product_type == "overseas_futures":
             return await self._execute_futures_master(
@@ -3526,14 +3409,14 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 종목마스터 조회 (g3190)"""
         from programgarden_finance import LS, g3190
-        
+
         ls, success, error = ensure_ls_login(appkey, appsecret, False, context, node_id, "overseas_stock")
         if not success:
             return {"symbols": [], "count": 0, "error": error}
-        
+
         country = config.get("country", "US")
         stock_exchange = config.get("stock_exchange", "")  # 빈값이면 전체
-        
+
         # UI 스키마(81/82) → g3190 API exgubun(1/2) 변환
         # Note: AMEX는 NYSE와 함께 exgubun="1"로 조회됨 (83 옵션 제거)
         exgubun_mapping = {
@@ -3545,12 +3428,12 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         # 1자리 코드가 직접 입력된 경우도 지원 (하위 호환)
         if stock_exchange in ("1", "2", "3"):
             exgubun = stock_exchange
-        
+
         # g3190 호출
         all_symbols = []
         cts_value = ""
         read_count = min(max_results, 500)
-        
+
         try:
             while True:
                 query = ls.overseas_stock().시세().마스터상장종목조회(
@@ -3605,9 +3488,9 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"g3190 API error: {str(e)}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
-        
+
         context.log("info", f"전체종목조회 (해외주식): {len(all_symbols)}개 종목 from {country}", node_id)
-        
+
         return {
             "symbols": all_symbols[:max_results],
             "count": len(all_symbols[:max_results]),
@@ -3699,11 +3582,11 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외선물 종목마스터 조회 (o3101)"""
         from programgarden_finance import LS, o3101
-        
+
         ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_futures")
         if not success:
             return {"symbols": [], "count": 0, "error": error}
-        
+
         futures_exchange = str(config.get("futures_exchange", "1") or "1")  # 1: 전체
         futures_contract_month = config.get("futures_contract_month", "")  # 월물 필터
 
@@ -3825,9 +3708,9 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"o3101 API error: {str(e)}", node_id)
             return {"symbols": [], "count": 0, "error": str(e)}
-        
+
         context.log("info", f"전체종목조회 (해외선물): {len(all_symbols)}개 종목, 거래소={futures_exchange}, 월물필터={futures_contract_month or 'none'}", node_id)
-        
+
         return {
             "symbols": all_symbols[:max_results],
             "count": len(all_symbols[:max_results]),
@@ -3899,7 +3782,7 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
     ) -> List[Dict[str, Any]]:
         """
         월물 필터링
-        
+
         Args:
             symbols: 종목 리스트
             month_filter: 월물 필터
@@ -3907,15 +3790,15 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
                 - "2026F": 특정 연도+월
                 - "front": 근월물 (가장 가까운 만기)
                 - "next": 차월물 (두 번째로 가까운 만기)
-        
+
         Returns:
             필터링된 종목 리스트
         """
         if not month_filter or not symbols:
             return symbols
-        
+
         month_filter = month_filter.strip().upper()
-        
+
         # front/next: 월물 정렬 후 선택
         if month_filter in ("FRONT", "NEXT"):
             # base_product별로 그룹화
@@ -3935,7 +3818,7 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
                 elif month_filter == "NEXT" and len(sorted_items) > 1:
                     result.append(sorted_items[1])
             return result
-        
+
         # 월 코드만 (예: "F", "G")
         if len(month_filter) == 1:
             return [s for s in symbols if s.get("contract_month", "").endswith(month_filter)]
@@ -4096,10 +3979,14 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
                 f"on 3 attempts with no LS response code."
             )
 
+        return self.select_recorded_master(rows, base_products, selection, exchange_filter, context, node_id)
+
+    def select_recorded_master(self, rows, base_products, selection, exchange_filter, context, node_id, *, as_of=None):
+        """Apply the native expiry, exchange and month policy to provider rows."""
         # 거래소 필터를 걸기 **전** 목록도 들고 있는다 — 실패 메시지의 "쓸 수 있는 코드" 를
         # 필터 뒤 목록에서 뽑으면, 거래소를 잘못 골랐을 때 "LS 에 아무것도 없다" 로 읽혀
         # 진짜 원인(거래소 오지정)을 가린다.
-        unfiltered = self._parse_master(rows, "")
+        unfiltered = self._parse_master(rows, "", as_of=as_of)
         listed = [c for c in unfiltered if not exchange_filter or c["exchange"] == exchange_filter]
 
         if exchange_filter and not listed and unfiltered:
@@ -4153,14 +4040,14 @@ class FuturesContractNodeExecutor(NodeExecutorBase):
         )
         return {"symbols": symbols, "contracts": detail, "count": len(symbols)}
 
-    def _parse_master(self, rows: Any, exchange_filter: str) -> List[Dict[str, Any]]:
+    def _parse_master(self, rows: Any, exchange_filter: str, *, as_of=None) -> List[Dict[str, Any]]:
         """o3101 응답을 파싱하고 **만기 경과 월물을 제거**한다.
 
         LS 마스터는 만기가 지난 월물을 이미 빼주지만, 그것에만 의존하지 않는다 —
         마스터에 죽은 월물이 하루라도 남아 있으면 그게 '근월물'로 뽑혀 워크플로우가
         조용히 죽기 때문이다. 현재 연-월보다 이른 월물은 여기서 잘라낸다.
         """
-        now = datetime.now()
+        now = as_of if as_of is not None else datetime.now()
         cur = (now.year, now.month)
 
         parsed: List[Dict[str, Any]] = []
@@ -4458,11 +4345,11 @@ class BrokerNodeExecutor(NodeExecutorBase):
 
         appkey = config.get("appkey")
         appsecret = config.get("appsecret")
-        
+
         # credential에서 paper_trading 설정 오버라이드
         if "paper_trading" in config and credential_id:
             paper_trading = config.get("paper_trading", paper_trading)
-        
+
         if appkey and appsecret:
             cred_payload = {
                 "appkey": appkey,
@@ -4489,7 +4376,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
             context.log("info", f"Broker connected: {provider} ({product}, paper_trading={paper_trading})", node_id)
         else:
             context.log("warning", f"Broker initialized without credentials: {provider} ({product}, paper_trading={paper_trading})", node_id)
-        
+
         # ========================================
         # 워크플로우 포지션 추적기 초기화 (리스너 자동 감지)
         # on_workflow_pnl_update를 구현한 리스너가 있으면 자동 시작
@@ -4572,7 +4459,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     context=context,
                 )
             )
-        
+
         # ========================================
         # 워크플로우 체결 이벤트 자동 구독 (FIFO 포지션 추적용)
         # on_workflow_pnl_update 리스너가 있으면 체결/정정/취소 이벤트 구독
@@ -4602,7 +4489,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 "dry_run: 체결 이벤트 구독을 건너뜁니다 (모의 실행에는 실제 체결이 없습니다)",
                 node_id,
             )
-        
+
         # 🔐 `connection` 은 노드 출력이라 리스너(SSE) · get_state · 체크포인트로 외부에 나간다.
         # 자격증명은 싣지 않는다 — 하류는 `product` 로 시크릿 저장소에서 꺼낸다
         # (`_resolve_broker_credentials`). 여기 있던 평문 appkey/appsecret 이 실제로 새고 있었다.
@@ -4769,10 +4656,10 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> None:
         """워크플로우 체결 이벤트 구독 (FIFO 포지션 추적용)
-        
+
         체결('11'), 정정완료('12'), 취소완료('13') 이벤트를 수신하여
         WorkflowPositionTracker에 기록합니다.
-        
+
         Note: ensure_ls_login()을 사용하여 RealMarketDataNode와 동일한
         LS 인스턴스를 공유합니다. 이로써 하나의 WebSocket 연결에서
         GSC(시세)와 AS0/AS1(주문) 이벤트를 모두 수신합니다.
@@ -4859,23 +4746,23 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> None:
         """해외주식 체결 이벤트 구독
-        
+
         AS0~AS4 이벤트 구조:
         - AS0: 주문 접수 (01: 신규, 03: 취소접수)
         - AS1: 주문 체결 (sExecQty > 0 일 때 체결)
         - AS0/AS1: 정정완료(12), 취소완료(13), 거부(14)
-        
+
         _add_real_order()가 한번 호출되면 AS0~AS4 전부 자동 등록되지만,
         콜백은 TR별로 따로 등록해야 함.
         """
         from datetime import datetime
-        
+
         real = ls.overseas_stock().real()
         await real.connect()
-        
+
         # 이벤트 루프 캡처
         loop = asyncio.get_running_loop()
-        
+
         def on_as0_event(resp):
             """AS0: 주문 접수/정정완료/취소완료 이벤트 처리"""
             try:
@@ -4918,7 +4805,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     
             except Exception as e:
                 logger.warning(f"Error processing AS0 event: {e}")
-        
+
         def on_as1_event(resp):
             """AS1: 주문 체결 이벤트 처리"""
             try:
@@ -5051,13 +4938,13 @@ class BrokerNodeExecutor(NodeExecutorBase):
                     
             except Exception as e:
                 logger.warning(f"Error processing AS1 event: {e}")
-        
+
         # AS0 구독 등록 (접수/정정완료/취소완료)
         real.AS0().on_as0_message(on_as0_event)
-        
+
         # AS1 구독 등록 (체결)
         real.AS1().on_as1_message(on_as1_event)
-        
+
         # 활성 구독 저장 (나중에 정리용)
         sub_key = f"{context.job_id}_{node_id}_fill_sub"
         self._active_trackers[sub_key] = {
@@ -5065,7 +4952,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
             "real": real,
             "type": "fill_subscription",
         }
-        
+
         context.log("info", f"Workflow fill event subscription started (AS0+AS1)", node_id)
     
     async def _subscribe_overseas_futures_fill_events(
@@ -5423,7 +5310,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
     ) -> None:
         """체결내역 조회로 시장가 주문 가격 복구 (Fallback)
-        
+
         연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우,
         체결내역 API를 조회하여 가격이 0인 주문의 실제 체결 가격을 업데이트합니다.
         """
@@ -5461,7 +5348,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         node_id: str,
     ) -> None:
         """해외주식 체결내역에서 FIFO 포지션 동기화
-        
+
         연결 끊김 등으로 실시간 체결 이벤트를 놓친 경우,
         체결내역 API를 조회하여 FIFO 포지션을 생성합니다.
         """
@@ -5730,7 +5617,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
         on_pnl_change = self._on_workflow_loop(context, on_pnl_change)
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
-        
+
         context.log("info", f"StockAccountTracker started for {node_id}", node_id)
     
     async def _start_overseas_futures_tracker(
@@ -5870,16 +5757,16 @@ class BrokerNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         Credential 값을 config에 주입
-        
+
         워크플로우 JSON의 credentials 섹션에서 값을 가져와 config에 주입합니다.
         (프로덕션 환경: 서버가 암호화된 credentials를 복호화하여 JSON에 포함)
-        
+
         규칙:
         - credential의 키명 = 노드의 필드명 (예: appkey, appsecret)
         - config에 해당 키가 없거나 None이면 credential 값으로 채움
         """
         cred_data = context.get_workflow_credential(credential_id)
-        
+
         if cred_data:
             config = config.copy()  # 원본 보호
             injected_keys = []
@@ -5899,7 +5786,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 )
         else:
             context.log("warning", f"Credential '{credential_id}' not found in workflow credentials", node_id)
-        
+
         return config
 
 
@@ -5944,7 +5831,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         if not broker_connection:
             context.log("error", "AccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
             return self._empty_result("Missing connection - no matching BrokerNode found in workflow")
-        
+
         # connection 정보 추출
         if isinstance(broker_connection, dict):
             provider = broker_connection.get("provider", "ls-sec.co.kr")
@@ -5953,9 +5840,9 @@ class AccountNodeExecutor(NodeExecutorBase):
         else:
             context.log("error", f"AccountNode: connection 타입이 잘못되었습니다: {type(broker_connection)}", node_id)
             return self._empty_result("Invalid connection type")
-        
+
         context.log("info", f"AccountNode: provider={provider}, product={product} (REST 1회 조회)", node_id)
-        
+
         # 브로커별 분기 처리
         if provider == "ls-sec.co.kr":
             return await self._execute_ls(node_id, product, context)
@@ -5975,15 +5862,15 @@ class AccountNodeExecutor(NodeExecutorBase):
         if not credential:
             context.log("error", "Credential not found in secrets", node_id)
             return self._empty_result("Missing credentials")
-        
+
         appkey = credential.get("appkey")
         appsecret = credential.get("appsecret")
         paper_trading = credential.get("paper_trading", False)
-        
+
         if not appkey or not appsecret:
             context.log("error", "appkey/appsecret not found in credential", node_id)
             return self._empty_result("Missing appkey/appsecret")
-        
+
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
@@ -6017,7 +5904,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         from datetime import datetime
         from programgarden_finance import COSOQ00201
 
-        
+
         today = datetime.now().strftime("%Y%m%d")
         cosoq00201 = ls.overseas_stock().accno().cosoq00201(
             COSOQ00201.COSOQ00201InBlock1(
@@ -6027,13 +5914,13 @@ class AccountNodeExecutor(NodeExecutorBase):
                 AstkBalTpCode="00",
             ),
         )
-        
+
         response = await cosoq00201.req_async()
-        
+
         if response.error_msg:
             context.log("error", f"API error: {response.error_msg}", node_id)
             return self._empty_result(response.error_msg)
-        
+
         # block4 = 종목별 잔고 상세 (리스트 형태로 반환)
         positions = []
         for item in response.block4 or []:
@@ -6070,7 +5957,7 @@ class AccountNodeExecutor(NodeExecutorBase):
             {"exchange": p.get("exchange", ""), "exchange_code": p.get("exchange_code", ""), "symbol": p["symbol"]}
             for p in positions
         ]
-        
+
         # block2 = 전체 평가 요약. `orderable_amount` is set later by
         # COSOQ02701; pre-seed it as None so consumers can distinguish
         # "fetched & zero" from "never fetched". The partial-failure
@@ -6616,7 +6503,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         # see finance/docs/observed_broker_responses.md (2026-09-09).
         observed_no_data = (
             complete_empty and status == 200 and diagnostics["rsp_cd"] == "02679"
-            and echo.OrdDt == today and echo.OrdMktCode == "%"
+            and echo.OrdDt in ls_overseas_business_dates() and echo.OrdMktCode == "%"
             and echo.ThdayBnsAppYn == "1" and echo.BnsTpCode == "0"
             and echo.CrcyCode == "000"
             and all(
@@ -6633,6 +6520,16 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         )
         valid_empty = complete_empty and (diagnostics["rsp_cd"] == "00000" or observed_no_data)
         if diagnostics["rsp_cd"] == "02679" and not observed_no_data:
+            # Say WHICH part of the empty-result envelope did not match, so a live
+            # "no pending orders" answer is never a silent fetch_failed again.
+            diagnostics.update({
+                "empty_envelope_mismatch": True,
+                "echo_ord_dt": getattr(echo, "OrdDt", None) if echo is not None else None,
+                "accepted_business_dates": sorted(ls_overseas_business_dates()),
+                "echo_ord_mkt_code": getattr(echo, "OrdMktCode", None) if echo is not None else None,
+                "complete_empty": complete_empty,
+                "tr_cont": getattr(header, "tr_cont", None) if header is not None else None,
+            })
             return unavailable()
         if not usable_rows and not valid_empty:
             return unavailable()
@@ -6643,8 +6540,9 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
             if not order_id:
                 continue
 
-            # BnsTpCode: 01=매도, 02=매수
-            side = "buy" if item.BnsTpCode == "02" else "sell"
+            # BnsTpCode: 01/1=매도, 02/2=매수 — the broker returns the single-character
+            # form (observed 2026-09-24); anything else is "unknown", never a guessed sell.
+            side = ls_overseas_stock_side(item.BnsTpCode)
 
             open_orders.append({
                 "order_id": order_id,
@@ -6784,18 +6682,18 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         if not broker_connection:
             context.log("error", "RealAccountNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
             return {"error": "Missing connection - no matching BrokerNode found in workflow"}
-        
+
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         product = broker_connection.get("product", "overseas_stock")
-        
+
         context.log("info", f"RealAccount: provider={provider}, product={product}, stay_connected={stay_connected}", node_id)
-        
+
         # 이미 persistent tracker가 있으면 재사용 (stay_connected=True인 경우)
         if stay_connected and context.has_persistent(node_id):
             tracker = context.get_persistent(node_id)
             context.log("info", "Reusing existing tracker", node_id)
             return self._get_tracker_data(tracker)
-        
+
         # ========================================
         # 브로커별 분기 처리
         # ========================================
@@ -6816,24 +6714,24 @@ class RealAccountNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """LS증권 실시간 계좌 조회 (WebSocket)"""
         from datetime import datetime
-        
+
         
         # secrets에서 인증 정보 가져오기
         credential = context.get_credential()
-        
+
         if not credential:
             context.log("error", "Credential not found in secrets", node_id)
             return self._empty_result("Missing credentials")
-        
+
         appkey = credential.get("appkey")
         appsecret = credential.get("appsecret")
         paper_trading = credential.get("paper_trading", False)
-        
+
         
         if not appkey or not appsecret:
             context.log("error", "appkey/appsecret not found in credential", node_id)
             return self._empty_result("Missing appkey/appsecret")
-        
+
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
@@ -6874,16 +6772,16 @@ class RealAccountNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         LS증권 StockAccountTracker를 사용한 실시간 계좌 추적
-        
+
         - WebSocket으로 틱마다 수익률 계산
         - REST API로 주기적 데이터 동기화
         - 연결 끊김 시 토큰 확인 후 재연결
-        
+
         stay_connected:
         - True: persistent로 등록 (플로우 끝나도 유지)
         - False: cleanup_on_flow_end로 등록 (플로우 끝나면 종료)
         """
-        
+
         # Product별 분기 처리
         if product == "overseas_stock":
             return await self._ls_stock_with_tracker(
@@ -6912,7 +6810,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """해외주식 실시간 계좌 추적 (StockAccountTracker)"""
         from decimal import Decimal
-        
+
         try:
             # 수수료/세금 설정 읽기 (% → 비율 변환)
             commission_rate = Decimal(str(config.get("commission_rate", 0.25))) / 100
@@ -7101,13 +6999,13 @@ class RealAccountNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         """
         해외선물 실시간 계좌 추적 (FuturesAccountTracker)
-        
+
         - OVC WebSocket으로 실시간 시세 수신
         - TC1/TC2/TC3 WebSocket으로 주문 이벤트 수신
         - CIDBQ01500 등으로 주기적 잔고 동기화
         """
         from decimal import Decimal
-        
+
         try:
             # Retain the legacy constructor setting; native estimates exclude fees.
             futures_fee_per_contract = Decimal(str(config.get("futures_fee_per_contract", 7.5)))
@@ -7443,12 +7341,12 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             {"exchange": p["exchange"], "exchange_code": p["exchange_code"], "symbol": p["symbol"]}
             for p in positions
         ]
-        
+
         # balance를 JSON 직렬화 가능한 형태로 변환
         # get_balances()는 Dict[str, StockBalanceInfo]를 반환 (통화별)
         raw_balances = tracker.get_balances()
         balance = {}
-        
+
         if isinstance(raw_balances, dict):
             # 통화별 잔고 변환
             for currency, bal_info in raw_balances.items():
@@ -7482,7 +7380,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                 }
         else:
             balance = {"cash": 0.0, "total_value": 0.0}
-        
+
         # open_orders 추출
         open_orders = {}
         if hasattr(tracker, 'get_open_orders'):
@@ -7532,7 +7430,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     open_orders[order_no]["exchange_unavailable_reason"] = (
                         "dropped_by_sdk_open_order_mapping"
                     )
-        
+
         return {
             "held_symbols": held_symbols,
             "positions": positions,
@@ -7601,7 +7499,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
         for symbol, pos in tracker.get_positions().items():
             positions.append(self._serialize_futures_tracker_position(symbol, pos))
             symbols.append(symbol)
-        
+
         # balance 추출
         raw_balance = tracker.get_balance()
         if hasattr(raw_balance, 'model_dump'):
@@ -7618,7 +7516,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
             balance = raw_balance
         else:
             balance = {"deposit": 0.0, "orderable_amount": 0.0}
-        
+
         # open_orders 추출
         open_orders = {}
         if hasattr(tracker, 'get_open_orders'):
@@ -7634,7 +7532,7 @@ class RealAccountNodeExecutor(NodeExecutorBase):
                     "order_qty": int(getattr(order, 'order_qty', 0)),
                     "remaining_qty": int(getattr(order, 'remaining_qty', 0)),
                 }
-        
+
         return {
             "held_symbols": [
                 {"exchange": pos.get("exchange", ""), "symbol": pos["symbol"]}
@@ -7795,15 +7693,15 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             )
             context.log("error", error_msg, node_id)
             raise ConnectionError(error_msg)
-        
+
         broker_product = broker_connection.get("product", "overseas_stock")
-        
+
         # ========================================
         # 2. Symbols 획득 (필드 우선, WatchlistNode 폴백)
         # ========================================
         watchlist_output = context.find_parent_output(node_id, "WatchlistNode")
         symbols_raw = self._resolve_symbols(node_id, config, context, watchlist_output)
-        
+
         if not symbols_raw:
             error_msg = (
                 f"RealMarketDataNode requires symbols to subscribe. "
@@ -7812,7 +7710,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             )
             context.log("error", error_msg, node_id)
             raise ValidationError(error_msg, node_id=node_id)
-        
+
         # symbols 정규화: dict 형태 [{exchange, symbol}] → 문자열 리스트
         symbols = []
         symbols_with_exchange = []  # 거래소 코드 포함 형식
@@ -7830,12 +7728,12 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             elif isinstance(entry, str):
                 symbols.append(entry)
                 symbols_with_exchange.append({"symbol": entry, "exchange": "", "exchange_code": ""})
-        
+
         # ========================================
         # 3. stay_connected 설정
         # ========================================
         stay_connected = config.get("stay_connected", True)
-        
+
         # ========================================
         # 4. 상품별 실시간 WebSocket 연결
         # ========================================
@@ -7878,27 +7776,27 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         """
         import asyncio
         from datetime import datetime
-        
+
         # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
         appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
-        
+
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
-        
+
         # LS 로그인
         ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_stock")
         if not success:
             from programgarden_core.exceptions import ConnectionError
             raise ConnectionError(f"LS login failed: {error}")
-        
+
         # 실시간 클라이언트 생성 및 연결
         real_client = ls.overseas_stock().real()
         await real_client.connect()
         context.log("info", f"WebSocket connected for overseas_stock (paper_trading={paper_trading})", node_id)
-        
+
         # GSC 구독 설정
         gsc = real_client.GSC()
-        
+
         # 거래소 코드 포함 심볼 생성: 81AAPL, 82TSLA 형식
         subscribe_symbols = []
         for entry in symbols_with_exchange:
@@ -7909,7 +7807,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                 entry.get("exchange", ""), entry.get("exchange_code", ""), symbol
             )
             subscribe_symbols.append(f"{exchange_code}{symbol}")
-        
+
         # M-11: OHLCV 데이터를 context.node_state에 저장 (클로저 메모리 관리)
         # cleanup_persistent_nodes에서 자동 정리됨
         context.set_node_state(node_id, "ohlcv_bars", {})
@@ -8007,14 +7905,14 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     )
             except Exception as e:
                 context.log("warning", f"GSC parse error: {e}", node_id)
-        
+
         gsc.on_gsc_message(on_tick)
         gsc.add_gsc_symbols(symbols=subscribe_symbols)
         context.log("info", f"Subscribed to GSC: {subscribe_symbols} (체결 시 실시간 업데이트)", node_id)
-        
+
         # 타임아웃 없음 - 체결은 언제 올지 모름 (장 외 시간에는 오지 않음)
         # stay_connected=true면 구독 유지, false면 즉시 종료
-        
+
         if not stay_connected:
             # stay_connected=False: 구독만 설정하고 즉시 종료 (1회성 조회 용도 아님)
             context.log("warning", f"stay_connected=False for realtime node - no data will be received", node_id)
@@ -8027,7 +7925,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "gsc", gsc)
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"GSC subscription active - waiting for ticks...", node_id)
-        
+
         # 초기 반환: 빈 OHLCV 데이터 (체결 시 콜백에서 업데이트)
         # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
         # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
@@ -8050,27 +7948,27 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
         """해외선물 실시간 시세 (OVC)"""
         import asyncio
         from datetime import datetime
-        
+
         # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
         appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
-        
+
         # 현재 이벤트 루프 캡처 (콜백에서 사용)
         loop = asyncio.get_running_loop()
-        
+
         # LS 로그인
         ls, success, error = ensure_ls_login(appkey, appsecret, paper_trading, context, node_id, "overseas_futures")
         if not success:
             from programgarden_core.exceptions import ConnectionError
             raise ConnectionError(f"LS login failed: {error}")
-        
+
         # 실시간 클라이언트 생성 및 연결
         real_client = ls.overseas_futureoption().real()
         await real_client.connect()
         context.log("info", f"WebSocket connected for overseas_futures (paper_trading={paper_trading})", node_id)
-        
+
         # OVC 구독 설정
         ovc = real_client.OVC()
-        
+
         # 선물 심볼 형식: "ESU25   " (8자리 패딩)
         subscribe_symbols = []
         for entry in symbols_with_exchange:
@@ -8078,13 +7976,13 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             # 8자리로 패딩
             padded_symbol = symbol.ljust(8)
             subscribe_symbols.append(padded_symbol)
-        
+
         # 실시간 OHLCV 데이터 저장소 (콜백에서 틱마다 누적)
         ohlcv_bars = {}
-        
+
         # 트리거할 하위 노드 목록
         trigger_nodes = []
-        
+
         def on_tick(resp):
             """OVC 틱 데이터 수신 콜백 - OHLCV 형식으로 누적"""
             try:
@@ -8172,14 +8070,14 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
                     )
             except Exception as e:
                 context.log("warning", f"OVC parse error: {e}", node_id)
-        
+
         ovc.on_ovc_message(on_tick)
         ovc.add_ovc_symbols(symbols=subscribe_symbols)
         context.log("info", f"Subscribed to OVC: {subscribe_symbols} (체결 시 실시간 업데이트)", node_id)
-        
+
         # 타임아웃 없음 - 체결은 언제 올지 모름
         # stay_connected=true면 구독 유지, false면 즉시 종료
-        
+
         if not stay_connected:
             # stay_connected=False: 구독만 설정하고 즉시 종료 (1회성 조회 용도 아님)
             context.log("warning", f"stay_connected=False for realtime node - no data will be received", node_id)
@@ -8192,7 +8090,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             context.set_node_state(node_id, "ovc", ovc)
             context.set_node_state(node_id, "subscribe_symbols", subscribe_symbols)
             context.log("info", f"OVC subscription active - waiting for ticks...", node_id)
-        
+
         # 초기 반환: 빈 OHLCV 데이터
         # pending 을 1급 신호로 방출한다: 아직 틱이 없어 흘릴 **실데이터가 없다.**
         # 예전엔 {symbols, ohlcv_data:{}, data:{}} 처럼 **공개 데이터 포트를 빈 값으로**
@@ -8430,7 +8328,7 @@ class RealMarketDataNodeExecutor(NodeExecutorBase):
             account_output = context.find_parent_output(node_id, account_type)
             if account_output and account_output.get("held_symbols"):
                 return account_output["held_symbols"]
-        
+
         return []
     
 
@@ -8485,12 +8383,12 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         if not broker_connection:
             context.log("error", "RealOrderEventNode: connection이 자동 주입되지 않았습니다. 매칭되는 BrokerNode가 워크플로우에 있는지 확인하세요.", node_id)
             return {"error": "Missing connection - no matching BrokerNode found in workflow"}
-        
+
         provider = broker_connection.get("provider", "ls-sec.co.kr")
         broker_product = broker_connection.get("product", "overseas_stock")
         # config의 product_type 우선, connection.product fallback
         product = config.get("product_type") or broker_product
-        
+
         # ========================================
         # ⚠️ Product 불일치 검증
         # ========================================
@@ -8498,15 +8396,15 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             error_msg = f"Product mismatch: 노드 product_type='{product}' vs 브로커 product='{broker_product}'. 브로커와 동일한 상품을 선택하세요."
             context.log("error", error_msg, node_id)
             return {"error": error_msg}
-        
+
         # 이벤트 필터 가져오기 (product_type에 따라 다른 필드 사용)
         if product == "overseas_futures":
             event_filter = config.get("event_filter_futures", "all")
         else:
             event_filter = config.get("event_filter", "all")
-        
+
         context.log("info", f"RealOrderEvent: provider={provider}, product={product}, event_filter={event_filter}, stay_connected={stay_connected}", node_id)
-        
+
         # 🆕 기존 연결이 있고 event_filter가 변경된 경우 기존 연결 제거 후 재등록
         # persistent에 저장된 event_filter와 현재 event_filter 비교
         if stay_connected and context.has_persistent(node_id):
@@ -8518,7 +8416,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                 # event_filter가 변경됨 - 기존 연결 제거
                 context.log("info", f"event_filter changed ({existing_filter} -> {event_filter}), re-subscribing", node_id)
                 await context.cleanup_persistent(node_id)
-        
+
         # ========================================
         # 브로커별 분기 처리
         # ========================================
@@ -8538,22 +8436,22 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         event_filter: str = "all",
     ) -> Dict[str, Any]:
         """LS증권 실시간 주문 이벤트 구독"""
-        
+
         # secrets에서 인증 정보 가져오기
         credential = context.get_credential()
-        
+
         if not credential:
             context.log("error", "Credential not found in secrets", node_id)
             return {"error": "Missing credentials"}
-        
+
         appkey = credential.get("appkey")
         appsecret = credential.get("appsecret")
         paper_trading = credential.get("paper_trading", False)
-        
+
         if not appkey or not appsecret:
             context.log("error", "appkey/appsecret not found in credential", node_id)
             return {"error": "Missing appkey/appsecret"}
-        
+
         try:
             ls, success, error = ensure_ls_login(
                 appkey, appsecret, paper_trading, context, node_id,
@@ -8855,11 +8753,11 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         event_filter: str = "all",
     ) -> Dict[str, Any]:
         """해외선물 실시간 주문 이벤트 (TC1/TC2/TC3)
-        
+
         TC1: 주문접수 (HO01=ACK, HO04=Pending)
         TC2: 주문응답 (HO02=확인, HO03=거부)
         TC3: 주문체결 (CH01=체결)
-        
+
         TC1~TC3 중 하나만 등록해도 전체 수신됨.
         여러 노드가 동시에 사용할 수 있도록 마스터 콜백 패턴 사용:
         - 첫 번째 노드가 마스터 콜백 등록
@@ -8867,9 +8765,9 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         - 마스터 콜백이 모든 핸들러에게 이벤트 분배
         """
         from datetime import datetime
-        
+
         product = "overseas_futures"
-        
+
         try:
             # 현재 이벤트 루프 캡처 (콜백에서 사용)
             loop = asyncio.get_running_loop()
@@ -9094,7 +8992,7 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         """TC2 포트 및 상태명 결정"""
         svc_id = event_data.get("svc_id", "")
         ordr_ccd = event_data.get("order_type", "1")
-        
+
         if svc_id == 'HO03':
             return 'rejected', '주문거부'
         elif svc_id == 'HO02':
@@ -9781,356 +9679,6 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
             context.log("error", f"Korea stock order event error: {e}", node_id)
             return {"error": str(e)}
 
-class MarketStatusNodeExecutor(NodeExecutorBase):
-    """MarketStatusNode executor — JIF 기반 실시간 시장 상태 추적.
-
-    Broker credential type 무관(해외주식/해외선물/국내주식 중 아무 BrokerNode).
-    broker의 기존 WSS 세션과 별도로 ``Common.real()`` 공용 WebSocket 세션을
-    생성하여 JIF TR 하나를 구독합니다. token_manager 는 broker 로그인에서
-    재사용하므로 중복 로그인 없음.
-
-    stay_connected=True (기본): 구독 유지하며 콜백마다 context._market_status_cache
-    + set_output 갱신. 워크플로우 종료 시 cleanup_jif_subscriptions 에서 해제.
-
-    stay_connected=False: 최대 5초 기다리며 수신된 이벤트 반영한 snapshot 반환
-    후 즉시 tr_type=4 해제. AI Agent Tool 일회성 조회용.
-    """
-
-    # {f"{job_id}::{node_id}": {"jif": RealJIF, "real": Real, "stay_connected": bool}}
-    _active_subscriptions: Dict[str, Any] = {}
-
-    # Canonical market list for the convenience boolean ports. Updated in
-    # lock-step with the OutputPort definitions on ``MarketStatusNode``.
-    _SOLO_MARKET_PORTS = (
-        ("US", "us_is_open"),
-        ("KOSPI", "kospi_is_open"),
-        ("KOSDAQ", "kosdaq_is_open"),
-        ("KRX_FUTURES", "krx_futures_is_open"),
-    )
-
-    _COMBO_MARKET_PORTS = (
-        ("hk_is_open", "HK_AM", "HK_PM"),
-        ("cn_is_open", "CN_AM", "CN_PM"),
-        ("jp_is_open", "JP_AM", "JP_PM"),
-    )
-
-    async def cleanup_jif_subscriptions(self, job_id: str) -> None:
-        """Unsubscribe every active JIF stream registered for the given job.
-
-        Mirrors ``BrokerNodeExecutor.cleanup_fill_subscriptions`` so the
-        executor's shutdown sequence can wipe market-status subscriptions
-        without touching unrelated real-time feeds.
-        """
-
-        keys_to_remove = []
-        for key, info in self._active_subscriptions.items():
-            if not key.startswith(f"{job_id}::"):
-                continue
-            jif = info.get("jif")
-            real = info.get("real")
-            if jif is not None:
-                try:
-                    jif.on_remove_jif_message()
-                except (RuntimeError, AttributeError):
-                    pass
-                except Exception as e:
-                    logger.warning(f"JIF unsubscribe failed for {key}: {e}")
-            if real is not None:
-                try:
-                    await real.close()
-                except Exception as e:
-                    logger.warning(f"Common.real close failed for {key}: {e}")
-            keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del self._active_subscriptions[key]
-            logger.debug(f"Cleaned up JIF subscription: {key}")
-
-    async def execute(
-        self,
-        node_id: str,
-        node_type: str,
-        config: Dict[str, Any],
-        context: ExecutionContext,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        import asyncio
-        from datetime import datetime
-
-        from programgarden_core.exceptions import ConnectionError, ValidationError
-
-        # deep_validate: return a fixture market-status (markets open) so the
-        # flow keeps flowing instead of skipping (no WebSocket/JIF subscription).
-        if context.is_deep_validate:
-            from programgarden import deep_fixtures as _df
-            config = evaluate_all_bindings(config, context, node_id)
-            fixture = _df.market_status_fixture(config)
-            override = context.get_deep_fixture(node_id, node_type)
-            return _df.apply_override(fixture, override)
-
-        # dry_run skip — WebSocket 불가
-        if context.is_dry_run:
-            context.log(
-                "warning",
-                f"[dry_run] MarketStatusNode skipped (realtime WebSocket disabled)",
-                node_id,
-            )
-            return {"status": "skipped_dry_run", "dry_run": True}
-
-        # 1. broker_connection 획득
-        # MarketStatusNode 는 product_scope=ALL 이므로 auto-injection 에서 제외.
-        # 여기서 직접 find_parent_output(...) 로 아무 BrokerNode 나 수용.
-        broker_connection = config.get("connection")
-        if not broker_connection:
-            for broker_type in (
-                "OverseasStockBrokerNode",
-                "KoreaStockBrokerNode",
-                "OverseasFuturesBrokerNode",
-            ):
-                candidates = context.find_parent_outputs(node_id, broker_type)
-                if candidates:
-                    _bnode_id, _dist, outputs = candidates[0]
-                    broker_connection = outputs.get("connection")
-                    if broker_connection:
-                        context.log(
-                            "debug",
-                            f"MarketStatusNode: broker_connection resolved from "
-                            f"{broker_type}/{_bnode_id} (distance={_dist})",
-                            node_id,
-                        )
-                        break
-
-        if not broker_connection:
-            raise ConnectionError(
-                "MarketStatusNode: BrokerNode 연결이 필요합니다. "
-                "OverseasStockBrokerNode / OverseasFuturesBrokerNode / "
-                "KoreaStockBrokerNode 중 아무거나 상위에 배치하세요."
-            )
-
-        # 2. LS 로그인 (broker 와 동일 instance 재사용)
-        # 🔐 자격증명은 시크릿 저장소에서 — `connection` 출력에는 더 이상 싣지 않는다.
-        appkey, appsecret, paper_trading = _resolve_broker_credentials(broker_connection, context)
-        paper_trading = bool(paper_trading)
-        broker_product = broker_connection.get("product", "overseas_stock")
-
-        ls, success, error = ensure_ls_login(
-            appkey, appsecret, paper_trading, context, node_id, broker_product,
-            caller_name="MarketStatusNode",
-        )
-        if not success:
-            raise ConnectionError(f"MarketStatusNode LS login failed: {error}")
-
-        # 3. Common.real() — broker WSS 와 독립된 공용 세션
-        from programgarden_finance.ls.common import Common
-
-        common = Common(token_manager=ls.token_manager)
-        real = common.real()
-        await real.connect()
-        context.log(
-            "info",
-            f"JIF WebSocket connected via Common.real (paper_trading={paper_trading})",
-            node_id,
-        )
-
-        # 4. 구독 설정
-        markets_filter = config.get("markets", []) or []
-        stay_connected = bool(config.get("stay_connected", True))
-        include_extended = bool(config.get("include_extended_hours", False))
-        trigger_nodes = config.get("_trigger_on_update_nodes", [])
-
-        jif = real.JIF()
-        loop = asyncio.get_running_loop()
-
-        # Track subscription for cleanup (registered even for stay_connected=False
-        # so that an error between subscribe and unsubscribe still gets cleaned up)
-        sub_key = f"{context.job_id}::{node_id}"
-        MarketStatusNodeExecutor._active_subscriptions[sub_key] = {
-            "jif": jif,
-            "real": real,
-            "stay_connected": stay_connected,
-        }
-
-        def _is_open(market: str) -> bool:
-            flag = context.is_market_open(market, include_extended=include_extended)
-            return bool(flag) if flag is not None else False
-
-        def _compute_conv_booleans() -> Dict[str, bool]:
-            conv: Dict[str, bool] = {}
-            for market, port_name in self._SOLO_MARKET_PORTS:
-                conv[port_name] = _is_open(market)
-            for port_name, am_key, pm_key in self._COMBO_MARKET_PORTS:
-                conv[port_name] = bool(_is_open(am_key) or _is_open(pm_key))
-            return conv
-
-        def on_jif_message(resp):
-            """JIFRealResponse 수신 콜백 — cache/output/notification 일괄 갱신."""
-
-            try:
-                if context.is_shutdown:
-                    return
-                body = getattr(resp, "body", None)
-                if body is None:
-                    # ACK payload (rsp_cd only). Ignore.
-                    return
-
-                jangubun = str(getattr(body, "jangubun", "") or "")
-                jstatus = str(getattr(body, "jstatus", "") or "")
-                if not jangubun:
-                    return
-
-                # Canonical market key + open-state derivations (core 레이어)
-                from programgarden_core.nodes.market_status import (
-                    JANGUBUN_TO_MARKET,
-                    is_extended_open,
-                    is_regular_open,
-                )
-                from programgarden_finance.ls.common.real.JIF.constants import (
-                    resolve_jstatus,
-                )
-
-                market = JANGUBUN_TO_MARKET.get(jangubun, jangubun)
-
-                # markets 필터 (설정됐으면 구독 자체가 서버측 제약은 아니므로
-                # 여기서 클라이언트 필터링 적용)
-                if markets_filter and market not in markets_filter:
-                    return
-
-                status_info = resolve_jstatus(jstatus)
-                reg_open = is_regular_open(jstatus)
-                ext_open = is_extended_open(jstatus)
-
-                new_status = {
-                    "market": market,
-                    "jangubun": jangubun,
-                    "jstatus": jstatus,
-                    "jstatus_label": status_info["label"],
-                    "is_regular_open": reg_open,
-                    "is_extended_open": ext_open,
-                    "is_open": ext_open if include_extended else reg_open,
-                    "updated_at": datetime.now().isoformat(),
-                }
-
-                # 이전 상태 조회 (transition 감지용)
-                prev_status = context.get_market_status(market)
-                prev_jstatus = prev_status.get("jstatus") if prev_status else None
-                prev_label = prev_status.get("jstatus_label") if prev_status else None
-                is_transition = prev_jstatus is not None and prev_jstatus != jstatus
-
-                # Cache update
-                context.update_market_status(market, new_status)
-
-                # Output update — 바인딩 리졸버가 이 값을 읽음
-                all_statuses = list(context.get_all_market_statuses().values())
-                outputs = {
-                    "statuses": all_statuses,
-                    "event": {
-                        "market": market,
-                        "jstatus": jstatus,
-                        "jstatus_label": status_info["label"],
-                        "prev_jstatus": prev_jstatus,
-                        "prev_jstatus_label": prev_label,
-                        "transitioned_at": new_status["updated_at"],
-                    },
-                    **_compute_conv_booleans(),
-                }
-
-                for port_name, port_value in outputs.items():
-                    context.set_output(node_id, port_name, port_value)
-
-                # SSE broadcast
-                asyncio.run_coroutine_threadsafe(
-                    context.notify_output_update(
-                        node_id=node_id,
-                        node_type="MarketStatusNode",
-                        outputs=outputs,
-                    ),
-                    loop,
-                )
-
-                # 전이 notification (prev != new)
-                if is_transition:
-                    asyncio.run_coroutine_threadsafe(
-                        context.send_notification(
-                            category=NotificationCategory.SCHEDULE_STARTED,
-                            severity=NotificationSeverity.INFO,
-                            title=f"Market status change: {market}",
-                            message=(
-                                f"{market}: {prev_label or prev_jstatus} → "
-                                f"{status_info['label']} "
-                                f"(jstatus {prev_jstatus} → {jstatus})"
-                            ),
-                            node_id=node_id,
-                            node_type="MarketStatusNode",
-                            data={
-                                "market": market,
-                                "jangubun": jangubun,
-                                "prev_jstatus": prev_jstatus,
-                                "jstatus": jstatus,
-                                "jstatus_label": status_info["label"],
-                                "is_regular_open": reg_open,
-                                "is_extended_open": ext_open,
-                            },
-                        ),
-                        loop,
-                    )
-
-                # Trigger downstream nodes
-                if trigger_nodes:
-                    asyncio.run_coroutine_threadsafe(
-                        context.emit_event(
-                            event_type="market_status",
-                            source_node_id=node_id,
-                            data=outputs,
-                            trigger_nodes=trigger_nodes,
-                        ),
-                        loop,
-                    )
-            except Exception as e:
-                context.log("warning", f"JIF message parse error: {e}", node_id)
-
-        jif.on_jif_message(on_jif_message)
-        context.log(
-            "info",
-            f"JIF subscription started "
-            f"(markets={markets_filter or 'all 12'}, "
-            f"stay_connected={stay_connected}, "
-            f"include_extended_hours={include_extended})",
-            node_id,
-        )
-
-        # One-shot 모드: 5초 대기 → 수신된 이벤트 반영 후 해제
-        if not stay_connected:
-            wait_timeout = 5.0
-            check_interval = 0.1
-            deadline = loop.time() + wait_timeout
-            while loop.time() < deadline:
-                if context.get_all_market_statuses():
-                    break
-                await asyncio.sleep(check_interval)
-
-            try:
-                jif.on_remove_jif_message()
-            except Exception:
-                pass
-            MarketStatusNodeExecutor._active_subscriptions.pop(sub_key, None)
-            try:
-                await real.close()
-            except Exception:
-                pass
-
-        # 초기/최종 output (stay_connected=True 에서는 현재까지 수신된 snapshot,
-        # False 에서는 해제 직전 snapshot 을 그대로 반환)
-        initial_statuses = list(context.get_all_market_statuses().values())
-        initial_outputs: Dict[str, Any] = {
-            "statuses": initial_statuses,
-            "event": None,
-            **_compute_conv_booleans(),
-        }
-        for port_name, port_value in initial_outputs.items():
-            context.set_output(node_id, port_name, port_value)
-
-        return initial_outputs
-
 
 class DisplayNodeExecutor(NodeExecutorBase):
     """
@@ -10188,23 +9736,23 @@ class DisplayNodeExecutor(NodeExecutorBase):
         data = config.get("data")
         if data is not None:
             return data
-        
+
         # 2. 엣지로 연결된 입력 데이터
         input_namespace = f"_input_{node_id}"
         all_inputs = context.get_all_outputs(input_namespace) if hasattr(context, 'get_all_outputs') else {}
-        
+
         # 실시간 데이터 우선
         realtime_data = config.get("_realtime_data")
         if realtime_data:
             all_inputs = {**all_inputs, **realtime_data}
-        
+
         # 소스 노드에서 직접 조회
         source_node_id = config.get("_source_node_id")
         if source_node_id and not realtime_data:
             source_outputs = context.get_all_outputs(source_node_id)
             if source_outputs:
                 all_inputs = source_outputs
-        
+
         # data 포트 또는 첫 번째 입력
         return all_inputs.get("data") or (next(iter(all_inputs.values()), None) if all_inputs else None)
 
@@ -10218,7 +9766,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         from datetime import datetime
         import json
-        
+
         # node_type별 chart_type 자동 매핑 (TableDisplayNode 등 개별 노드 지원)
         _NODE_TYPE_TO_CHART = {
             "TableDisplayNode": "table",
@@ -10230,25 +9778,25 @@ class DisplayNodeExecutor(NodeExecutorBase):
         }
         chart_type = config.get("chart_type") or _NODE_TYPE_TO_CHART.get(node_type, "summary")
         title = config.get("title", "")
-        
+
         # 데이터 가져오기
         data = self._get_data(config, context, node_id)
-        
+
         context.log("debug", f"DisplayNode '{node_id}': chart_type={chart_type}, data_type={type(data).__name__}", node_id)
-        
+
         # 출력 데이터 구성
         output_data = {
             "rendered": True,
             "chart_type": chart_type,
             "title": title,
         }
-        
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         # ========================================
         # chart_type별 처리
         # ========================================
-        
+
         if chart_type == "summary":
             # Raw JSON 표시
             _safe_print(f"\n📋 {title or 'Data Summary'} [{now}]")
@@ -10546,12 +10094,12 @@ class DisplayNodeExecutor(NodeExecutorBase):
             output_data["data"] = data
             output_data["x_field"] = x_field
             output_data["y_field"] = y_field
-        
+
         else:
             # 알 수 없는 chart_type
             context.log("warning", f"알 수 없는 chart_type: {chart_type}, summary로 처리", node_id)
             output_data["data"] = data
-        
+
         # Notify listeners for frontend
         # Display 노드 클래스에서 data_schema 가져오기
         _data_schema = None
@@ -10589,7 +10137,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
             },
             data_schema=_data_schema,
         )
-        
+
         context.log("info", f"Display rendered: {chart_type}", node_id)
         return output_data
     
@@ -10603,12 +10151,12 @@ class DisplayNodeExecutor(NodeExecutorBase):
     ) -> List[Dict[str, Any]]:
         """
         데이터에서 시그널 마커 정보 추출
-        
+
         Returns:
             [{"x": "2025-01-15", "signal": "buy", "side": "long", "marker": "[B:L]", "series": "AAPL"}, ...]
         """
         signals = []
-        
+
         # 시그널 마커 매핑
         SIGNAL_MARKERS = {
             ("buy", "long"): "[B:L]",      # 🟢 롱 진입
@@ -10616,7 +10164,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
             ("sell", "short"): "[S:S]",    # 🔵 숏 진입
             ("buy", "short"): "[B:S]",     # 🟠 숏 청산
         }
-        
+
         for row in data:
             if not isinstance(row, dict):
                 continue
@@ -10654,7 +10202,7 @@ class DisplayNodeExecutor(NodeExecutorBase):
                 sig_info["series"] = row.get(series_key, "")
             
             signals.append(sig_info)
-        
+
         return signals
 
 
@@ -10778,7 +10326,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
     ) -> Any:
         """
         포트 바인딩 표현식을 평가하여 데이터 반환
-        
+
         Args:
             config: 노드 config (price_data, symbols 등 바인딩 표현식 포함)
             port_name: 포트 이름 (price_data, symbols 등)
@@ -10790,7 +10338,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
             평가된 데이터 또는 기본값
         """
         binding_expr = config.get(port_name)
-        
+
         if binding_expr and isinstance(binding_expr, str):
             # {{ nodes.xxx.yyy }} 표현식 평가
             expr_context = context.get_expression_context()
@@ -10802,7 +10350,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     return result
             except Exception as e:
                 context.log("warning", f"Port binding evaluation failed for {port_name}: {e}", node_id)
-        
+
         return default
 
     async def execute(
@@ -10821,16 +10369,16 @@ class ConditionNodeExecutor(NodeExecutorBase):
 
         # 플러그인 ID 추출
         plugin_id = config.get("plugin", "Unknown")
-        
+
         # 플러그인 리소스 힌트 조회
         hints = get_plugin_hints(plugin_id)
-        
+
         # === 리소스 체크 ===
         resource_check = await context.check_resources_before_task(
             task_type="ConditionNode",
             weight=hints.get_weight() if hasattr(hints, 'get_weight') else 1.0,
         )
-        
+
         if not resource_check["can_proceed"]:
             # 하드 실패(리소스 고갈로 실행 불가) → raise. 빈 결과를 성공으로 위장하면
             # 하류 IfNode 가 is_condition_met=False 를 조용히 먹어 잘못된 분기를 탄다.
@@ -10840,17 +10388,17 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 f"{resource_check['reason']}",
                 node_id=node_id,
             )
-        
+
         # 권장 배치 크기 저장 (백테스트 모드에서 사용)
         recommended_batch_size = resource_check.get("recommended_batch_size", 10)
-        
+
         # 샌드박스 생성
         sandbox = PluginSandbox(
             resource_context=context.resource,
             default_timeout=hints.max_execution_sec if hasattr(hints, 'max_execution_sec') else 30.0,
             default_batch_size=hints.max_symbols_per_call if hasattr(hints, 'max_symbols_per_call') else 100,
         )
-        
+
         try:
             # === 플러그인 스키마에서 required_data 확인 ===
             # 먼저 community 플러그인 레지스트리 초기화 (자동 등록)
@@ -10986,7 +10534,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                         # the risk → order → notify branch is exercised.
                         if getattr(context, "is_deep_validate", False) and positions and not _passed:
                             _passed = [
-                                {"symbol": p.get("symbol"), "exchange": p.get("exchange", "UNKNOWN")}
+                                dict(p)
                                 for p in positions if isinstance(p, dict) and p.get("symbol")
                             ]
                             context.log(
@@ -11058,6 +10606,7 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 )
 
             # === 플러그인 required_fields 검증 ===
+            required_fields = []
             if plugin_schema and hasattr(plugin_schema, 'required_fields'):
                 required_fields = plugin_schema.required_fields or []
                 extract = items_config.get("extract", {})
@@ -11096,6 +10645,20 @@ class ConditionNodeExecutor(NodeExecutorBase):
                     "symbol_results": [],
                     "values": [],
                 }
+
+            if context.is_deep_validate:
+                # Wrapper rows can have the right keys but no OHLCV values.
+                # A fixture's missing fields are wiring failures, not no-signal.
+                missing_values = [
+                    key for key in required_fields
+                    if all(row.get(key) in (None, "") for row in data)
+                ]
+                if missing_values:
+                    raise ValueError(
+                        f"ConditionNode '{node_id}' extracted no values for "
+                        f"{missing_values}. Bind items.from to the bar array "
+                        "(for example item.time_series), not per-symbol wrappers."
+                    )
 
             # symbols 자동 추출 (data에서)
             symbols = []
@@ -11250,9 +10813,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 values = result.get("values", [])
                 
             except PluginTimeoutError as e:
+                if context.is_deep_validate:
+                    raise
                 context.log("error", f"Plugin timeout: {e}", node_id)
                 failed_symbols = normalized_symbols
             except Exception as e:
+                if context.is_deep_validate:
+                    raise
                 context.log("error", f"Plugin error: {e}", node_id)
                 import traceback
                 context.log("debug", f"Plugin traceback: {traceback.format_exc()}", node_id)
@@ -11282,6 +10849,18 @@ class ConditionNodeExecutor(NodeExecutorBase):
         # "no signal this pass"). Deep validation's job is flow/field/type
         # integrity, not reproducing a market signal, so guarantee at least the
         # input symbols flow through. Runtime / dry_run are untouched.
+        if (
+            context.is_deep_validate
+            and symbol_results
+            and all(row.get("error") for row in symbol_results)
+        ):
+            raise ValueError(
+                f"ConditionNode '{node_id}' could not evaluate any symbol: "
+                f"{sorted({str(row['error']) for row in symbol_results})}. "
+                "Check extracted bar fields and indicator lookback. If the default "
+                "fixture is too short, provide a longer deep-validation fixture."
+            )
+
         if getattr(context, "is_deep_validate", False) and normalized_symbols and not passed_symbols:
             passed_symbols = list(normalized_symbols)
             failed_symbols = []
@@ -12689,7 +12268,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 "interval": config.get("interval", "1d"),
             }
         
-        # 기간 설정 ({{ today_yyyymmdd() }}, {{ days_ago_yyyymmdd(100) }} 바인딩 사용)
+        # 기간 설정 ({{ date.today(format='yyyymmdd') }}, {{ date.ago(100, format='yyyymmdd') }} 바인딩 사용)
         start_date = config.get("start_date", "")
         end_date = config.get("end_date", "")
         interval = config.get("interval", "1d")  # 1d, 1w, 1m, 1min 등
@@ -12849,8 +12428,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
 
             for symbol in symbols:
                 try:
-                    # positions에서 market_code 가져오기 (LS증권 거래소 코드: 81=NYSE/AMEX, 82=NASDAQ)
-                    exchcd = position_market_code.get(symbol) or "82"  # 기본값 NASDAQ
+                    # Preserve the requested symbol's exchange even without holdings.
+                    exchcd = (
+                        (symbol_exchange_map or {}).get(symbol)
+                        or position_market_code.get(symbol)
+                        or self.EXCHANGE_CODES.get(symbol_to_exchange.get(symbol), "82")
+                    )
                     
                     # symbols_raw에서 exchange 정보 가져오기 (우선순위: symbols_raw > exchcd 변환)
                     exchange = symbol_to_exchange.get(symbol) or exchcd_to_exchange.get(exchcd, "NASDAQ")
@@ -14545,6 +14128,14 @@ class PositionSizingNodeExecutor(NodeExecutorBase):
         )
         
         # 방법별 수량 계산
+        if context.is_deep_validate and any(
+            not self._get_price(row.get("symbol", ""), row, price_data, context, node_id)
+            for row in symbols
+        ):
+            raise ValueError(
+                "Position sizing has candidates without usable prices. Bind market_data "
+                "to matching quote rows or retain price on each candidate."
+            )
         if method == "fixed_percent":
             result = self._calc_fixed_percent(
                 symbols, available_balance, max_percent, price_data, context, node_id
@@ -15591,6 +15182,25 @@ class NewOrderNodeExecutor(NodeExecutorBase):
 
         # dry_run: LS API 미호출, 모의 응답 반환
         if context.is_dry_run:
+            if context.is_deep_validate:
+                # Exercise the actual payload contract before simulating success.
+                # Do not enter connection, balance, quote or broker request paths.
+                config = evaluate_all_bindings(config, context, node_id)
+                if not self._normalize_order(config.get("order"), config, context, node_id):
+                    upstream = _input_namespace(context, node_id)
+                    if (
+                        config.get("order") is None
+                        and isinstance(upstream, dict)
+                        and upstream.get("reason") == EmptyOrderReason.NO_SIGNAL.value
+                        and self._extract_upstream_error(upstream) is None
+                    ):
+                        return self._empty_result(EmptyOrderReason.NO_SIGNAL)
+                    raise ValueError(
+                        f"{node_type} requires order to resolve to an object with "
+                        "a symbol and a positive whole-share/contract quantity. "
+                        "Use the current sizing order item or a position retaining "
+                        "quantity; a symbol string alone is not an order."
+                    )
             import uuid
             order_id = f"DRYRUN-{uuid.uuid4()}"
             context.log(
@@ -16512,8 +16122,8 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             try:
                 current_price = await self._get_current_price(ls, symbol, ord_mkt_code, context, node_id)
                 if current_price and current_price > 0:
-                    price = current_price
-                    context.log("info", f"현재가 조회: {symbol} = ${price}", node_id)
+                    price = ls_overseas_stock_limit_price(current_price, side)
+                    context.log("info", f"현재가 조회: {symbol} = ${current_price} → 주문가 ${price}", node_id)
                 else:
                     context.log("warning", f"현재가 조회 실패: {symbol}", node_id)
                     return self._order_result(False, symbol, exchange, side, qty, 0, "현재가 조회 실패")
@@ -17676,15 +17286,6 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange = config.get("exchange", "KRX" if product == "korea_stock" else "NASDAQ")
         new_quantity = config.get("new_quantity")
         new_price = config.get("new_price")
-        # ⚠️ 잔재값이다 — ModifyOrder 계열 노드 스키마에 side 필드가 없어
-        # (core/programgarden_core/nodes/order.py:245-263) 노드로 들어오면 항상
-        # 기본값 "buy" 다. 세 정정 경로 어디도 이 **변수**로 방향을 정하지 않는다.
-        # 방향은 원 주문 원장 행에서 승계하고(_resolve_modify_target), 원장이
-        # 없거나 행이 없을 때만 **config 에 실제로 실린** side 를 쓴다 — 그건 각
-        # 정정 메서드가 `config.get("side")` 로 기본값 없이 직접 읽는다(여기서
-        # 기본값을 먹인 이 변수를 넘기면 '호출자가 말한 값' 과 '기본값' 을 구분할
-        # 수 없다). 시그니처 호환을 위해서만 넘긴다.
-        side = config.get("side", "buy")
         
         if not original_order_id:
             context.log("error", f"{node_type}: original_order_id가 필수입니다", node_id)
@@ -17725,11 +17326,11 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             # === 5. 상품별 정정 실행 ===
             if product == "overseas_stock":
                 return await self._modify_overseas_stock(
-                    ls, original_order_id, symbol, exchange, new_quantity, new_price, side, config, context, node_id
+                    ls, original_order_id, symbol, exchange, new_quantity, new_price, config, context, node_id
                 )
             elif product in ("overseas_futures", "overseas_futureoption"):
                 return await self._modify_overseas_futures(
-                    ls, original_order_id, symbol, exchange, new_quantity, new_price, side, config, context, node_id
+                    ls, original_order_id, symbol, exchange, new_quantity, new_price, config, context, node_id
                 )
             elif product == "korea_stock":
                 return await self._modify_korea_stock(
@@ -18074,6 +17675,75 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
                 product_label, new_order_no, ledger_err,
             )
 
+    def _resolve_stock_modify_price_type_code(
+        self, config: Dict[str, Any], node_id: Optional[str] = None
+    ) -> str:
+        """해외주식 정정(COSAT00311)의 호가유형코드(OrdprcPtnCode)를 확정한다.
+
+        OverseasStockModifyOrderNode 스키마는 ``price_type: Literal["limit","market"]``
+        를 노출한다(core/programgarden_core/nodes/order.py:784). 종전 실행부는
+        ``config.get("price_type_code", "00")`` 로 **LS 원시코드만** 읽어 그
+        ``price_type`` 을 통째 무시했다 — ``price_type="market"`` 로 정정을 걸어도
+        조용히 지정가('00')로 나갔다(지정가 리프라이스만 우연히 동작).
+
+        해소 규칙:
+          · ``price_type`` 이 있으면 신규주문 실행부와 **같은 매핑**으로 코드를 뽑는다
+            (NewOrderNodeExecutor.STOCK_PRICE_TYPE_CODES — 'limit'→'00',
+            'market'→'03'). 코드를 지어내지 않는다. 정정 노드 스키마가 허용하는
+            값은 limit/market 뿐이므로(order.py:784) 그 밖의 값은 조용히 지정가로
+            흘리지 않고 ValidationError 로 거부한다(어느 필드인지 이름을 실어).
+          · ``price_type_code`` 가 명시되면 그 원시코드가 하위호환 오버라이드로 이긴다.
+          · 둘 다 있고 서로 다른 코드를 가리키면 어느 쪽인지 추측하지 않고
+            ValidationError 를 던진다.
+          · 둘 다 없으면 종전대로 지정가('00').
+
+        SDK 확인(2026-09-24): COSAT00311InBlock1.OrdprcPtnCode 는 '00'=지정가,
+        '03'=시장가 를 문서화하고(examples=["00","03"]; finance/.../COSAT00311/
+        blocks.py:94-104) 신규주문 COSAT00301 과 같은 코드셋을 참조한다고 명시한다.
+        즉 정정 TR 은 **시장가를 지원**하므로 'market' 은 신규주문과 동일한 '03' 으로
+        매핑한다(별도 코드를 지어낼 필요 없음).
+        """
+        from programgarden_core.exceptions import ValidationError
+
+        price_type = config.get("price_type")
+        explicit_code = config.get("price_type_code")
+
+        derived_code: Optional[str] = None
+        if price_type is not None:
+            key = str(price_type).strip().lower()
+            if key not in ("limit", "market"):
+                raise ValidationError(
+                    f"OverseasStockModifyOrderNode price_type={price_type!r} is not "
+                    f"valid on a modify: only 'limit' and 'market' are supported "
+                    f"(node schema nodes/order.py:784 + COSAT00311 field docs "
+                    f"finance/.../COSAT00311/blocks.py:94-104). Pass 'limit' or "
+                    f"'market', or set an explicit price_type_code.",
+                    node_id=node_id,
+                    field="price_type",
+                )
+            # 신규주문 실행부의 원시코드 매핑을 그대로 재사용한다(코드 지어내기 금지).
+            derived_code = NewOrderNodeExecutor.STOCK_PRICE_TYPE_CODES[key]
+
+        if explicit_code is not None:
+            explicit_code = str(explicit_code)
+            if derived_code is not None and derived_code != explicit_code:
+                raise ValidationError(
+                    f"OverseasStockModifyOrderNode has conflicting price-type fields: "
+                    f"price_type={price_type!r} maps to OrdprcPtnCode={derived_code!r} "
+                    f"but price_type_code={explicit_code!r} was also given. Refusing to "
+                    f"guess which one you meant — pass only one, or make them agree.",
+                    node_id=node_id,
+                    field="price_type_code",
+                )
+            # 명시 원시코드가 하위호환 오버라이드로 이긴다.
+            return explicit_code
+
+        if derived_code is not None:
+            return derived_code
+
+        # 둘 다 없으면 종전 동작 유지 — 지정가.
+        return "00"
+
     async def _modify_overseas_stock(
         self,
         ls,
@@ -18082,20 +17752,23 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange: str,
         new_quantity: Optional[int],
         new_price: Optional[float],
-        side: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
+        side: Optional[str] = None,
     ) -> Dict[str, Any]:
         """해외주식 정정주문 실행 (COSAT00311)
 
-        ⚠️ ``side`` **인자**는 브로커 요청에도 원장 기록에도 쓰지 않는다. ModifyOrder
-        노드 스키마에 side 필드가 없어(core/programgarden_core/nodes/order.py:
-        245-263) 호출부의 ``config.get("side", "buy")`` 가 사실상 항상 "buy" 이기
-        때문이다(COSAT00311 자체는 매매구분을 받지 않는다 — blocks.py:55-95).
-        원장 방향은 원 주문 행에서 승계하고, 행이 없으면 **config 에 실제로 실린**
-        side 만 쓴다(``config.get("side")`` — 기본값 없이 읽으므로 노드 경로에서는
-        None 이다). 인자는 시그니처 호환을 위해 남겨둔다.
+        ⚠️ ``side`` **인자**는 브로커 요청에도 원장 기록에도 쓰지 않는다 — 하위호환·
+        시그니처 안정을 위해 남겨둔 무시 인자다(기본값 None). ModifyOrder 노드
+        스키마에 side 필드가 없고(core/programgarden_core/nodes/order.py:245-263),
+        COSAT00311 자체도 매매구분을 받지 않는다(blocks.py:55-95). 원장 방향은 원
+        주문 행에서 승계하고, 행이 없으면 **config 에 실제로 실린** side 만 쓴다
+        (``config.get("side")`` — 기본값 없이 읽으므로 노드 경로에서는 None 이다).
+
+        호가유형(OrdprcPtnCode)은 스키마의 ``price_type`` 를 존중한다 —
+        _resolve_stock_modify_price_type_code 참조('limit'→'00', 'market'→'03';
+        명시 ``price_type_code`` 오버라이드가 이기고, 둘이 충돌하면 거부).
 
         수량/가격은 **실효값**을 싣는다 — 안 바꾼 필드에 0 을 보내지 않는다.
         근거는 _resolve_modify_target 독스트링(SDK blocks/example 인용).
@@ -18130,8 +17803,9 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
             context.log("error", f"{symbol}: {market_error}", node_id)
             return self._error_result(market_error)
 
-        # 호가유형코드 (지정가)
-        ordprc_ptn_code = config.get("price_type_code", "00")
+        # 호가유형코드 — 스키마의 price_type 를 존중하되 price_type_code 명시
+        # 오버라이드도 지원한다(_resolve_stock_modify_price_type_code).
+        ordprc_ptn_code = self._resolve_stock_modify_price_type_code(config, node_id)
         
         try:
             order_api = ls.overseas_stock().주문().cosat00311(
@@ -18242,18 +17916,18 @@ class ModifyOrderNodeExecutor(NodeExecutorBase):
         exchange: str,
         new_quantity: Optional[int],
         new_price: Optional[float],
-        side: str,
         config: Dict[str, Any],
         context: ExecutionContext,
         node_id: str,
+        side: Optional[str] = None,
     ) -> Dict[str, Any]:
         """해외선물 정정주문 실행 (CIDBT00900)
 
-        ⚠️ ``side`` **인자**는 쓰지 않는다. ModifyOrder 노드 스키마에 side 필드가 없어
-        (core/programgarden_core/nodes/order.py:245-263) 호출부의
-        ``config.get("side", "buy")`` 가 사실상 항상 "buy" 라, 이 TR 의
-        ``BnsTpCode``(blocks.py:88-93 "'1' = sell, '2' = buy")에 매도 주문을
-        정정할 때도 매수가 실렸다. 방향은 원 주문 원장 행에서 승계한다.
+        ⚠️ ``side`` **인자**는 쓰지 않는다 — 하위호환·시그니처 안정을 위해 남겨둔
+        무시 인자다(기본값 None). ModifyOrder 노드 스키마에 side 필드가 없어
+        (core/programgarden_core/nodes/order.py:245-263) 방향을 config 기본값으로
+        추측하지 않는다 — 이 TR 의 ``BnsTpCode``(blocks.py:88-93 "'1' = sell,
+        '2' = buy")에 넣을 방향은 원 주문 원장 행에서 승계한다.
 
         원장 행이 없을 때의 처리는 두 갈래다:
           · ``config`` 에 side 가 **실제로** 실려 있으면(라이브러리 직접 호출자)
@@ -20430,6 +20104,9 @@ class CodeNodeExecutor(NodeExecutorBase):
             "iteration_total": int(getattr(context, "_iteration_total", 0) or 0),
             "risk": {},
         }
+        validation_as_of = getattr(context, "validation_as_of", None)
+        if validation_as_of is not None:
+            snap["validation_as_of"] = validation_as_of
         try:
             rt = context.risk_tracker
             if rt is not None and hasattr(rt, "get_all_hwm"):
@@ -20506,6 +20183,30 @@ class CodeNodeExecutor(NodeExecutorBase):
             )
 
         value = env.get("value")
+
+        if context.is_deep_validate or getattr(context, "is_replay_validation", False):
+            from programgarden.replay_contracts import ContractViolation, check_contract, check_codenode_ports
+            ports = config.get("outputs", [])
+            try:
+                check_codenode_ports(ports)
+                for index, port in enumerate(ports):
+                    name = port["name"]
+                    if isinstance(value, dict):
+                        if name not in value:
+                            raise ContractViolation(f"{node_id}.{name}", "Declared output is absent")
+                        item = value[name]
+                    elif len(ports) == 1:
+                        # The existing single-port scalar mapping is explicit
+                        # public behavior; validate its value without coercion.
+                        item = value
+                    else:
+                        raise ContractViolation(node_id, "Multiple declared ports require a result object")
+                    if port.get("type", "any") != "any":
+                        check_contract(item, {"type":port["type"]}, f"{node_id}.{name}")
+            except ContractViolation as exc:
+                raise CodeNodeError(ErrorCode.CODE_NODE_EXEC_ERROR, str(exc),
+                    suggestion="Return every declared output with its declared JSON type; do not substitute missing values with zero.",
+                    details=exc.as_dict()) from exc
 
         # Map return → declared ports. No declared ports → whole value on result.
         if not declared:
@@ -20663,10 +20364,6 @@ class WorkflowExecutor:
             # Data nodes
             "SQLiteNode": SQLiteNodeExecutor(),
             "CodeNode": CodeNodeExecutor(),  # custom Python code (subprocess-isolated)
-            # External market data nodes (credential 불필요, 외부 API)
-            "CurrencyRateNode": GenericNodeExecutor(),
-            # Market Status (JIF, broker credential type 무관)
-            "MarketStatusNode": MarketStatusNodeExecutor(),
             # AI nodes
             "LLMModelNode": LLMModelNodeExecutor(),
             "AIAgentNode": AIAgentNodeExecutor(),
@@ -21768,8 +21465,6 @@ class WorkflowJob:
         finally:
             # Cleanup broker fill subscriptions (SDK 콜백 해제)
             await self._cleanup_broker_fill_subscriptions()
-            # Cleanup MarketStatusNode JIF subscriptions
-            await self._cleanup_jif_subscriptions()
             # Cleanup persistent nodes (shutdown flag 설정 + 구독 해제 + WebSocket close)
             await self.context.cleanup_persistent_nodes()
             # Cleanup listeners
@@ -21877,6 +21572,16 @@ class WorkflowJob:
                 )
                 continue
 
+            # === IfNode: 비활성 브랜치 스킵 ===
+            if node_id in if_skipped_nodes:
+                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
+                await self.context.notify_node_state(
+                    node_id=node_id,
+                    node_type=node.node_type,
+                    state=NodeState.SKIPPED,
+                )
+                continue
+
             # === Item-based execution: Skip branch nodes (handled by SplitNode) ===
             if node_id in branch_nodes and node.node_type not in ("SplitNode", "AggregateNode"):
                 _safe_print(f"  ⏭ Skipping branch node: {node_id} (handled by SplitNode)")
@@ -21891,16 +21596,6 @@ class WorkflowJob:
             # === Item-based execution: Skip AggregateNode (already executed by SplitNode) ===
             if node.node_type == "AggregateNode" and node_id in split_aggregate_pairs.values():
                 _safe_print(f"  ⏭ Skipping AggregateNode: {node_id} (already executed by SplitNode)")
-                continue
-
-            # === IfNode: 비활성 브랜치 스킵 ===
-            if node_id in if_skipped_nodes:
-                _safe_print(f"  ⏭ Skipping node: {node_id} (IfNode branch not taken)")
-                await self.context.notify_node_state(
-                    node_id=node_id,
-                    node_type=node.node_type,
-                    state=NodeState.SKIPPED,
-                )
                 continue
 
             _safe_print(f"  ▶ Executing node: {node_id} ({node.node_type})")
@@ -21925,7 +21620,7 @@ class WorkflowJob:
                     config["_source_node_id"] = edge.from_node_id
                     break  # 첫 번째 상위 노드만 사용
             
-            # Resolve expressions in config ({{ input.xxx }}, {{ nodeId.port }})
+            # Resolve expressions in config ({{ input.xxx }}, {{ nodes.nodeId.port }})
             config = self._resolve_config_expressions(config, node_id)
 
             # Auto-inject connection from matching BrokerNode (Phase 5)
@@ -22003,10 +21698,16 @@ class WorkflowJob:
                 #    `{{ nodes.cond.symbols }}` 로 전체를 소비하는 알림/집계/표시 노드까지
                 #    침묵한다. "통과 0건이면 아무것도 안 하는 게 정답" 은 **주문 노드**
                 #    이야기이고, 상태 보고 노드는 그날도 말을 해야 한다(요구사항 4).
+                # Empty SymbolFilter/explicit-port lists also have no iteration item.
+                # Preserve non-item aggregate/report consumers and the stronger
+                # condition-gate guard for literal orders.
                 skip_reason = None
                 if (
                     not should_iterate
-                    and iterate_source == self.ITERATE_SOURCE_PASSED_SYMBOLS
+                    and (
+                        iterate_source == self.ITERATE_SOURCE_PASSED_SYMBOLS
+                        or self._references_iteration_item(config)
+                    )
                     and isinstance(input_data, list)
                     and not input_data
                     and (
@@ -22015,8 +21716,8 @@ class WorkflowJob:
                     )
                 ):
                     skip_reason = (
-                        f"upstream condition gate '{iterate_source_node_id}' passed 0 symbols "
-                        "(passed_symbols=[]) — skipped without executing, so no broker "
+                        f"selected upstream source '{iterate_source_node_id}' returned an empty array "
+                        "— skipped without executing, so no broker "
                         "request was made"
                     )
 
@@ -22030,14 +21731,14 @@ class WorkflowJob:
                     # `context.log` 는 파드 stdout 에 안 찍히므로 _safe_print 를 병기한다.
                     self.context.log(
                         "info",
-                        f"{node.node_type}: 상류 조건 노드 '{iterate_source_node_id}' 의 통과 "
-                        f"종목이 0건이라 실행을 건너뜁니다 (no_upstream_signal — 주문/조회 "
-                        f"요청 없음).",
+                        f"{node.node_type}: selected upstream source '{iterate_source_node_id}' "
+                        "has no items; skipping execution "
+                        "(no_upstream_signal; no order/query request).",
                         node_id,
                     )
                     _safe_print(
                         f"  ⏭️  no_upstream_signal: {node_id} ({node.node_type}) "
-                        f"← {iterate_source_node_id}.passed_symbols=0 — not executed"
+                        f"← {iterate_source_node_id} selected items=0 — not executed"
                     )
                     outputs = self._no_signal_skip_outputs(
                         node.node_type, skip_reason, iterate_source_node_id,
@@ -22064,6 +21765,9 @@ class WorkflowJob:
                     )
 
                 # IfNode: 스킵 노드 계산 후 내부 키 제거
+                if node.node_type == "ThrottleNode" and outputs.get("_throttled"):
+                    if_skipped_nodes.update(self._dependent_descendants(node_id))
+                if_skipped_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
                 if node.node_type == "IfNode" and outputs:
                     taken = outputs.pop("_if_branch", "true")
                     new_skips = self._compute_if_skip_nodes(node_id, taken)
@@ -22106,6 +21810,20 @@ class WorkflowJob:
                             "deep_validate": True,
                             "stage": "node_error_return",
                         },
+                    )
+
+                if (
+                    self.context.is_deep_validate
+                    and node.node_type == "PositionSizingNode"
+                    and outputs.get("reason") in {"no_symbol", "fetch_failed"}
+                ):
+                    from programgarden_core import ErrorCode, ErrorLocation, build_error
+                    self._node_error_infos[node_id] = build_error(
+                        ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                        f"Position sizing inputs are invalid: {outputs.get('detail', '')}",
+                        location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                        suggestion="Bind symbols, balance and price data required by the sizing method.",
+                        details={"stage": "sizing_inputs", "reason": outputs["reason"]},
                     )
 
                 # An order node that failed did NOT raise — it returned
@@ -22305,7 +22023,7 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "KoreaStockAccountNode", "KoreaStockRealAccountNode",
-        "SQLiteNode", "HTTPRequestNode",  # 데이터 노드
+        "SQLiteNode", "HTTPRequestNode", "SessionGateNode",  # 데이터 노드
         "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
@@ -22319,7 +22037,7 @@ class WorkflowJob:
     # 브로커/외부 API 제한**을 모델링한 것이라, 호출 자체가 없는 dry_run 모의 노드에는
     # 순수 낭비다 — 실측: 모의 주문 16건 × 5초 = 75초가 60초 빌드 타임아웃을 넘겼다
     # (prod 대화 f2eed93c, 2026-08-28). dry_run 에서도 **실제 호출하는** 노드
-    # (HTTPRequestNode 1초·CurrencyRateNode 30초)는 이 집합에 넣지 말 것 — 간격을 지켜야 한다.
+    # (HTTPRequestNode 1초)는 이 집합에 넣지 말 것 — 간격을 지켜야 한다.
     DRY_RUN_SIMULATED_NODE_TYPES = frozenset({
         # 주문 — NewOrderNodeExecutor / ModifyOrderNodeExecutor / CancelOrderNodeExecutor
         "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
@@ -22568,7 +22286,7 @@ class WorkflowJob:
         for port_name, port_type in _declared_output_ports(node_type):
             payload[port_name] = _empty_port_value(port_type)
 
-        message = "No trading signal today (upstream condition passed 0 symbols)."
+        message = "No items available from the selected upstream source."
         if node_type.endswith("OrderNode"):
             # 주문 노드 소비자(원장/UI/챗봇)는 order_result 와 `result` 행을 본다.
             order_result = {
@@ -22717,6 +22435,16 @@ class WorkflowJob:
                     all_results.append(outputs)
                 except Exception as e:
                     self.context.log("warning", f"Auto-iterate [{idx+1}/{total}] failed: {e}", node_id)
+                    if getattr(self.context, "is_deep_validate", False):
+                        from programgarden_core import ErrorCode, ErrorLocation, build_error
+                        # A later successful item must not erase an earlier failure.
+                        self._node_error_infos.setdefault(node_id, build_error(
+                            ErrorCode.DEEP_VALIDATION_NODE_ERROR,
+                            f"Node '{node_id}' failed at iteration {idx + 1}/{total}: {e}",
+                            location=ErrorLocation(node_id=node_id, node_type=node.node_type),
+                            suggestion="Check this item's input fields and bindings before executing the workflow.",
+                            details={"stage": "auto_iteration", "iteration_index": idx},
+                        ))
                     # continue_on_error: 기본적으로 계속 진행
                     all_results.append({"error": str(e), "item": current_item})
                 finally:
@@ -22765,12 +22493,32 @@ class WorkflowJob:
         """
         if total <= 1 or not isinstance(current_item, dict):
             return item_config
+        # These executors already select one symbol from the iteration context.
+        # Keep the generic warning for other consumers and conflicting overrides.
+        if (
+            not self.context.is_deep_validate
+            and node_type in {
+                "OverseasStockMarketDataNode", "OverseasFuturesMarketDataNode",
+                "KoreaStockMarketDataNode", "OverseasStockHistoricalDataNode",
+                "OverseasFuturesHistoricalDataNode", "KoreaStockHistoricalDataNode",
+            }
+            and current_item.get("symbol")
+            and all(
+                not override or self._same_symbol_entry(override, current_item)
+                for override in (
+                    item_config.get("symbol"),
+                    self.context.get_output(f"_input_{node_id}", "symbol"),
+                )
+            )
+        ):
+            return item_config
         narrowed = None
         for port in self._WHOLE_ARRAY_REEVAL_PORTS:
             value = item_config.get(port)
             if not isinstance(value, list) or len(value) != total:
                 continue
-            if not any(self._same_symbol_entry(entry, current_item) for entry in value):
+            matching = [entry for entry in value if self._same_symbol_entry(entry, current_item)]
+            if not matching:
                 continue
             simulated = bool(getattr(self.context, "is_dry_run", False))
             self.context.log(
@@ -22784,7 +22532,11 @@ class WorkflowJob:
             if simulated:
                 if narrowed is None:
                     narrowed = dict(item_config)
-                narrowed[port] = [current_item]
+                # Preserve the configured projection and quantity. The upstream
+                # item can contain quotes or other numeric fields that are not
+                # inputs to this node (e.g. a symbol-only market-data contract).
+                # Substituting that raw item changed valid bindings in validation.
+                narrowed[port] = [matching[0]]
         return narrowed if narrowed is not None else item_config
 
     def _merge_iterate_results(self, results: list) -> Dict[str, Any]:
@@ -22839,6 +22591,45 @@ class WorkflowJob:
                         break
 
         return merged
+
+    def _dependent_descendants(self, node_id: str) -> Set[str]:
+        """A waiting data dependency blocks its chain, including dependent joins.
+
+        Unlike an alternate If branch, a throttle is a required rate gate.
+        Another input to a join cannot bypass that gate. Independent branches
+        remain runnable; the next event gets a fresh traversal skip set.
+        """
+        blocked, pending = set(), [node_id]
+        while pending:
+            source = pending.pop()
+            for edge in self.workflow.edges:
+                if edge.from_node_id == source and edge.is_dag_edge and edge.to_node_id not in blocked:
+                    blocked.add(edge.to_node_id)
+                    pending.append(edge.to_node_id)
+        return blocked
+
+    def _time_gate_skips(self, node_id: str, node_type: str, outputs: Dict[str, Any]) -> Set[str]:
+        """A refused time trigger cannot flow through the default trading edge.
+
+        TradingHours has an explicit alternative blocked port. Only that branch
+        may run on timeout; an unrelated input cannot bypass the refused gate
+        at a required join. A merge reached by its selected alternative remains
+        possible, matching the node's published two-branch contract.
+        """
+        if node_type == "ScheduleNode" and outputs.get("trigger") is False:
+            return self._dependent_descendants(node_id)
+        if node_type != "TradingHoursFilterNode":
+            return set()
+        passed = outputs.get("passed") is True
+        inactive, active = set(), set()
+        for edge in self.workflow.edges:
+            if edge.from_node_id != node_id or not edge.is_dag_edge:
+                continue
+            port = edge.from_port or "passed"
+            selected = port == ("passed" if passed else "blocked")
+            reachable = {edge.to_node_id} | self._dependent_descendants(edge.to_node_id)
+            (active if selected else inactive).update(reachable)
+        return inactive - active
 
     def _compute_if_skip_nodes(self, if_node_id: str, taken_branch: str) -> Set[str]:
         """IfNode 실행 결과에 따라 스킵할 노드 집합 계산 (캐스케이딩)
@@ -23019,6 +22810,24 @@ class WorkflowJob:
         parallel = config.get("parallel", False)
         delay_ms = config.get("delay_ms", 0)
         continue_on_error = config.get("continue_on_error", True)
+        # Branch expressions share ExecutionContext outputs. Until contexts
+        # are isolated per parallel item, an await can replace item A's gate
+        # evidence with item B's data. Serialize guarded/order branches even
+        # when parallel was requested; do not race an authorization decision.
+        guarded_branch = any(
+            self.workflow.nodes[n].node_type == "IfNode"
+            or self.workflow.nodes[n].node_type.endswith(
+                ("NewOrderNode", "ModifyOrderNode", "CancelOrderNode")
+            )
+            for n in branch_order if n in self.workflow.nodes
+        )
+        if parallel and guarded_branch:
+            parallel = False
+            self.context.log(
+                "warning",
+                "SplitNode guarded/order branches execute sequentially to preserve per-item decisions.",
+                split_id,
+            )
 
         # Resolve the array to split — the single source of truth for this
         # branch: per-item item/index/total AND the items/_array output ports
@@ -23221,10 +23030,25 @@ class WorkflowJob:
         # 종목들이 한 노드를 공유하면 대기시간까지 공유돼 한 번에 한 종목만 통과한다.
         branch_scope = f"{split_id}#{index}"
 
+        # Routing decisions belong to this item, never the preceding item.
+        if_skipped_nodes: Set[str] = set()
+        terminal_nodes = {
+            edge.from_node_id for edge in self.workflow.edges
+            if edge.from_node_id in branch_order
+            and self.workflow.nodes.get(edge.to_node_id)
+            and self.workflow.nodes[edge.to_node_id].node_type == "AggregateNode"
+        }
+
         # Execute each branch node
         for node_id in branch_order:
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+            if node_id in if_skipped_nodes:
+                # Do not expose a previous item's gated output through a later
+                # expression or collect it as this item's result.
+                self.context._outputs.pop(node_id, None)
+                self.context._outputs.pop(f"_input_{node_id}", None)
                 continue
 
             is_realtime = node.node_type in REALTIME_NODE_TYPES
@@ -23278,6 +23102,13 @@ class WorkflowJob:
                 order_invocation_id=f"split:{branch_scope}",
                 order_iteration_index=index,
             )
+
+            if node.node_type == "ThrottleNode" and outputs.get("_throttled"):
+                if_skipped_nodes.update(self._dependent_descendants(node_id))
+            if_skipped_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
+            if node.node_type == "IfNode" and outputs:
+                taken = outputs.pop("_if_branch", "true")
+                if_skipped_nodes.update(self._compute_if_skip_nodes(node_id, taken))
 
             # Store outputs
             for port_name, value in outputs.items():
@@ -23350,7 +23181,7 @@ class WorkflowJob:
         # 을 throttling 중이라 내부 메타만 반환) 이 아이템은 기여할 실데이터가 없다 →
         # skip 하여 "실시간 체결가" 표에 가격 없는/이질적인 행이 끼지 않게 한다. branch
         # 노드가 아예 없으면(bare Split→Aggregate) item 을 그대로 수집한다(정상 패턴).
-        if branch_order and last_had_public is False:
+        if branch_order and (last_had_public is False or (terminal_nodes and terminal_nodes <= if_skipped_nodes)):
             return _SKIP_BRANCH_ITEM
 
         return result
@@ -23510,7 +23341,8 @@ class WorkflowJob:
 
         지원 표현식:
         - {{ input.xxx }}: 워크플로우 inputs 파라미터
-        - {{ nodeId.port }}: 이전 노드 출력값
+        - {{ nodes.nodeId.port }}: 이전 노드 출력값 (`nodes.` 접두사 필수 — 접두사 없는
+          `{{ nodeId.port }}` 는 정의되지 않은 변수 오류)
         - {{ context.xxx }}: 실행 컨텍스트 값
 
         Note: items 키는 제외 (ConditionNode의 _process_items_with_extract에서 별도 처리).
@@ -23538,7 +23370,7 @@ class WorkflowJob:
         if self.context._iteration_item is None:
             for k in list(config_copy.keys()):
                 v = config_copy[k]
-                if isinstance(v, str) and "{{ item" in v:
+                if self._references_iteration_item(v):
                     deferred[k] = config_copy.pop(k)
 
         deep_mode = bool(getattr(self.context, "is_deep_validate", False))
@@ -23730,6 +23562,10 @@ class WorkflowJob:
         pacing_key = "_auto_iterate_last_executed_at"
         self.context.set_node_state(node_id, pacing_key, _time.monotonic())
 
+    def _rate_limit_now(self):
+        """Clock boundary shared by live guards and deterministic replay."""
+        return datetime.now()
+
     async def _apply_rate_limit_guard(
         self,
         node_id: str,
@@ -23799,7 +23635,7 @@ class WorkflowJob:
             last_executed_at = rate_limit_state["last_executed_at"]
             if isinstance(last_executed_at, str):
                 last_executed_at = datetime.fromisoformat(last_executed_at)
-            elapsed_seconds = (datetime.now() - last_executed_at).total_seconds()
+            elapsed_seconds = (self._rate_limit_now() - last_executed_at).total_seconds()
             if elapsed_seconds < min_interval_sec:
                 remaining_seconds = round(min_interval_sec - elapsed_seconds)
                 if on_throttle == "error":
@@ -23828,7 +23664,7 @@ class WorkflowJob:
 
         # 통과: 실행 시작 마킹
         rate_limit_state["executing_count"] = rate_limit_state.get("executing_count", 0) + 1
-        rate_limit_state["last_executed_at"] = datetime.now().isoformat()
+        rate_limit_state["last_executed_at"] = self._rate_limit_now().isoformat()
         self.context.set_node_state(node_id, rate_limit_state_key, rate_limit_state)
 
         return None
@@ -23870,24 +23706,20 @@ class WorkflowJob:
         nodes_to_execute = self._find_downstream_nodes(trigger_nodes)
         _safe_print(f"  → 실행할 노드 체인: {nodes_to_execute}")
 
-        # Split→Aggregate 분기는 노드를 하나씩 재실행해서는 절대 채워지지 않는다.
-        # AggregateNode 의 유일한 입력인 node_state["_collected_items"] 를 쓰는 곳은
-        # _execute_split_branch 한 곳뿐이라, 틱이 하류만 일반 재실행하면 수집 배열이
-        # 최초 실행 시점 값(대개 [])에 영구히 얼어붙는다 → 표가 영원히 빈 채로 남는다.
-        # 체인이 분기에 닿으면 그 Split 분기를 통째로 재구동해 수집을 다시 채운다.
+        # Include a touched Split's owner in the normal topological traversal.
+        # Pre-driving it here would execute side effects before an upstream If
+        # or Throttle decides whether the branch is active for this event.
         split_pairs = self._find_split_aggregate_pairs()
         chain = set(nodes_to_execute)
-        branch_driven: Set[str] = set()
+        triggered_splits = {}
         for split_id, aggregate_id in split_pairs.items():
             branch = self._get_branch_nodes(split_id, aggregate_id)
-            if not (chain & branch) and aggregate_id not in chain:
-                continue
-            split_node = self.workflow.nodes.get(split_id)
-            if not split_node:
-                continue
-            _safe_print(f"    🔀 Re-driving split branch: {split_id} → {aggregate_id}")
-            await self._execute_split_branch(split_id, split_node, split_pairs, branch)
-            branch_driven |= branch | {split_id, aggregate_id}
+            if split_id in chain or chain & branch or aggregate_id in chain:
+                triggered_splits[split_id] = branch
+        if triggered_splits:
+            nodes_to_execute = self._find_downstream_nodes(list(chain | triggered_splits.keys()))
+        branch_driven: Set[str] = set()
+        gated_nodes: Set[str] = set()
 
         for node_id in nodes_to_execute:
             if not self.context.is_running:
@@ -23895,6 +23727,21 @@ class WorkflowJob:
 
             node = self.workflow.nodes.get(node_id)
             if not node:
+                continue
+
+            if node_id in gated_nodes:
+                # A previous event's output must not become this event's signal.
+                self.context._outputs.pop(node_id, None)
+                self.context._outputs.pop(f"_input_{node_id}", None)
+                self._record_node_state(node_id, NodeState.SKIPPED)
+                await self.context.notify_node_state(node_id=node_id, node_type=node.node_type,
+                                                     state=NodeState.SKIPPED)
+                continue
+
+            if node_id in triggered_splits and node_id not in branch_driven:
+                branch = triggered_splits[node_id]
+                await self._execute_split_branch(node_id, node, split_pairs, branch)
+                branch_driven |= branch | {node_id, split_pairs[node_id]}
                 continue
 
             # 실시간 노드는 이미 실행 중이므로 스킵 (무한 루프 방지)
@@ -23908,6 +23755,10 @@ class WorkflowJob:
             # Re-execute the triggered node
             try:
                 _safe_print(f"    ▶ Re-executing: {node_id} ({node.node_type})")
+                # Outputs and inherited input ports belong to one observation.
+                # Do not retain a port omitted by this event's upstream response.
+                self.context._outputs.pop(node_id, None)
+                self.context._outputs.pop(f"_input_{node_id}", None)
                 
                 # 소스 노드 ID를 config에 추가하여 최신 데이터 참조 가능하게
                 config_with_source = dict(node.config)
@@ -23946,13 +23797,15 @@ class WorkflowJob:
                     # rate limit에 걸린 경우: 출력 저장 후 하위 노드 실행 중단
                     for port_name, value in rate_limit_result.items():
                         self.context.set_output(node_id, port_name, value)
+                    self._record_node_state(node_id, NodeState.SKIPPED)
                     await self.context.notify_node_state(
                         node_id=node_id,
                         node_type=node.node_type,
                         state=NodeState.SKIPPED,
                         outputs=rate_limit_result,
                     )
-                    break
+                    gated_nodes.update(self._dependent_descendants(node_id))
+                    continue
 
                 try:
                     outputs = await self.executor.execute_node(
@@ -23977,18 +23830,25 @@ class WorkflowJob:
                     )
                     for port_name, value in outputs.items():
                         self.context.set_output(node_id, port_name, value)
+                    self._record_node_state(node_id, NodeState.SKIPPED)
                     await self.context.notify_node_state(
                         node_id=node_id,
                         node_type=node.node_type,
                         state=NodeState.SKIPPED,
                         outputs=outputs,
                     )
-                    break  # 체인 실행 중단
+                    gated_nodes.update(self._dependent_descendants(node_id))
+                    continue
+
+                gated_nodes.update(self._time_gate_skips(node_id, node.node_type, outputs))
+                if node.node_type == "IfNode" and outputs:
+                    gated_nodes.update(self._compute_if_skip_nodes(node_id, outputs.pop("_if_branch", "true")))
 
                 for port_name, value in outputs.items():
                     self.context.set_output(node_id, port_name, value)
 
                 # 노드 실행 완료 알림 (UI 업데이트용)
+                self._record_node_state(node_id, NodeState.COMPLETED)
                 await self.context.notify_node_state(
                     node_id=node_id,
                     node_type=node.node_type,
@@ -24009,6 +23869,8 @@ class WorkflowJob:
                 self.context.log("error", f"Error in triggered node {node_id}: {e}", node_id)
                 self.stats["errors_count"] += 1
                 self.stats["last_error"] = f"{node_id}: {error_msg}"
+                self.context._outputs.pop(node_id, None)
+                gated_nodes.update(self._dependent_descendants(node_id))
                 self.stats["last_error_detail"] = {
                     "node_id": node_id,
                     "node_type": node.node_type if node else None,
@@ -24107,14 +23969,6 @@ class WorkflowJob:
         except Exception as e:
             logger.warning(f"Failed to cleanup broker fill subscriptions: {e}")
 
-    async def _cleanup_jif_subscriptions(self) -> None:
-        """MarketStatusNode의 JIF 구독 SDK 콜백 정리."""
-        try:
-            ms_executor = MarketStatusNodeExecutor()
-            await ms_executor.cleanup_jif_subscriptions(self.job_id)
-        except Exception as e:
-            logger.warning(f"Failed to cleanup JIF subscriptions: {e}")
-
     async def stop(self) -> None:
         """Stop execution gracefully"""
         logger.info(f"Stopping job {self.job_id}")
@@ -24145,7 +23999,6 @@ class WorkflowJob:
         # 리밋·불필요 호출 유발). cleanup_* 는 끝에서 딕셔너리를 비우므로 _run 의 정상완료
         # 경로가 먼저 정리했더라도 여기서 다시 불려도 빈 순회 = no-op(멱등).
         await self._cleanup_broker_fill_subscriptions()
-        await self._cleanup_jif_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 
@@ -24184,7 +24037,6 @@ class WorkflowJob:
 
         # Cleanup
         await self._cleanup_broker_fill_subscriptions()
-        await self._cleanup_jif_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 
@@ -24249,7 +24101,6 @@ class WorkflowJob:
 
         # 모든 리소스 정리
         await self._cleanup_broker_fill_subscriptions()
-        await self._cleanup_jif_subscriptions()
         await self.context.cleanup_persistent_nodes()
         await self.context.cleanup_flow_end_nodes()
 

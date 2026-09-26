@@ -92,14 +92,12 @@ poetry add programgarden-community
 | DynamicStopLoss | ATR 기반 동적 손절 |
 | LevelTouch | 레벨 터치/돌파/역할전환 감지 |
 
-### 커뮤니티 노드 (4개)
+### 커뮤니티 노드 (2개)
 
 | 노드 | 카테고리 | 설명 |
 |------|----------|------|
 | TelegramNode | messaging | Telegram Bot API 메시지 전송 |
-| FearGreedIndexNode | market | CNN Fear & Greed Index 조회 |
-| FundamentalDataNode | market | FMP API 재무 데이터 조회 |
-| FileReaderNode | data | 파일 파싱 (PDF, TXT, CSV, JSON, MD, DOCX, XLSX) |
+| PerformanceReportNode | analysis | 성과/리스크 리포트 (Sharpe, Sortino, drawdown, CAGR, beta) |
 
 ## 사용법
 
@@ -123,3 +121,20 @@ plugins = list_plugins(category="technical")
 ## 변경 로그
 
 자세한 변경 사항은 `CHANGELOG.md`를 참고하세요.
+
+
+## External credentials and validation
+
+TelegramNode requires a `telegram_bot` credential containing `bot_token` and
+receiving `chat_id`; the historical native `telegram` alias remains accepted.
+Register secrets outside workflow JSON. Node metadata declares the types and
+setup instructions for clients and assistants. Keys can be connected after saving
+an unlinked draft. Credential selection does not prove provider access or delivery.
+
+Telegram validation never sends a real message. Live delivery requires the
+user's valid bot token, receiving chat ID and permissions.
+
+The FMP provider node and credential template have been removed. Use
+OverseasStockFundamentalNode for LS security-detail PER/EPS after connecting the
+existing broker credential. It does not replace financial-statement history.
+See `../../docs/fmp-retirement.md` for the explicit migration boundary.

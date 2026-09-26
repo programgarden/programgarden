@@ -1,244 +1,262 @@
 # Expression 가이드
 
-ProgramGarden의 Expression 시스템은 Jinja2 스타일의 `{{ }}` 문법을 사용하여 동적 값을 계산합니다.
+워크플로우 JSON의 필드 값에 `{{ ... }}` 를 쓰면 실행 시점에 동적으로 계산됩니다.
 
-## 기본 문법
-
-```json
-"symbols": "{{ nodes.watchlist.symbols }}"
-
-"symbols": "{{ input.symbols }}"
-
-"quantity": "{{ balance * 0.1 }}"
-
-"start_date": "{{ date.ago(30) }}"
-
-"action": "{{ 'buy' if rsi < 30 else 'hold' }}"
-```
-
-| 표현식 | 설명 |
-|--------|------|
-| `{{ nodes.노드ID.필드 }}` | 이전 노드의 출력값 참조 |
-| `{{ input.이름 }}` | 워크플로우 입력 파라미터 참조 |
-| `{{ 산술연산 }}` | 덧셈, 뺄셈, 곱셈, 나눗셈 |
-| `{{ 네임스페이스.함수(인자) }}` | 네임스페이스 함수 호출 (date., finance., stats., format., lst.) |
-| `{{ 조건 if 참 else 거짓 }}` | 조건 표현식 |
-
-> **주의**: `$input.xxx` 문법은 **사용하지 않습니다**. 반드시 `{{ input.xxx }}` 형식을 사용하세요.
-
-## 변수
-
-### `nodes` 변수 (노드 출력 참조)
-
-이전 노드의 출력값을 `nodes.노드ID.필드` 형식으로 참조합니다.
-
-```json
-"price": "{{ nodes.marketData.price }}"
-"quantity": "{{ nodes.sizing.calculated_quantity }}"
-"symbols": "{{ nodes.watchlist.symbols }}"
-```
-
-### `input` 변수
-
-워크플로우의 `inputs` 섹션에서 정의된 값을 참조합니다.
-
-```json
-{
-  "inputs": {
-    "symbols": {
-      "type": "symbol_list",
-      "default": ["AAPL", "NVDA"],
-      "description": "대상 종목"
-    },
-    "rsi_period": {
-      "type": "integer",
-      "default": 14,
-      "description": "RSI 기간"
-    }
-  },
-  "nodes": [
-    {
-      "id": "watchlist",
-      "type": "WatchlistNode",
-      "symbols": "{{ input.symbols }}"
-    },
-    {
-      "id": "rsi",
-      "type": "ConditionNode",
-      "plugin": "RSI",
-      "fields": {
-        "period": "{{ input.rsi_period }}"
-      }
-    }
-  ]
-}
-```
-
-### `context` 변수
-
-실행 컨텍스트에서 전달된 런타임 파라미터를 참조합니다.
-
-```json
-"balance": "{{ context.available_balance }}"
-```
-
-### 예약어 (노드 ID로 사용 불가)
-
-다음 이름은 **노드 ID로 사용할 수 없습니다**:
-- `nodes` - 노드 출력 참조용
-- `input` - 워크플로우 입력 참조용  
-- `context` - 런타임 컨텍스트 참조용
+> **중요**: `{{ }}` 안은 **Jinja2 가 아니라** 파이썬 `eval` 식의 아주 작은 부분집합입니다.
+> Jinja 의 파이프 필터(`| length`), `~` 문자열 이어붙이기, `{% if %}`/`{% for %}` 블록은
+> **모두 동작하지 않습니다.** 아래 표에 있는 변수·함수만 쓸 수 있습니다.
+> 기계가 읽는 정본 레퍼런스는 `programgarden_core.expression.expression_reference()` 이며,
+> 이 문서는 그것을 사람이 읽기 쉽게 풀어 쓴 것입니다.
 
 ---
 
-## 내장 함수 레퍼런스
+## 1. 두 가지 계산 방식 (전체 vs 삽입)
 
-### 타입 변환
+| 값 | 결과 |
+|----|------|
+| 값 전체가 **딱 하나의** `{{ 식 }}` | 식의 **타입 그대로** 반환 (리스트/딕셔너리/숫자/불리언/None) |
+| 텍스트 안에 `{{ 식 }}` 가 섞여 있음 | 각 식을 `str(결과)` 로 바꿔 **문자열로 치환** |
 
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `bool(x)` | 불리언 변환 | `{{ bool(value) }}` |
-| `int(x)` | 정수 변환 | `{{ int(price) }}` |
-| `float(x)` | 실수 변환 | `{{ float("3.14") }}` |
-| `str(x)` | 문자열 변환 | `{{ str(quantity) }}` |
-| `list(x)` | 리스트 변환 | `{{ list(range(5)) }}` |
-| `dict()` | 딕셔너리 생성 | `{{ dict() }}` |
-| `tuple(x)` | 튜플 변환 | `{{ tuple(items) }}` |
-
-### 기본 수학 함수
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `abs(x)` | 절대값 | `{{ abs(-5) }}` → `5` |
-| `min(a, b, ...)` | 최솟값 | `{{ min(10, 5, 8) }}` → `5` |
-| `max(a, b, ...)` | 최댓값 | `{{ max(10, 5, 8) }}` → `10` |
-| `sum(list)` | 합계 | `{{ sum([1, 2, 3]) }}` → `6` |
-| `pow(x, y)` | 거듭제곱 | `{{ pow(2, 3) }}` → `8` |
-| `round(x, n)` | 반올림 | `{{ round(3.14159, 2) }}` → `3.14` |
-| `len(x)` | 길이 | `{{ len(symbols) }}` |
-| `range(n)` | 범위 생성 | `{{ list(range(5)) }}` → `[0,1,2,3,4]` |
-| `sorted(list)` | 정렬 | `{{ sorted([3,1,2]) }}` → `[1,2,3]` |
-| `all(list)` | 모두 참 | `{{ all([True, True]) }}` → `True` |
-| `any(list)` | 하나라도 참 | `{{ any([False, True]) }}` → `True` |
-
-### 고급 수학 함수 (math 모듈)
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `sqrt(x)` | 제곱근 | `{{ sqrt(16) }}` → `4.0` |
-| `log(x)` | 자연로그 | `{{ log(e) }}` → `1.0` |
-| `log10(x)` | 상용로그 | `{{ log10(100) }}` → `2.0` |
-| `exp(x)` | e^x | `{{ exp(1) }}` → `2.718...` |
-| `ceil(x)` | 올림 | `{{ ceil(3.2) }}` → `4` |
-| `floor(x)` | 내림 | `{{ floor(3.8) }}` → `3` |
-| `pi` | 원주율 (상수) | `{{ pi }}` → `3.14159...` |
-| `e` | 자연상수 (상수) | `{{ e }}` → `2.71828...` |
-
-### 통계 함수 (`stats` 네임스페이스)
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `stats.mean(list)` | 산술평균 | `{{ stats.mean([1,2,3,4,5]) }}` → `3.0` |
-| `stats.avg(list)` | 산술평균 (alias) | `{{ stats.avg(prices) }}` |
-| `stats.median(list)` | 중앙값 | `{{ stats.median([1,3,5,7,9]) }}` → `5` |
-| `stats.stdev(list)` | 표준편차 | `{{ stats.stdev([1,2,3,4,5]) }}` → `1.58...` |
-| `stats.variance(list)` | 분산 | `{{ stats.variance([1,2,3,4,5]) }}` → `2.5` |
-
-### 날짜/시간 함수 (`date` 네임스페이스)
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `date.today()` | 오늘 날짜 | `{{ date.today() }}` → `"2025-01-15"` |
-| `date.now()` | 현재 시간 | `{{ date.now() }}` → `"2025-01-15T10:30:00"` |
-| `date.ago(n)` | n일 전 | `{{ date.ago(7) }}` → `"2025-01-08"` |
-| `date.later(n)` | n일 후 | `{{ date.later(30) }}` → `"2025-02-14"` |
-| `date.year_start()` | 올해 1월 1일 | `{{ date.year_start() }}` → `"2025-01-01"` |
-| `date.year_end()` | 올해 12월 31일 | `{{ date.year_end() }}` → `"2025-12-31"` |
-| `date.month_start()` | 이번 달 1일 | `{{ date.month_start() }}` → `"2025-01-01"` |
-
-> **팁**: `format` 파라미터를 지정하면 출력 형식을 변경할 수 있습니다. 예: `{{ date.ago(30, format='yyyymmdd') }}` → `"20250101"`
-
-### 금융 계산 함수 (`finance` 네임스페이스)
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `finance.pct_change(old, new)` | 변화율 (%) | `{{ finance.pct_change(100, 110) }}` → `10.0` |
-| `finance.pct(part, total)` | 비율 (%) | `{{ finance.pct(25, 100) }}` → `25.0` |
-| `finance.discount(price, pct)` | 할인가 계산 | `{{ finance.discount(100, 10) }}` → `90.0` |
-| `finance.markup(price, pct)` | 인상가 계산 | `{{ finance.markup(100, 10) }}` → `110.0` |
-| `finance.annualize(ret, days)` | 연환산 수익률 | `{{ finance.annualize(5, 30) }}` → `연 53.25%` |
-| `finance.compound(principal, rate, periods)` | 복리 계산 | `{{ finance.compound(1000, 5, 3) }}` → `1157.63` |
-
-### 리스트 유틸리티 (`lst` 네임스페이스)
-
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `lst.first(list)` | 첫 번째 요소 | `{{ lst.first(symbols) }}` → `"AAPL"` |
-| `lst.last(list)` | 마지막 요소 | `{{ lst.last(symbols) }}` → `"NVDA"` |
-| `lst.count(list)` | 요소 개수 (len alias) | `{{ lst.count(trades) }}` |
-| `lst.pluck(list, path)` | 배열에서 특정 경로 값 추출 | `{{ lst.pluck(items, "name") }}` → `["AAPL", "TSLA"]` |
-| `lst.flatten(list, key)` | 중첩 배열 평탄화 (부모 필드 유지) | 아래 예시 참조 |
-
-#### pluck vs flatten
-
-입력 데이터 예시:
 ```json
-[
-  {"symbol": "AAPL", "time_series": [{"date": "20251224", "rsi": 33.5}]},
-  {"symbol": "TSLA", "time_series": [{"date": "20251224", "rsi": 62.1}]}
-]
+"symbols": "{{ nodes.watchlist.symbols }}"          // 리스트 그대로
+"title":   "가격: {{ nodes.md.price }} 원"           // "가격: 185.5 원" (문자열)
 ```
 
-| 함수 | 결과 | 설명 |
+> **함정**: 앞뒤 텍스트 없이 식 두 개를 붙이면(`{{ a }}-{{ b }}`) 하나의 식으로 잘못 파싱되어
+> 구문 오류가 납니다. `가격 {{ a }} / {{ b }}` 처럼 사이에 텍스트를 두거나, 한 식으로 합치세요
+> (`{{ str(a) + '-' + str(b) }}`).
+
+---
+
+## 2. 쓸 수 있는 변수(루트)
+
+**아래 이름만** 정의돼 있습니다. 그 밖의 맨이름(`balance`, `rsi`, `price`, `symbols`,
+그리고 `nodes.` 를 붙이지 않은 노드 ID)은 전부 **`정의되지 않은 변수` 오류**입니다.
+
+| 루트 | 설명 | 예시 |
 |------|------|------|
-| `{{ lst.pluck(values, "symbol") }}` | `["AAPL", "TSLA"]` | 특정 키만 추출 |
-| `{{ lst.flatten(values, "time_series") }}` | `[{"symbol": "AAPL", "date": "20251224", "rsi": 33.5}, ...]` | 부모 필드 유지하며 평탄화 |
+| `nodes.<id>.<port>` | 이전 노드의 출력 포트 값 | `{{ nodes.account.balance.orderable_amount }}` |
+| `input.<name>` | 워크플로우 `inputs` 값(기본값+사용자 입력 병합) | `{{ input.rsi_period }}` |
+| `context.<key>` | 실행 시 전달된 런타임 파라미터 딕셔너리 | `{{ context.mode }}` |
+| `item` | 자동 반복/Split 브랜치의 현재 요소 (**반복 중에만** 존재) | `{{ item.symbol }}` |
+| `index` | 0부터 시작하는 반복 인덱스 (**반복 밖에서는 항상 0**) | `{{ index }}` |
+| `total` | 전체 아이템 개수 (반복 밖에서는 0) | `{{ total }}` |
+| `row.<field>` | **ConditionNode/BacktestEngineNode 의 `items.extract` 안에서만** | `{{ row.rsi < 30 }}` |
 
-> **팁**: `lst.flatten`은 차트 노드에 데이터를 전달할 때 유용합니다. 종목별 시계열 데이터를 하나의 배열로 합칩니다.
+> - `{{ nodeId.port }}` 처럼 `nodes.` 를 **빼면 안 됩니다** — `nodeId` 는 변수로 정의돼 있지 않아
+>   오류입니다. 항상 `nodes.<id>` 로 씁니다.
+> - `item` 은 반복 밖에서 쓰면 오류(`정의되지 않은 변수: item`)입니다. 반면 `index`/`total` 은
+>   반복 밖에서도 오류 없이 `0` 입니다.
+> - `context.available_balance` 같은 값은 **엔진이 채우지 않습니다.** 잔고는
+>   `nodes.<account>.balance...` 로 계좌 노드에서 읽으세요.
+> - `current_symbol`/`current_index` 는 레거시 변수입니다. 새 워크플로우는 `item` 을 쓰세요.
 
-#### 다중 중첩 경로 (pluck 전용)
+### 노드 ID 규칙
 
-점 표기법으로 깊은 경로에 접근할 수 있습니다:
+`nodes.<id>` 의 점 접근은 `<id>` 가 **올바른 파이썬 식별자**여야 합니다.
+
+- 하이픈은 뺄셈으로 해석됩니다 — `nodes.if-balance.x` 는 깨집니다.
+- 파이썬 예약어(`if`, `in`, `for`, `is`, `and`, `or`, `not`, `class`, `return` …)는 구문 오류입니다.
+  `{{ nodes.if.result }}` 는 **오류**입니다.
+
+이런 ID 는 **대괄호 형태**로만 접근할 수 있습니다(엔진이 정적 검증하지는 않습니다):
 
 ```
-{{ lst.pluck(positions, "details.sector") }}   →   ["Tech", "Auto", "Finance"]
+{{ nodes['if'].result }}          // OK
+{{ nodes['my-node'].data }}       // OK (하이픈 ID)
 ```
 
-### 포맷팅 함수 (`format` 네임스페이스)
+가급적 노드 ID 를 `snake_case`/`camelCase`(예: `if_balance`, `ifBalance`)로 지어 이 문제를 피하세요.
 
-| 함수 | 설명 | 예시 |
-|------|------|------|
-| `format.pct(v, decimals)` | 퍼센트 포맷 | `{{ format.pct(12.345, 1) }}` → `"12.3%"` |
-| `format.currency(v, symbol)` | 통화 포맷 | `{{ format.currency(1234.5) }}` → `"$1,234.50"` |
-| `format.number(v, decimals)` | 숫자 포맷 | `{{ format.number(1234567.89, 0) }}` → `"1,234,568"` |
+---
 
-### 상수
+## 3. 노드 출력 다루기 (NodeOutputProxy)
 
-| 상수 | 값 |
+`nodes.<id>` 와 리스트형 출력 포트는 **NodeOutputProxy** 로 감싸져 체이닝 메서드를 제공합니다.
+
+- 맨 `{{ nodes.<id> }}` 는 **리스트**로 풀립니다: `positions, symbols, values, data, items, array, results`
+  중 첫 번째 리스트형 키, 없으면 출력 딕셔너리를 `[dict]`(1개짜리 리스트)로 감쌉니다.
+
+### 체이닝 메서드 (이게 전부입니다)
+
+| 메서드 | 뜻 | 예시 |
+|--------|-----|------|
+| `.all()` | 전체 배열 | `{{ nodes.account.positions.all() }}` |
+| `.first()` | 첫 요소(없으면 None) | `{{ nodes.account.positions.first().symbol }}` |
+| `.last()` | 마지막 요소 | `{{ nodes.account.positions.last() }}` |
+| `.count()` | 개수(int) | `{{ nodes.account.positions.count() }}` |
+| `.filter('필드 연산 값')` | 조건 필터 | `{{ nodes.account.positions.filter('pnl > 0') }}` |
+| `.map('필드')` | 필드만 뽑기 | `{{ nodes.account.positions.map('symbol') }}` |
+| `.sum('필드')` | 필드 합계 | `{{ nodes.account.positions.sum('quantity') }}` |
+| `.avg('필드')` | 필드 평균 | `{{ nodes.account.positions.avg('pnl') }}` |
+| `.flatten('중첩키')` | 부모 필드 유지하며 평탄화 | `{{ nodes.scan.symbols.flatten('bars') }}` |
+| `[i]` / `['key']` | 인덱스/키 접근 | `{{ nodes.account.positions[0]['symbol'] }}` |
+
+> `.filter()` 는 **딱 하나**의 `필드 연산 값` 비교만 받습니다(`> < >= <= == !=`).
+> `and`/`or`/괄호는 안 됩니다 — `.filter('pnl > 0').filter('symbol == AAPL')` 처럼 **두 번 체이닝**하세요.
+> 값은 따옴표를 붙이면 문자열, `true`/`false`/`none` 은 리터럴, 숫자는 숫자, 그 외에는 문자열로 파싱되어
+> `symbol == AAPL` 처럼 따옴표 없이도 됩니다. 문법에 안 맞는 조건은 **배열을 그대로 반환**(오류 아님)합니다.
+
+### 포트 vs 헬퍼 이름 충돌
+
+노드에 헬퍼와 같은 이름의 출력 포트(`count`, `sum`, `first` …)가 있으면:
+
+- 맨 속성 `{{ nodes.x.count }}` → **포트 값**(있으면), 없으면 헬퍼 메서드 객체
+- 호출 `{{ nodes.x.count() }}` → **항상 헬퍼**
+
+> 그래서 `{{ nodes.x.first }}`(포트가 없는 노드에서)는 **메서드 객체**를 반환하며 JSON 직렬화가 안 됩니다.
+> 개수를 원하면 `.count()`, 첫 요소를 원하면 `.first()` 처럼 **괄호를 붙이세요.**
+
+### ⚠️ 프록시의 함정 (자주 틀림)
+
+NodeOutputProxy 는 `__len__`/`__iter__`/`__bool__` 이 **없습니다**:
+
+- `len(nodes.x.positions)` → **오류**(`no len()`). → `.count()` 또는 `len(nodes.x.positions.all())`
+- `x in proxy`, `sorted(proxy)`, `list(proxy)`, `tuple(proxy)`, `max(proxy)` → **무한 루프로 멈춥니다.**
+  → 먼저 `.all()` 로 리스트로 바꾸세요: `{{ 'AAPL' in nodes.x.positions.all() }}`
+- 빈 결과라도 **항상 truthy** → `{{ 'yes' if nodes.c.passed_symbols else 'no' }}` 는 빈데도 `'yes'`.
+  비어있는지 확인은 `{{ nodes.c.passed_symbols.count() == 0 }}` 로 하세요.
+- `stats.*` 는 프록시를 자동으로 풀지 **않습니다**(`lst.*` 만 풉니다).
+  `stats.mean(nodes.x.values)` 는 멈추거나 오류 → `stats.mean(nodes.x.values.all())`.
+
+---
+
+## 4. 네임스페이스 함수
+
+### 날짜 `date.*`
+
+| 함수 | 뜻 |
+|------|-----|
+| `date.today(format=None)` | 오늘 |
+| `date.now()` | 현재 시각 |
+| `date.ago(n, format=None)` | n일 전 |
+| `date.later(n, format=None)` | n일 후 |
+| `date.months_ago(n, format=None)` | **30일 × n** 전 (달력상 개월이 아님) |
+| `date.year_start()` / `date.year_end()` | 올해 1/1 · 12/31 |
+| `date.month_start()` | 이번 달 1일 |
+
+`format` 규칙 (**중요**):
+
+- 생략 → ISO `YYYY-MM-DD`
+- `'yyyymmdd'` → `%Y%m%d` (예: `20260101`)
+- `'iso'` → `%Y-%m-%d`
+- **그 밖의 문자열은 그대로 strftime 패턴**으로 씁니다. `'%Y/%m/%d'` 는 되지만,
+  `'yyyy-mm-dd'` 같은 자리표시자는 **그 글자 그대로** 돌아옵니다(변환 안 됨). ISO 를 원하면 생략하거나 `'iso'`.
+
+```
+{{ date.ago(30, format='yyyymmdd') }}      // "20260826"
+{{ date.today(format='iso') }}             // "2026-09-25"
+```
+
+- `month_end`, 요일 헬퍼, 날짜 파싱/차이 헬퍼는 **없습니다.**
+- 검증 리플레이에서는 `date.*` 가 픽스처의 `as_of` 시각에 고정됩니다(라이브는 로컬 시계).
+
+### 금융 `finance.*`
+
+| 함수 | 뜻 | 예시 |
+|------|-----|------|
+| `finance.pct_change(old, new)` | 변화율 % `((new-old)/old*100)` | `{{ finance.pct_change(100, 110) }}` → `10.0` |
+| `finance.pct(part, total)` | **part 가 total 의 몇 %인지** `(part/total*100)` | `{{ finance.pct(50, 200) }}` → `25.0` |
+| `finance.discount(price, pct)` | 할인가 `price*(1-pct/100)` | `{{ finance.discount(1000, 20) }}` → `800.0` |
+| `finance.markup(price, pct)` | 인상가 `price*(1+pct/100)` | `{{ finance.markup(1000, 20) }}` → `1200.0` |
+| `finance.annualize(ret, days)` | 연환산 수익률(252일 기준) | `{{ finance.annualize(5, 30) }}` |
+| `finance.compound(principal, rate, periods)` | 복리 | `{{ finance.compound(1000, 10, 3) }}` → `1331.0` |
+
+> **⚠️ `finance.pct` 오해 주의**: 이건 "값의 몇 %"가 **아닙니다.**
+> `finance.pct(1000, 10)` 은 `1000` 을 `10` 으로 나눠 **`10000.0`** 이 됩니다.
+> "잔고의 10%"를 원하면 `finance.pct` 가 아니라 **곱셈**을 쓰세요:
+> `{{ nodes.account.balance.orderable_amount * 0.1 }}`.
+
+### 통계 `stats.*`
+
+`stats.mean` · `stats.avg`(mean 별칭) · `stats.median` · `stats.stdev` · `stats.variance`.
+**평범한 리스트**를 받습니다(프록시 자동 언랩 안 함 — 위 함정 참고).
+
+```
+{{ stats.mean([1, 2, 3, 4, 5]) }}                       // 3.0
+{{ stats.mean(nodes.account.positions.map('pnl').all()) }}   // 프록시는 .all() 로
+```
+
+### 포맷 `format.*`
+
+| 함수 | 예시 |
 |------|------|
-| `True` | `True` |
-| `False` | `False` |
-| `None` | `None` |
-| `pi` | `3.14159...` |
-| `e` | `2.71828...` |
+| `format.pct(value, decimals=2)` — **이미 % 값**이라 가정(×100 안 함) | `{{ format.pct(12.34) }}` → `"12.34%"` |
+| `format.currency(value, symbol='$', decimals=2)` | `{{ format.currency(1234.56) }}` → `"$1,234.56"` |
+| `format.number(value, decimals=2)` | `{{ format.number(1234567.89) }}` → `"1,234,567.89"` |
+
+### 리스트 `lst.*`
+
+`list` 은 타입 변환 내장이라 리스트 유틸은 **`lst`** 네임스페이스입니다(`list.first(...)` 는 실패).
+
+| 함수 | 예시 |
+|------|------|
+| `lst.first(items)` / `lst.last(items)` / `lst.count(items)` | `{{ lst.first([1,2,3]) }}` → `1` |
+| `lst.pluck(items, 'a.b')` — 점 경로 지원, 프록시 언랩 | `{{ lst.pluck(nodes.account.positions, 'symbol') }}` |
+| `lst.flatten(items, nested_key)` — **인자 2개 필수** | `{{ lst.flatten(nodes.scan.symbols, 'bars') }}` |
+
+> **⚠️ `lst.flatten` 인자**: `nested_key` 는 **필수**입니다. `lst.flatten(items)` 처럼 하나만 주면
+> "필수 인자 누락" 오류입니다. 반드시 `lst.flatten(items, '중첩키')`.
+
+`pluck` vs `flatten` — 입력이 아래일 때:
+```json
+[{"symbol":"AAPL","bars":[{"rsi":33.5}]}, {"symbol":"TSLA","bars":[{"rsi":62.1}]}]
+```
+- `lst.pluck(values, 'symbol')` → `["AAPL","TSLA"]`
+- `lst.flatten(values, 'bars')` → `[{"symbol":"AAPL","rsi":33.5}, {"symbol":"TSLA","rsi":62.1}]`
 
 ---
 
-## 실전 예제
+## 5. 내장 함수 · 상수
+
+- 타입 변환: `bool int float str list dict tuple`
+- 수학: `abs min max sum pow round len range sorted zip all any`
+  (`range` 는 100,000 개 초과 시 오류, `pow` 지수는 1000 초과 시 오류 — DoS 방어)
+- math: `sqrt log log10 exp ceil floor` · 상수 `pi e`
+- 리터럴: `True False None` 과 **JSON 스타일 별칭** `true false null`
+  (워크플로우가 JSON 이라 `{{ x != null }}` 도 유효)
+
+---
+
+## 6. 지원되지 않는 것
+
+허용된 AST: 상수 · 이름 · 이항/단항/비교(연쇄)/논리 연산 · `a if c else b` · 속성/인덱스 접근 ·
+함수 호출 · 리스트/딕셔너리/튜플 리터럴. **그 밖은 전부 오류**입니다:
+
+- ❌ Jinja 파이프 필터 `{{ x | length }}` (`|` 는 비트연산 → `length` 미정의 변수)
+- ❌ `~` 문자열 이어붙이기(구문 오류), 슬라이스 `[1:]`, 람다, 컴프리헨션, f-string, 별표/월러스
+- ❌ `{% if %}` / `{% for %}` 블록
+- ❌ `import` / `exec` / `eval` / 파일 I/O / 네트워크 / 클래스·함수 정의
+- ✅ 문자열 메서드는 됩니다: `'AAPL'.lower()`
+
+---
+
+## 7. 오류가 나면 어떻게 되나 (라이브 vs 리플레이)
+
+| 환경 | 동작 |
+|------|------|
+| **라이브(실행)** | 식이 실패해도 **노드를 중단하지 않습니다.** 원본 `{{ ... }}` 리터럴을 **그대로 두고 경고 로그**만 남깁니다. (정상/dry_run 모드에서는 한 필드라도 실패하면 그 노드의 **설정 전체**를 리터럴로 유지합니다.) 그래서 하위 노드가 `{{ ... }}` 문자열을 그대로 받는 **조용한 오작동**이 생길 수 있으니, 잘못된 바인딩은 미리 잡아야 합니다. |
+| **검증 리플레이** | 같은 평가기를 쓰지만 미해결 바인딩이 하나라도 있으면 **`ContractViolation` 로 즉시 중단**합니다(리터럴 유지 안 함). `date.*` 는 픽스처 시각으로 고정됩니다. |
+
+실행 **전** 정적 리졸버가 `nodes.<id>.<port>` 형태만 검사합니다(알 수 없는 노드 ID → `INVALID_EXPRESSION_REF`).
+대괄호 형태와 `{{ item }}`/`{{ row }}` 는 정적 검사 대상이 아니며, 체인 메서드 화이트리스트는
+실제 프록시가 구현한 것보다 넓어서 `.mean`/`.min`/`.unique` 등은 정적으로는 통과해도 **런타임에서 실패**합니다.
+
+---
+
+## 8. 실전 예제
 
 ### 백테스트 날짜 범위
-
 ```json
 {
   "id": "historicalData",
   "type": "OverseasStockHistoricalDataNode",
-  "start_date": "{{ date.ago(input.backtest_months * 30) }}",
-  "end_date": "{{ date.today() }}"
+  "start_date": "{{ date.months_ago(input.backtest_months, format='yyyymmdd') }}",
+  "end_date": "{{ date.today(format='yyyymmdd') }}"
 }
 ```
 
 ### 동적 포지션 사이징
-
 ```json
 {
   "id": "sizing",
@@ -247,9 +265,10 @@ ProgramGarden의 Expression 시스템은 Jinja2 스타일의 `{{ }}` 문법을 �
   "percent": "{{ min(input.max_position_pct, 100 / len(input.symbols)) }}"
 }
 ```
+> `input.symbols` 는 워크플로우 입력(리스트)이라 `len(...)` 이 됩니다. 노드 출력 개수는
+> `len(...)` 대신 `nodes.<id>.<port>.count()` 를 쓰세요(프록시엔 len 이 없습니다).
 
-### 포맷팅 활용
-
+### 요약 표시
 ```json
 {
   "id": "summary",
@@ -264,29 +283,4 @@ ProgramGarden의 Expression 시스템은 Jinja2 스타일의 `{{ }}` 문법을 �
 
 ---
 
-## 지원되지 않는 기능
-
-보안상 다음 기능은 **사용할 수 없습니다**:
-
-- ❌ `import` 문
-- ❌ `exec()`, `eval()` 함수
-- ❌ 파일 I/O (`open()`, `read()`, `write()`)
-- ❌ 네트워크 접근
-- ❌ 시스템 명령어 실행
-- ❌ 클래스 정의
-- ❌ 함수 정의
-
----
-
-## 오류 처리
-
-표현식 평가 중 오류 발생 시 `ExpressionError`가 발생합니다:
-
-| 표현식 | 오류 |
-|--------|------|
-| `{{ undefined_variable }}` | 정의되지 않은 변수 |
-| `{{ x @ y }}` | 지원하지 않는 연산자 |
-| `{{ 10 / 0 }}` | 0으로 나누기 |
-
-> **주의**: 표현식 오류가 발생하면 해당 노드의 실행이 중단됩니다. 노드 ID와 필드 이름을 확인하세요.
-
+자동 반복(`item`/`index`/`total`)의 자세한 규칙은 [auto_iterate_guide.md](./auto_iterate_guide.md) 를 보세요.

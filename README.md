@@ -33,7 +33,7 @@
 
 ## 주요 기능
 
-* **노드 기반 워크플로우** — 76개 노드를 조합하여 코딩 없이 전략 구성
+* **노드 기반 워크플로우** — 77개 노드를 조합하여 코딩 없이 전략 구성
 * **해외주식 · 해외선물 · 국내주식** — LS증권 OpenAPI 기반 실시간 시세 조회 및 자동 주문
 * **AI Agent** — LLM 기반 분석 및 의사결정을 워크플로우에 통합
 * **전략 플러그인** — RSI, MACD 등 커뮤니티 기여 전략을 조합하여 활용
@@ -106,7 +106,7 @@ workflow JSON that runs through `WorkflowExecutor`. Follow this context strictly
 
 - Node-based automation DSL. A workflow is a JSON document with `nodes`,
   `edges`, `credentials`, and `notes`.
-- 76 nodes across 12 categories: `infra` / `account` / `market` / `condition` /
+- 78 nodes across 12 categories: `infra` / `account` / `market` / `condition` /
   `order` / `risk` / `schedule` / `data` / `display` / `analysis` / `ai` /
   `messaging`. Full schema lives in `CLAUDE.md` and
   `src/core/programgarden_core/nodes/`.
@@ -291,12 +291,6 @@ example. Print each tick as it arrives and handle reconnect cleanly.
 </details>
 
 
-### Runtime futures order lifecycle
-
-`WorkflowExecutor.set_order_lifecycle_handler(handler)` installs a synchronous, local-only capability outside DSL and checkpoint data. The handler receives `OrderLifecycleMetadata` and implements `prepare`, `accepted`, and `rejected`. Exact futures broker/credential routing is captured before submission. Operation identity includes job, node, cycle and invocation/iteration identity; order facts are checked separately. A prepared/uncertain replay cannot authorize another transport. A valid broker ACK is frozen before callbacks; local storage failure cannot revoke it.
-
-Handler-managed futures return the accepted `submitted` result with additive parent references. Their app session owns canonical history observation, so legacy startup history repair, post-ACK fill polling and TC3 FIFO writes are skipped. Standalone futures and stocks retain their existing confirmation paths. This capability does not establish complete historical coverage, repair TC3/FIFO accounting or verify workflow returns/MDD.
-
 ## Retained performance evidence
 
 Engine 1.37.8 preserves explicit broker currency for retained stock fills.
@@ -306,3 +300,5 @@ AS1/REST provenance, validation and unavailable historical/account-wide amounts.
 The [futures entry evidence contract](docs/futures-entry-evidence.md) documents
 contract-specific orderable quantity, observed quote ticks and fail-closed
 account reads introduced by engine1.39.0.
+
+Execution contracts: [Session gates and guarded Split](docs/session-gates-and-guarded-split.md).

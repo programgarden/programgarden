@@ -66,6 +66,9 @@ class StartNode(BaseNode):
         "Zero configuration — no fields, no credentials",
         "Produces a simple trigger signal that flows through main edges",
         "Always completes instantly and never fails",
+        "Exactly one StartNode per workflow; a graph rooted at a ScheduleNode is rejected (MISSING_START_NODE)",
+        "Emits no subsequent event: a StartNode-only workflow runs once and cannot carry a duplicate or events scenario",
+        "The start port is a bare trigger signal; an output contract cannot assert a data type on it",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -75,7 +78,7 @@ class StartNode(BaseNode):
         },
         {
             "pattern": "Omitting StartNode and wiring ScheduleNode as the root",
-            "reason": "Works for scheduled workflows but some example templates and validators assume a StartNode anchor.",
+            "reason": "The engine rejects a graph rooted at a ScheduleNode (MISSING_START_NODE); a ScheduleNode is never the root.",
             "alternative": "Always include a StartNode and connect it to the ScheduleNode as the first main edge.",
         },
     ]
@@ -233,6 +236,9 @@ class ThrottleNode(BaseNode):
         "Two modes: 'skip' (drop during cooldown) and 'latest' (buffer newest, emit at window close)",
         "pass_first=True emits the first event immediately, useful for warm-start flows",
         "Emits _throttle_stats output for observability (received / passed / skipped counts)",
+        "Cooldown state persists in context.node_state, so it survives re-triggers within one execution: with pass_first=true the first event passes and a further event within interval_sec is throttled",
+        "While throttled it emits only its `_`-prefixed ports (_throttled/_throttle_stats), which never leak downstream, so a node placed after it does not re-execute",
+        "interval_sec is bounded between 0.1 and 300 seconds",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -446,7 +452,7 @@ class SplitNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
-        "Sequential (default) or parallel execution modes",
+        "Sequential (default) or parallel execution modes; branches containing IfNode or order nodes are serialized to preserve per-item decisions",
         "Per-item delay_ms for rate-limiting downstream API calls",
         "continue_on_error=True keeps the loop running when one item fails",
         "Emits item / index / total outputs so downstream can branch on position",
@@ -493,13 +499,13 @@ class SplitNode(BaseNode):
                     },
                     {"id": "split", "type": "SplitNode"},
                     {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "watchlist"},
                     {"from": "watchlist", "to": "split"},
                     {"from": "split", "to": "fundamental"},
-                ],
+                {'from': 'fundamental', 'to': 'split_results'}],
                 "credentials": [
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
@@ -525,13 +531,13 @@ class SplitNode(BaseNode):
                         "start_date": "20260301",
                         "end_date": "20260401",
                     },
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "universe"},
                     {"from": "universe", "to": "split"},
                     {"from": "split", "to": "historical"},
-                ],
+                {'from': 'historical', 'to': 'split_results'}],
                 "credentials": [
                     {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
                 ],
@@ -803,7 +809,7 @@ class AggregateNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "split", "type": "SplitNode"},
+                    {"id": "split", "type": "SplitNode", 'array': '{{ nodes.account.positions }}'},
                     {
                         "id": "mapper",
                         "type": "FieldMappingNode",
@@ -966,7 +972,7 @@ class IfNode(BaseNode):
         ],
         "typical_scenarios": [
             "AccountNode.balance → IfNode (>= threshold) → true: OrderNode / false: SummaryDisplayNode (insufficient funds)",
-            "FearGreedIndexNode.value → IfNode (<= 25) → true: alert / false: normal flow",
+            "CodeNode.score → IfNode (<= 25) → true: alert / false: normal flow",
             "ConditionNode.passed → IfNode (== true) → true: NewOrderNode / false: LogNode",
         ],
     }
@@ -974,7 +980,8 @@ class IfNode(BaseNode):
         "12 comparison operators including ==, !=, >, >=, <, <=, in, not_in, contains, not_contains, is_empty, is_not_empty",
         "Three outputs: `true` / `false` payloads + `result` boolean — edges use from_port to route",
         "Expression binding on both `left` and `right` operands — supports full `{{ nodes.X.Y }}` syntax",
-        "Cascading skip — downstream of the inactive branch is auto-skipped by the executor",
+        "Skips only descendants of the untaken port that have no other active path; a node also fed by a non-If upstream still runs when that upstream completes",
+        "Evaluates exactly one left/operator/right comparison per node; the untaken branch is the false port, and a CodeNode returning false skips nothing",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -996,7 +1003,7 @@ class IfNode(BaseNode):
     _examples: ClassVar[List[Dict[str, Any]]] = [
         {
             "title": "Gate new order behind a minimum balance",
-            "description": "IfNode checks the account balance; true branch places the order, false branch displays a warning.",
+            "description": 'IfNode checks the account balance; true branch places the order, false branch displays a warning. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "if-balance-gate",
                 "name": "If balance ≥ threshold → order / else notify",
@@ -1004,8 +1011,8 @@ class IfNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "account", "type": "OverseasStockAccountNode"},
-                    {"id": "if_balance", "type": "IfNode", "left": "{{ nodes.account.balance }}", "operator": ">=", "right": 1000},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "AAPL", "exchange": "NASDAQ", "side": "buy", "quantity": 1, "price": 150.0},
+                    {"id": "if_balance", "type": "IfNode", "left": "{{ nodes.account.balance.orderable_amount }}", "operator": ">=", "right": 1000},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'buy', 'order': {'symbol': 'AAPL', 'exchange': 'NASDAQ', 'quantity': 1, 'price': 150.0}},
                     {"id": "warn", "type": "SummaryDisplayNode", "title": "Insufficient funds", "data": {"balance": "{{ nodes.account.balance }}"}},
                 ],
                 "edges": [
@@ -1022,35 +1029,44 @@ class IfNode(BaseNode):
             "expected_output": "If balance ≥ 1000 the order node executes; otherwise SummaryDisplayNode renders the insufficient-funds warning.",
         },
         {
-            "title": "Extreme fear alert from external market data",
-            "description": "Fear & Greed index below 25 triggers a risk alert, otherwise the normal dashboard branch continues.",
+            "title": "Risk-score alert from a computed signal",
+            "description": "A CodeNode computes a numeric risk score on a declared 'score' port; IfNode routes to a risk alert when the score is at or below 25, otherwise the normal dashboard branch continues.",
             "workflow_snippet": {
-                "id": "if-fear-alert",
-                "name": "If fear index ≤ 25 → alert / else dashboard",
+                "id": "if-score-alert",
+                "name": "If score ≤ 25 → alert / else dashboard",
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
-                    {"id": "fgi", "type": "FearGreedIndexNode"},
-                    {"id": "if_fear", "type": "IfNode", "left": "{{ nodes.fgi.value }}", "operator": "<=", "right": 25},
-                    {"id": "alert", "type": "SummaryDisplayNode", "title": "Extreme fear detected", "data": {"value": "{{ nodes.fgi.value }}", "action": "Reduce exposure"}},
-                    {"id": "normal", "type": "SummaryDisplayNode", "title": "Market sentiment OK", "data": {"value": "{{ nodes.fgi.value }}"}},
+                    {
+                        "id": "risk",
+                        "type": "CodeNode",
+                        "outputs": [{"name": "score", "type": "number"}],
+                        "code": (
+                            "async def execute(data, params, context):\n"
+                            "    return {'score': float(params.get('score', 0))}"
+                        ),
+                        "params": {"score": 20},
+                    },
+                    {"id": "if_score", "type": "IfNode", "left": "{{ nodes.risk.score }}", "operator": "<=", "right": 25},
+                    {"id": "alert", "type": "SummaryDisplayNode", "title": "Elevated risk detected", "data": {"score": "{{ nodes.risk.score }}", "action": "Reduce exposure"}},
+                    {"id": "normal", "type": "SummaryDisplayNode", "title": "Risk level OK", "data": {"score": "{{ nodes.risk.score }}"}},
                 ],
                 "edges": [
-                    {"from": "start", "to": "fgi"},
-                    {"from": "fgi", "to": "if_fear"},
-                    {"from": "if_fear", "to": "alert", "from_port": "true"},
-                    {"from": "if_fear", "to": "normal", "from_port": "false"},
+                    {"from": "start", "to": "risk"},
+                    {"from": "risk", "to": "if_score"},
+                    {"from": "if_score", "to": "alert", "from_port": "true"},
+                    {"from": "if_score", "to": "normal", "from_port": "false"},
                 ],
                 "credentials": [],
             },
-            "expected_output": "alert SummaryDisplay renders only when the fear index ≤ 25; otherwise normal SummaryDisplay renders.",
+            "expected_output": "alert SummaryDisplay renders only when the score ≤ 25; otherwise normal SummaryDisplay renders.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "Bind `left` and (usually) `right` via `{{ nodes.X.Y }}` expressions. Operators that take no right-hand side — is_empty, is_not_empty — ignore `right`.",
-        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind `{{ nodes.if.result }}` as a boolean on a later node.",
+        "output_consumption": "Downstream edges must carry `from_port: 'true'` or `from_port: 'false'` to pick a branch. You can also bind the `result` boolean on a later node, e.g. `{{ nodes.gate.result }}` for an IfNode with id `gate`. Note the node id must be a plain identifier: `if` is a Python keyword, so `{{ nodes.if.result }}` is a syntax error — use a non-keyword id, or the bracket form `{{ nodes['if'].result }}`.",
         "common_combinations": [
             "AccountNode → IfNode (balance ≥ N) → OrderNode / Notification",
-            "FearGreedIndexNode → IfNode (value ≤ 25) → alert branch",
+            "CodeNode → IfNode (score ≤ 25) → alert branch",
             "ConditionNode.passed → IfNode (== true) → order branch",
         ],
         "pitfalls": [

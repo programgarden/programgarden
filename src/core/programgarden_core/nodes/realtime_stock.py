@@ -71,6 +71,11 @@ class OverseasStockRealMarketDataNode(BaseNode):
         "Item-based execution: one subscription per node; use multiple nodes or SplitNode to watch several symbols",
         "Automatically re-subscribes after WebSocket reconnection events",
         "Does NOT include order book (bid/ask levels) — only trade (GSC) events; ask/bid from GSH are in the data port",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "In replay it records ohlcv_data (and its data alias) as a symbol-keyed object of bar lists keyed by the bare symbol, each bar carrying only date, open, high, low, close, volume",
+        "It does not record a top-level symbol port; the live node emits symbol only inside its event payload, so a recording that includes it is rejected",
+        "As a streaming source it emits market_data and realtime_update events; on each event only nodes downstream of it re-run, while upstream startup snapshots stay retained",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -94,7 +99,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}]},
                     {"id": "real", "type": "OverseasStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "interval_seconds": 60},
                     {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "period": "1d", "start_date": "20260301", "end_date": "20260401"},
@@ -114,7 +119,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
                         "fields": {"period": 14, "threshold": 30, "direction": "below"},
                     },
                     {"id": "display", "type": "TableDisplayNode", "title": "RSI oversold", "data": "{{ nodes.condition.passed_symbols }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
@@ -125,7 +130,7 @@ class OverseasStockRealMarketDataNode(BaseNode):
                     {"from": "throttle", "to": "condition"},
                     {"from": "historical", "to": "condition"},
                     {"from": "condition", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -148,17 +153,17 @@ class OverseasStockRealMarketDataNode(BaseNode):
                 "nodes": [
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {"id": "split", "type": "SplitNode", "items": [{"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MSFT', 'exchange': 'NASDAQ'}]},
                     {"id": "real", "type": "OverseasStockRealMarketDataNode", "symbol": "{{ nodes.split.item }}", "stay_connected": True},
                     {"id": "chart", "type": "CandlestickChartNode", "data": "{{ nodes.real.ohlcv_data }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "split"},
                     {"from": "split", "to": "real"},
                     {"from": "broker", "to": "real"},
                     {"from": "real", "to": "chart"},
-                ],
+                {'from': 'chart', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",
@@ -342,7 +347,7 @@ class OverseasStockRealAccountNode(BaseNode):
         },
         {
             "title": "Realtime trailing stop using live positions",
-            "description": "Feed live positions into a ConditionNode to trigger a stop-loss order when drawdown exceeds threshold.",
+            "description": 'Feed live positions into a ConditionNode to trigger a stop-loss order when drawdown exceeds threshold. Component demonstration only: add validated signal, account/pending, sizing, session and persistent duplicate-submission guards before live trading.',
             "workflow_snippet": {
                 "id": "stock-real-account-trailing-stop",
                 "name": "Realtime Trailing Stop",
@@ -352,7 +357,7 @@ class OverseasStockRealAccountNode(BaseNode):
                     {"id": "real_account", "type": "OverseasStockRealAccountNode", "stay_connected": True},
                     {"id": "throttle", "type": "ThrottleNode", "mode": "latest", "interval_sec": 5, "pass_first": True},
                     {"id": "condition", "type": "ConditionNode", "plugin": "StopLoss", "positions": "{{ nodes.real_account.positions }}", "fields": {"threshold_pct": -3.0}},
-                    {"id": "order", "type": "OverseasStockNewOrderNode", "symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "side": "sell", "order_type": "market", "quantity": "{{ item.quantity }}"},
+                    {'id': 'order', 'type': 'OverseasStockNewOrderNode', 'side': 'sell', 'order_type': 'market', 'order': {'symbol': '{{ item.symbol }}', 'exchange': '{{ item.exchange }}', 'quantity': '{{ item.quantity }}'}},
                 ],
                 "edges": [
                     {"from": "start", "to": "broker"},

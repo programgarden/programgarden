@@ -50,6 +50,9 @@ class MockWorkflowJob:
     from programgarden.executor import WorkflowJob
     _apply_rate_limit_guard = WorkflowJob._apply_rate_limit_guard
     _release_rate_limit_guard = WorkflowJob._release_rate_limit_guard
+    # 5609bc8 moved the guard's clock behind WorkflowJob._rate_limit_now (replay pins it);
+    # the mock binds the real one so the guard sees the same wall clock as production.
+    _rate_limit_now = WorkflowJob._rate_limit_now
 
 
 class TestRateLimitMinInterval:

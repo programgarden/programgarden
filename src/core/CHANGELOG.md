@@ -1,3 +1,132 @@
+## [2.4.0] - 2026-09-26
+
+### Changed
+- ScheduleNode: `max_duration_hours` and `count` are optional (default None).
+  Omitting both means the schedule runs until the workflow is stopped (owner
+  decision 2026-09-26: when the investor names no duration, a recurring check
+  keeps running instead of quietly ending after 24 h / 1000 cycles). A provided
+  value is still enforced as a cap (`max_duration_hours` > 0, `count` >= 1) and
+  the 720 h `max_value` on `max_duration_hours` is gone. The catalog usage,
+  features and node guide say so, so an authoring model stops inventing bounds.
+
+## [2.3.0] - 2026-09-25
+
+### Added
+- `programgarden_core.expression.expression_reference()`: a machine-readable,
+  code-verified reference of the `{{ }}` expression language (grammar, roots,
+  NodeOutputProxy helpers and port-vs-helper precedence, every date / finance /
+  stats / format / lst function with signature and semantics, builtins,
+  literals, node-id rules, auto-iteration facts, live-vs-replay error
+  behaviour, pitfalls). Names are introspected from the evaluator so the
+  reference cannot drift; `tests/test_expression_reference.py` pins it.
+- LLMModelNode / AIAgentNode features and input guidance state the credential
+  template (llm_openai / llm_anthropic / llm_deepseek / llm_google), that the
+  user must register their own provider API key before a real run, that LLM
+  credentials are never auto-bound, what fails without one, how to match the
+  kind to the model string, and that the key never reaches outputs or logs.
+
+### Fixed
+- Historical data nodes: `start_date` / `end_date` defaulted to helpers that do
+  not exist (`months_ago_yyyymmdd`, `today_yyyymmdd`), so a node left at its
+  defaults silently fetched a single day; the defaults, field descriptions and
+  guidance now use `date.months_ago(3, format='yyyymmdd')` and
+  `date.today(format='yyyymmdd')`.
+- IfNode guidance no longer shows a Python-keyword node id (`nodes.if.result`);
+  keyword ids need `nodes['if'].port`.
+
+### Removed
+- `CurrencyRateNode` and `MarketStatusNode` (owner 2026-09-25: keep the library
+  to what auto-trading needs; SessionGateNode / TradingHoursFilterNode cover
+  market-hours gating). Existing graphs that reference them fail schema
+  resolution and must be edited.
+
+## [2.2.0] - 2026-09-25
+
+### Added
+- `NodeTypeSchema.execution`: a machine-readable execution block per node type
+  (role, emits, iteration mode and per-item recording key, reruns_on, time
+  rules, dead ports, reserved output ports), derived from the replay contracts
+  so schema consumers (AI authoring, validators) read structure instead of
+  inferring it from prose. Attached by `programgarden.replay_semantics`
+  through `registry_tools`.
+- Node `features` now state the execution and replay facts the code enforces:
+  StartNode runs once and never re-fires, IfNode gates only its branch,
+  TradingHoursFilterNode windows are venue-local and same-day, SQLiteNode runs
+  exactly one statement per execution and never creates a table, ScheduleNode
+  fires at the venue-local cron instants, market-data / historical / account /
+  open-orders / order / realtime / broker nodes describe their recording shape
+  and the session hours of each product (overseas stock day and night sessions,
+  overseas futures, domestic stock).
+
+### Fixed
+- Prose that the code contradicted (SessionGate wording, order node field
+  descriptions, account balance fields) now matches the executor.
+
+## [2.1.0] - 2026-09-24
+
+### Added
+- Reserved output keys (`error`, and `reason` in no_symbol/no_price/invalid_input)
+  that mark a node failure are explained in replay diagnostics with a bounded,
+  secret-free preview of the node's own output and whether a CodeNode declared
+  that key as a port.
+
+### Fixed
+- Expression evaluation: an output port that shares its name with a
+  NodeOutputProxy helper (for example `count`) resolves to the port value, not
+  the helper method, so `{{ nodes.open_orders.count }}` compares as a number.
+  Calling the helper form on such a node (`{{ nodes.open_orders.count() }}`)
+  still invokes the helper, so existing workflows keep working.
+- CodeNode accepts single-underscore literals in inline code (documented
+  `_partial_failure` / `_source` keys can be read).
+- Overseas-stock order node guidance states the LS price precision rule (two
+  decimals at or above USD 1, rsp_cd 00891); the quantization itself lives in
+  the programgarden executor (2.1.0).
+- Example snippets in other node schemas (symbol query, new order, position
+  sizing, SQLite, watchlist, display pitfalls) that still bound the removed
+  `value` port now bind `values` / `values[0].price`, so every catalog example
+  validates again; the registry node-count guard reflects the 72 core nodes.
+- Remove the nonexistent singular `value` output from the three REST market-data
+  schemas. Their live executor returns only `values`; schema discovery must not
+  advertise a field that always resolves to missing data. Existing runtime
+  output, customer graphs and running workflows are unchanged.
+- Declare all observed domestic REST position fields, including acquisition
+  basis, missing-evidence status, currency and observation time. Correct the
+  account example's nonexistent cash/equity output names. Missing money stays
+  nullable; this change does not query a broker or alter holdings.
+- Return the declared TradingHoursFilterNode `blocked` output consistently.
+  Clarify waiting, timeout and immediate SessionGate alternatives in the schema.
+
+### Changed
+- TradingHoursFilterNode validates its configuration: an instant without a
+  timezone, days that are not explicit weekday names, window times that are
+  not H:MM / HH:MM, and an overnight window (end before start, use
+  SessionGateNode) now raise ValueError instead of silently passing or
+  waiting. Unpadded hours such as "9:30" remain valid.
+
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Correct LS overseas fundamental field guidance and preserve explicit replay-clock support.
+
+
+### Fixed
+- Add fmp_api and the platform telegram_bot alias with native field contracts. Clarify key-free FMP drafts and the limits of offline validation.
+
+## [1.31.0] - 2026-09-21
+
+### Added
+- SessionGateNode evaluates explicit IANA local windows, DST, overnight opening weekdays and closed dates immediately. Enforce its boolean through IfNode; it does not query exchange holiday/market status.
+- Timezone database dependency for hosts without a system zoneinfo database.
+
+### Fixed
+- Schema discovery constructs metadata without validating placeholder runtime values; executable nodes retain full field validation.
+- Repair AI-facing Split/Aggregate examples, explicit array and order bindings, quote field names and table columns.
+- Complete futures capacity node descriptions and two read-only examples. Mark order components as incomplete strategy demonstrations.
+
 ## [1.30.0] - 2026-09-16
 
 ## [1.30.1] - 2026-09-16
@@ -968,7 +1097,7 @@ Ships together with the `programgarden` 1.30.0 runtime (executor hard errors + R
 ### Removed
 - remove(nodes): `WatchlistNode`의 `product` 필드 제거 (connection에서 자동 감지)
 
-## [2.0.0] - 2026-01-06
+## [2.0.1] - 2026-01-06
 ### Changed
 - feat: 노드 기반 DSL 핵심 타입으로 전면 재설계
 - feat: Python 3.12 최소 버전으로 상향

@@ -98,6 +98,20 @@ class NodeTypeSchema(BaseModel):
             "- pitfalls: List[str] — connection caveats and shape requirements"
         ),
     )
+    execution: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Machine-readable execution/replay semantics block (closed value "
+            "sets), derived from the engine's own replay contract code — never "
+            "authored per class. Populated by "
+            "`programgarden.replay_semantics.attach_execution` when the schema is "
+            "served through the tool registry; the core registry itself leaves it "
+            "None (core must not import programgarden). Keys: role, replay, "
+            "request, iteration, reruns_on, emits_events, on_event, output_ports, "
+            "dead_ports, internal_ports, reserved_output_ports, gating, order, "
+            "time_rules, venue."
+        ),
+    )
 
     # === Version metadata (UI change detection) ===
     version: str = Field(
@@ -174,13 +188,9 @@ class NodeTypeRegistry:
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode,
-            # Market External (credential 불필요)
-            CurrencyRateNode,
-            # Market Status (JIF 장운영정보 — credential agnostic)
-            MarketStatusNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
-            ScheduleNode, TradingHoursFilterNode,
+            ScheduleNode, TradingHoursFilterNode, SessionGateNode,
             ConditionNode, LogicNode,
             PositionSizingNode, PortfolioNode,
             OverseasStockNewOrderNode, OverseasStockModifyOrderNode, OverseasStockCancelOrderNode,
@@ -222,14 +232,10 @@ class NodeTypeRegistry:
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
             SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode,
-            # Market External (credential 불필요)
-            CurrencyRateNode,
-            # Market Status (JIF 장운영정보 — credential agnostic)
-            MarketStatusNode,
             # Symbol (상품 무관)
             WatchlistNode, MarketUniverseNode, ScreenerNode, SymbolFilterNode, ExclusionListNode,
             # Trigger
-            ScheduleNode, TradingHoursFilterNode,
+            ScheduleNode, TradingHoursFilterNode, SessionGateNode,
             # Condition
             ConditionNode, LogicNode,
             # Risk
@@ -342,7 +348,11 @@ class NodeTypeRegistry:
                 else:
                     init_kwargs[field_name] = "__schema__"
         
-        instance = node_class(**init_kwargs)
+        # Schema discovery uses placeholders, not executable configuration.
+        # Required fields with validators (timezones, non-empty windows, etc.)
+        # must still be discoverable before the caller supplies their values.
+        # Runtime construction/validation continues to use the normal model.
+        instance = node_class.model_construct(**init_kwargs)
         
         # Use instance.description if available (for i18n), otherwise use docstring
         description = instance.description if hasattr(instance, 'description') and instance.description else node_class.__doc__

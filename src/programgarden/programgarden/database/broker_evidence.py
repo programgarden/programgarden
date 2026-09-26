@@ -92,6 +92,10 @@ async def checked_body(response, tr, request=None):
     accepted = code in {"00000", "00136"}
     if tr == "COSOQ00201" and code == "00001":
         accepted = True  # Observed terminal stock balance response, 2026-09-16.
+    if tr == "COSOQ00201" and code == "02679":
+        # Observed authenticated empty stock balance, 2026-09-21. Explicit
+        # blocks, terminal pagination and matching query scope remain required.
+        accepted = not rows and response.rsp_msg == "조회내역이 없습니다."
     if tr == "COSAQ00102" and code == "02679":
         echo = body["COSAQ00102OutBlock1"]
         accepted = (not rows and isinstance(echo, dict)

@@ -3,6 +3,29 @@
 - Refresh futures account data on actual TC3 fills and TC2 confirmations using the SDK `svc_id` field.
 - Schedule refreshes on the owning event loop, coalesce event bursts, serialize account reads and detach only this tracker's listeners on shutdown.
 
+## [2.0.1] - 2026-09-22
+
+### Removed
+- Retire the FMP provider node and dedicated credential catalog across the package set. Existing FMP graphs require explicit migration; no customer artifacts are rewritten.
+
+### Changed
+- Use the 2.0 package family consistently; other dependencies remain unchanged.
+- Compatibility release for programgarden-core 2.0; LS TR implementations and requests are unchanged.
+
+
+### Fixed
+- Correct g3190 expiry metadata: the documented expiry date does not establish delisting or its effective timestamp.
+- Clarify that g3190/g3104 status flags lack an authoritative code map/event time; missing values do not mean normal trading.
+- Explain the sparse CDPCQ04700 dividend field's currency, withholding and gross/net limitations for chatbot consumers. No broker request, order, parsing default or runtime dependency changes.
+
+## [1.10.6] - 2026-09-21
+
+### Fixed
+- Preserve all 111 documented CDPCQ04700 response fields across five blocks and retain private original JSON for authorized diagnostics.
+- Distinguish omitted, blank, null and explicit zero values; reject malformed blocks without logging account response values.
+- Align the diagnostic example with all seven documented request fields and use one explicit read with an existing token, without automatic retry or token issuance.
+- Document observed sparse transfer/conversion rows: a positive foreign-named amount with blank currency does not establish USD funding, and an internal currency movement is not automatically an external deposit.
+
 ## [1.10.3] - 2026-09-16
 
 ## [1.10.5] - 2026-09-16
@@ -158,7 +181,7 @@
 
 ### Changed
 - TestPyPI supplemental source 블록 제거 — 배포 시에만 추가하는 값인데 커밋된 채 남아
-  있었다. 그 인덱스의 `programgarden-core` 최신이 테스트 잔재 `2.0.0` 이라, `poetry lock`
+  있었다. 그 인덱스의 `programgarden-core` 최신이 테스트 잔재 `2.0.1` 이라, `poetry lock`
   이 이를 보조 인덱스로 참조하면 **엉뚱한 버전이 딸려올 수 있다.**
 
 ## [1.9.0] - 2026-08-19

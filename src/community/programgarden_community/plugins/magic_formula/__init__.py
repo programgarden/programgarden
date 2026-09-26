@@ -4,7 +4,7 @@ Magic Formula (마법공식) 플러그인
 Joel Greenblatt (2005) "The Little Book That Beats the Market".
 자본수익률(ROC) 순위 + 이익수익률(EY) 순위 합산으로 "싸고 좋은 기업" 선별.
 
-Simplified 모드: ROE 순위 + 1/PER 순위 합산 (FundamentalDataNode 데이터 활용)
+Simplified 모드: ROE 순위 + 1/PER 순위 합산 (검증된 외부 재무 입력 필요)
 Full 모드: EBIT/IC 순위 + EBIT/EV 순위 합산 (외부 재무데이터 필요)
 
 ※ 다중 종목 플러그인 - ConditionNode auto-iterate 제약 → NodeRunner 테스트 권장
@@ -25,14 +25,14 @@ MAGIC_FORMULA_SCHEMA = PluginSchema(
     name="Magic Formula",
     category=PluginCategory.TECHNICAL,
     version="1.0.0",
-    description="Joel Greenblatt's Magic Formula (2005). Ranks stocks by combined ROC (quality) + EY (cheapness). Simplified mode uses ROE + 1/PER (available from FundamentalDataNode). Full mode uses EBIT/IC + EBIT/EV for precise calculation. Multi-symbol plugin.",
+    description="Joel Greenblatt's Magic Formula (2005). Ranks stocks by combined ROC (quality) + EY (cheapness). Simplified mode uses ROE + 1/PER (requires verified ROE and PER inputs). Full mode uses EBIT/IC + EBIT/EV for precise calculation. Multi-symbol plugin.",
     products=[ProductType.OVERSEAS_STOCK],
     fields_schema={
         "mode": {
             "type": "string",
             "default": "simplified",
             "title": "Mode",
-            "description": "simplified: ROE + 1/PER ranking (FundamentalDataNode compatible). full: EBIT/IC + EBIT/EV ranking",
+            "description": "simplified: ROE + 1/PER ranking (requires verified ROE and PER inputs). full: EBIT/IC + EBIT/EV ranking",
             "enum": ["simplified", "full"],
         },
         "top_n": {

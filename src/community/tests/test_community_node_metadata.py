@@ -33,9 +33,10 @@ def test_all_listed_types_are_exported():
     assert listed <= exported, f"registered-but-unexported nodes: {listed - exported}"
 
 
-def test_at_least_five_nodes():
-    """PerformanceReportNode 추가로 최소 5개."""
-    assert len(NODE_CLASSES) >= 5
+def test_community_node_count():
+    """3.0.0: community 노드 = TelegramNode, PerformanceReportNode (2개).
+    (FearGreedIndexNode/FileReaderNode 제거.)"""
+    assert len(NODE_CLASSES) == 2
 
 
 @pytest.mark.parametrize("cls", NODE_CLASSES, ids=[c.__name__ for c in NODE_CLASSES])

@@ -87,6 +87,12 @@ class LLMModelNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Supports four LLM providers: llm_openai, llm_anthropic, llm_deepseek, llm_google via credential_id",
+        "Credential template: credential_id must reference a credential of kind llm_openai, llm_anthropic, llm_deepseek or llm_google — the only kinds the node allowlist, the executor provider map and the server registration form accept. Its data fields are api_key (password, required), provider (hidden, fixed by the kind) and optional base_url / organization; the workflow DSL also needs a matching top-level credentials[] entry with the same credential_id.",
+        "At real use the user must register their own AI provider API key (OpenAI / Anthropic / DeepSeek / Google Gemini) as a credential of that kind and select it in this node. Building, validating and saving do not need the key; running does. dry_run and validation replay never call the LLM, so a missing, empty or wrong key is only detected at a real run — a passing test does not prove the key works.",
+        "LLM credentials are never auto-bound: unlike a single registered broker account, a registered LLM key is not attached automatically (the server cannot verify that the key's provider matches the configured model); the user selects it in this node explicitly.",
+        "What fails without it: save-time validation raises UNKNOWN_CREDENTIAL when credential_id is not declared in credentials[]; starting a run is refused (CREDENTIAL_REQUIRED_TO_RUN when no llm_* credential is registered, CREDENTIAL_REBIND_REQUIRED when one is registered but not selected); at the first real call an invalid key surfaces as an LLM authentication error and the agent node fails loudly.",
+        "Match the credential kind to the model string: llm_openai → gpt-4o / gpt-4o-mini, llm_anthropic → claude-*, llm_deepseek → deepseek-*, llm_google → gemini-*. Routing follows the model string; the credential only supplies the key and endpoint, so a mismatch shows up as an authentication error.",
+        "The API key never appears in node outputs or logs: the executor keeps it in the execution context's secret store and emits a connection with api_key=null; api_key is masked on every external boundary.",
         "Configurable model ID, temperature (0.0-2.0), max_tokens, seed (for reproducibility), and streaming flag",
         "Connects to AIAgentNode via 'ai_model' edge type — NOT a 'main' edge",
         "One LLMModelNode can supply multiple AIAgentNodes (fan-out pattern, each agent gets its own connection context)",
@@ -187,7 +193,7 @@ class LLMModelNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "LLMModelNode requires a credential_id referencing a valid LLM credential (llm_openai, llm_anthropic, llm_deepseek, or llm_google). Set model to the exact model ID for the provider. No data input is needed — this node only establishes the API connection.",
+        "input_handling": "credential_id is mandatory and fixed (no expressions). It must reference a registered credential of kind llm_openai, llm_anthropic, llm_deepseek or llm_google whose api_key the user entered themselves; until the user registers and selects such a key the workflow can be built and saved but not run. Set model to the exact model ID for that provider. No data input is needed — this node only establishes the API connection.",
         "output_consumption": "The 'connection' output port uses edge type 'ai_model', NOT 'main'. Connect it to AIAgentNode's ai_model input. The connection object is not a data value — it is an internal LLM client handle passed to the agent.",
         "common_combinations": [
             "LLMModelNode → AIAgentNode (ai_model edge) — always paired",
@@ -351,6 +357,9 @@ class AIAgentNode(BaseNode):
         ],
     }
     _features: ClassVar[List[str]] = [
+        "Needs an AI API key indirectly: AIAgentNode has no credential field of its own. It calls the LLM only through the LLMModelNode wired by an 'ai_model' edge, and that LLMModelNode must be bound to a registered llm_* credential holding the user's AI provider API key.",
+        "Every real execution spends the user's own AI provider quota (token usage is reported per call); the user must register their OpenAI / Anthropic / DeepSeek / Google Gemini API key before the workflow can run. Building, validating and saving do not require it, and validation replay never calls the LLM.",
+        "Without a bound key the run never starts: run/deploy is refused with CREDENTIAL_REQUIRED_TO_RUN (key not registered) or CREDENTIAL_REBIND_REQUIRED (registered but not selected in the LLMModelNode); without an ai_model edge at all the workflow fails static validation ('no LLM model connected').",
         "Stateless per execution — no conversation memory. Current data is fetched via tool calls each cycle.",
         "Tool edges: any node connected via 'tool' edge type becomes an LLM-callable function. All connected tools are passed to the LLM; tool selection is handled by the LLM's own reasoning.",
         "Four output formats: text (raw string), json (parsed dict), structured (Pydantic-validated against output_schema)",

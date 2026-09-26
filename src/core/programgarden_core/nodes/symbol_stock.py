@@ -126,10 +126,10 @@ class OverseasStockSymbolQueryNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {"id": "symbols", "type": "OverseasStockSymbolQueryNode", "country": "US", "max_results": 100},
-                    {"id": "split", "type": "SplitNode", "items": "{{ nodes.symbols.symbols }}"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': '{{ nodes.symbols.symbols }}'},
                     {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
                     {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
-                ],
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
                     {"from": "start", "to": "broker"},
                     {"from": "broker", "to": "symbols"},
@@ -137,7 +137,7 @@ class OverseasStockSymbolQueryNode(BaseNode):
                     {"from": "split", "to": "fundamental"},
                     {"from": "broker", "to": "fundamental"},
                     {"from": "fundamental", "to": "display"},
-                ],
+                {'from': 'display', 'to': 'split_results'}],
                 "credentials": [
                     {
                         "credential_id": "broker_cred",

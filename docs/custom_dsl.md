@@ -301,6 +301,7 @@ WebSocket으로 실시간 시세를 수신합니다.
 | `order_id` | string | ✅ | 대상 주문 ID (예: `OverseasStockOpenOrdersNode.orders[].order_id`) |
 | `new_price` | number | ❌ | 변경할 가격 (표현식으로 현재가 기반 계산 가능) |
 | `new_quantity` | integer | ❌ | 변경할 수량 |
+| `price_type` | enum | ❌ | 호가 유형 (해외주식): `limit`(지정가·기본) / `market`(시장가). 정정 TR(COSAT00311)도 시장가 지원. 저수준 `price_type_code`(`"00"`/`"03"`) 오버라이드 가능하며 명시 시 우선(둘을 함께 주고 유형이 다르면 거부) |
 
 > ConditionNode 의 `TrailingStop` (포지션 기반 추적 손절) 과 ModifyOrderNode 는 별개의 개념입니다. 가격 추적 정정 로직은 실시간 시세 + 표현식으로 `new_price` 를 계산하여 직접 구현하세요.
 

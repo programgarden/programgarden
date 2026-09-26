@@ -33,7 +33,9 @@ except ImportError:
     _COMMUNITY_AVAILABLE = False
 
 
-TARGET_NODE_COUNT = 74
+# Sanity floor for the registered-node count (exact count lives in
+# test_node_schema_completeness.py). 3.0.0 removed 4 nodes: total 77 → 73.
+TARGET_NODE_COUNT = 70
 
 
 def _all_types() -> List[str]:
