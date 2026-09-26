@@ -1,3 +1,14 @@
+## [2.4.0] - 2026-09-26
+
+### Changed
+- ScheduleNode: `max_duration_hours` and `count` are optional (default None).
+  Omitting both means the schedule runs until the workflow is stopped (owner
+  decision 2026-09-26: when the investor names no duration, a recurring check
+  keeps running instead of quietly ending after 24 h / 1000 cycles). A provided
+  value is still enforced as a cap (`max_duration_hours` > 0, `count` >= 1) and
+  the 720 h `max_value` on `max_duration_hours` is gone. The catalog usage,
+  features and node guide say so, so an authoring model stops inventing bounds.
+
 ## [2.3.0] - 2026-09-25
 
 ### Added

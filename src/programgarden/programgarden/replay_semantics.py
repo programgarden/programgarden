@@ -349,8 +349,9 @@ def _time_rules(node_type: str, role: str) -> List[Dict[str, Any]]:
             {"id": "timezone_iana", "field": "timezone",
              "default": "America/New_York", "invalid": "replay_rejects"},
             {"id": "disabled_emits_nothing", "field": "enabled"},
-            {"id": "limits", "count": {"default": 1000, "min": 1},
-             "max_duration_hours": {"default": 24.0, "gt": 0}, "pin": "range_not_const"},
+            {"id": "limits", "optional": True, "absent_means": "unbounded",
+             "count": {"default": None, "min": 1},
+             "max_duration_hours": {"default": None, "gt": 0}, "pin": "range_not_const"},
         ]
     if node_type == "SessionGateNode":
         return [{"id": "evaluate_at_fixture_instant"}]   # validation_replay.py:276-283
@@ -607,8 +608,10 @@ def _schedule_time_lines(lines: List[str]) -> None:
     lines.append("A recorded tick must equal the cron's next firing instant after "
                  "the prior frame in this timezone: a whole minute, at least one "
                  "minute later.")
-    lines.append("count and max_duration_hours are safety limits (defaults 1000 and "
-                 "24.0); a contract bounds them with a range, never a const.")
+    lines.append("count and max_duration_hours are optional safety limits; omit both "
+                 "and the schedule runs until the workflow is stopped. When provided, "
+                 "count must be >= 1 and max_duration_hours > 0, and a contract bounds "
+                 "them with a range, never a const.")
     lines.append("Set the cron time in the target market's timezone. Market "
                  "operating hours by product:")
     pe = product_execution()

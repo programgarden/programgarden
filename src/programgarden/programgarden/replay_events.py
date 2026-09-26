@@ -128,7 +128,13 @@ async def replay_events(job, runner, fixture, outcome):
             if now != expected:
                 raise ContractViolation(source_id, "Recorded tick is not the next configured cron instant")
             count = schedule_counts.get(source_id, 0) + 1
-            if count > config.get("count", 1000) or (now - origin).total_seconds() > config.get("max_duration_hours", 24.0) * 3600:
+            # count / max_duration_hours are optional (None/absent = unbounded,
+            # run until the workflow is stopped). Only enforce a bound that was set.
+            cfg_count = config.get("count")
+            cfg_max_dur = config.get("max_duration_hours")
+            if (cfg_count is not None and count > cfg_count) or (
+                cfg_max_dur is not None and (now - origin).total_seconds() > cfg_max_dur * 3600
+            ):
                 raise ContractViolation(source_id, "Recorded ticks exceed schedule safety limits")
             schedule_instants[source_id], schedule_counts[source_id] = now, count
         else:
