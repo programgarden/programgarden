@@ -4125,6 +4125,41 @@ class BrokerNodeExecutor(NodeExecutorBase):
     #  시간 분포가 아니다 — LS 측 복구 시간은 우리가 관측한 적 없다.)
     _FILL_SUBSCRIPTION_LOGIN_RETRY_DELAYS = (2.0, 5.0)
 
+    @staticmethod
+    def _on_workflow_loop(context: ExecutionContext, callback):
+        """Route broker thread callbacks to the loop that owns this workflow.
+
+        The SDK dispatches synchronous websocket listeners in a thread pool.
+        Create notification coroutines only after reaching the owning loop, so
+        shutdown cannot leave an unawaited coroutine or mutate task registries
+        from a broker thread.
+        """
+        loop = asyncio.get_running_loop()
+
+        def deliver(value):
+            if not context.is_shutdown:
+                callback(value)
+
+        def dispatch(value):
+            if context.is_shutdown or loop.is_closed():
+                return
+            try:
+                current = asyncio.get_running_loop()
+            except RuntimeError:
+                current = None
+            if current is loop:
+                deliver(value)
+            else:
+                try:
+                    loop.call_soon_threadsafe(deliver, value)
+                except RuntimeError:
+                    # The owning loop may close between the check and enqueue.
+                    # No coroutine has been created on this path.
+                    if not loop.is_closed():
+                        raise
+
+        return dispatch
+
     def _start_background_task(
         self, context: ExecutionContext, coroutine, *, notification: bool = False,
     ) -> Optional[asyncio.Task]:
@@ -5052,6 +5087,8 @@ class BrokerNodeExecutor(NodeExecutorBase):
                                 order_date=order_date,
                                 symbol=symbol,
                                 exchange='FUTURES',
+                                # TC3 supplies its unit; keep absent/blank evidence unknown.
+                                currency=getattr(body, 'crncy_cd', None),
                                 side=side,
                                 quantity=quantity,
                                 price=price,
@@ -5577,6 +5614,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 notification=True,
             )
 
+        on_pnl_change = self._on_workflow_loop(context, on_pnl_change)
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
 
@@ -5655,6 +5693,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 notification=True,
             )
 
+        on_pnl_change = self._on_workflow_loop(context, on_pnl_change)
         tracker.on_account_pnl_change(on_pnl_change)
         tracker.on_balance_change(lambda _: on_pnl_change(tracker.get_account_pnl()))
         await tracker.start()
@@ -5703,6 +5742,7 @@ class BrokerNodeExecutor(NodeExecutorBase):
                 notification=True,
             )
 
+        on_pnl_change = self._on_workflow_loop(context, on_pnl_change)
         tracker.on_account_pnl_change(on_pnl_change)
         await tracker.start()
 

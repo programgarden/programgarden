@@ -1,5 +1,6 @@
 """Exercise the real broker callback and listeners without network access."""
 
+import asyncio
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -34,7 +35,7 @@ def position(currency="HKD", amount=Decimal("100"), **changes):
     return SimpleNamespace(**(values | changes))
 
 
-async def callback_event(positions, *, balance_only=False, snapshot=None, batch=None):
+async def callback_event(positions, *, balance_only=False, snapshot=None, batch=None, broker_thread=False):
     events = []
 
     async def observe(event):
@@ -67,10 +68,13 @@ async def callback_event(positions, *, balance_only=False, snapshot=None, batch=
     ))
     executor = BrokerNodeExecutor()
     await executor._start_overseas_futures_tracker(ls, "broker", "overseas_futures", "ls", context)
-    if balance_only:
-        balance_callback(None)
+    invoke = balance_callback if balance_only else callback
+    value = None if balance_only else SimpleNamespace(currency="USD")
+    if broker_thread:
+        await asyncio.to_thread(invoke, value)
+        await asyncio.sleep(0)
     else:
-        callback(SimpleNamespace(currency="USD"))  # A stale aggregate label must not win.
+        invoke(value)
     await executor.cleanup_fill_subscriptions(context.job_id)
     assert len(events) == 2
     assert events[1].competition_start_date == "20260909"
@@ -235,3 +239,44 @@ async def test_futures_product_guard_does_not_require_repeated_position_product(
     assert events[0].account_total_pnl_amount is None
     assert events[0].competition_account_pnl_amount is None
     assert events[0].currency is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("balance_only", [True, False])
+async def test_broker_thread_delivers_currency_scoped_snapshot(balance_only):
+    events = await callback_event(
+        {"HMH_SYNTHETIC": position()}, balance_only=balance_only, broker_thread=True,
+        snapshot={"rows": [{"equity": Decimal("100"), "currency": "HKD"}]},
+    )
+    assert all(event.pnl_by_currency["HKD"]["total_pnl_amount"] == 100 for event in events)
+    assert all(event.account_snapshot["rows"][0]["equity"] == 100 for event in events)
+
+
+@pytest.mark.asyncio
+async def test_queued_broker_callback_does_not_publish_after_shutdown():
+    import threading
+
+    context = ExecutionContext(job_id="late-callback", workflow_id="late-workflow")
+    delivered = []
+    callback = BrokerNodeExecutor._on_workflow_loop(context, delivered.append)
+    thread = threading.Thread(target=callback, args=("queued-before-shutdown",))
+    # Keep the owning loop occupied until the foreign thread has enqueued.
+    thread.start()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    context._shutdown = True
+    await asyncio.sleep(0)
+    await asyncio.to_thread(callback, "after-shutdown")
+    assert delivered == []
+
+
+def test_broker_callback_after_loop_close_creates_no_coroutine():
+    context = ExecutionContext(job_id="closed-loop", workflow_id="closed-workflow")
+    delivered = []
+
+    async def register():
+        return BrokerNodeExecutor._on_workflow_loop(context, delivered.append)
+
+    callback = asyncio.run(register())
+    callback("late-frame")
+    assert delivered == []

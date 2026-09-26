@@ -144,6 +144,10 @@ class FuturesAccountTracker:
         
         # Task 관리
         self._refresh_task: Optional[asyncio.Task] = None
+        self._order_refresh_task: Optional[asyncio.Task] = None
+        self._order_refresh_pending = False
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._fetch_lock = asyncio.Lock()
         self._is_running = False
         
         # 에러 상태 저장 (서버 오류 등)
@@ -154,6 +158,7 @@ class FuturesAccountTracker:
         if self._is_running:
             return
         
+        self._event_loop = asyncio.get_running_loop()
         self._is_running = True
         
         # 1. 종목 명세 초기화 (o3121 호출)
@@ -191,6 +196,15 @@ class FuturesAccountTracker:
                 pass
             self._refresh_task = None
         
+        self._order_refresh_pending = False
+        if self._order_refresh_task:
+            self._order_refresh_task.cancel()
+            try:
+                await self._order_refresh_task
+            except asyncio.CancelledError:
+                pass
+            self._order_refresh_task = None
+
         # 종목 명세 갱신 중지
         await self._spec_manager.stop()
         
@@ -198,6 +212,11 @@ class FuturesAccountTracker:
         await self._cleanup_subscriptions()
     
     async def _fetch_all_data(self):
+        """Serialize periodic and event-triggered account reads."""
+        async with self._fetch_lock:
+            await self._fetch_all_data_locked()
+
+    async def _fetch_all_data_locked(self):
         """모든 데이터 조회 (보유포지션, 예수금, 미체결)"""
         # 보유포지션 조회 (CIDBQ01500)
         await self._fetch_positions()
@@ -611,7 +630,7 @@ class FuturesAccountTracker:
         ovc.on_ovc_message(self._on_tick_received)
     
     async def _setup_order_subscriptions(self):
-        """주문 이벤트 구독 (TC1/TC2)"""
+        """Subscribe confirmations and actual fills; neither is a balance snapshot."""
         if not self._real_client:
             return
         
@@ -619,6 +638,7 @@ class FuturesAccountTracker:
             # TC2: 주문확인/거부
             tc2 = self._real_client.TC2()
             tc2.on_tc2_message(self._on_order_event)
+            self._real_client.TC3().on_tc3_message(self._on_order_event)
         except Exception:
             pass
     
@@ -627,8 +647,15 @@ class FuturesAccountTracker:
         if not self._real_client:
             return
         
+        for name in ("TC2", "TC3"):
+            try:
+                stream = getattr(self._real_client, name)()
+                getattr(stream, f"on_remove_{name.lower()}_message")(self._on_order_event)
+            except Exception:
+                pass
         try:
             ovc = self._real_client.OVC()
+            ovc.on_remove_ovc_message(self._on_tick_received)
             await self._subscription_manager.clear_all(
                 unsubscribe_fn=lambda s: ovc.remove_ovc_symbols([s])
             )
@@ -667,23 +694,41 @@ class FuturesAccountTracker:
             logger.error(f"[_on_tick_received] 틱 처리 오류: {e}")
     
     def _on_order_event(self, resp):
-        """주문 이벤트 수신 → 체결 시 재조회"""
+        """Requery after TC2 confirmation or TC3 fill on the owning event loop.
+
+        The SDK invokes synchronous websocket listeners from a worker thread.
+        A burst marks one pending refresh; an event during a read schedules one
+        follow-up read instead of losing the newer balance change.
+        """
+        body = getattr(resp, "body", None)
+        if getattr(body, "svc_id", "") not in {"HO02", "CH01"}:
+            return
+        loop = self._event_loop
+        if not self._is_running or loop is None or loop.is_closed():
+            return
+
+        def schedule():
+            if not self._is_running:
+                return
+            self._order_refresh_pending = True
+            if self._order_refresh_task is None or self._order_refresh_task.done():
+                self._order_refresh_task = loop.create_task(self._delayed_refresh())
+
         try:
-            # HO02: 체결확인
-            service_id = getattr(resp.body, 'svcId', '')
-            
-            if service_id == 'HO02':
-                logger.info("[_on_order_event] 체결 이벤트 수신, 재조회 예약")
-                asyncio.create_task(self._delayed_refresh())
-                
-        except Exception as e:
-            logger.error(f"[_on_order_event] 주문 이벤트 처리 오류: {e}")
-    
+            loop.call_soon_threadsafe(schedule)
+        except RuntimeError:
+            if not loop.is_closed():
+                raise
+
     async def _delayed_refresh(self):
-        """체결 후 지연 재조회"""
-        await asyncio.sleep(self.DEFAULT_ORDER_DELAY)
-        await self._fetch_all_data()
-    
+        """Coalesce account notifications without overlapping account queries."""
+        while self._is_running and self._order_refresh_pending:
+            await asyncio.sleep(self.DEFAULT_ORDER_DELAY)
+            if not self._is_running:
+                return
+            self._order_refresh_pending = False
+            await self._fetch_all_data()
+
     async def _periodic_refresh(self):
         """주기적 갱신"""
         while self._is_running:
