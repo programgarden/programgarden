@@ -1,3 +1,16 @@
+## [2.4.1] - 2026-09-27
+
+### Fixed
+- `MISSING_REQUIRED_BROKER` now names the broker node of the node's *own* product
+  scope. Up to 2.4.0 every non-`overseas_stock` scope was labelled
+  `overseas_futures` / `OverseasFuturesBrokerNode`, so a `KoreaStockAccountNode`
+  without an upstream broker was told to "Add OverseasFuturesBrokerNode" (and the
+  AI authoring loop followed that advice). The message now reads
+  `requires a korea_stock broker` with `Add KoreaStockBrokerNode …`, and
+  `details.expected_broker_node` carries the same scope-correct name
+  (`programgarden/resolver.py`, `_BROKER_NODE_BY_SCOPE`). Regression test:
+  `tests/test_missing_required_broker_label.py`.
+
 ## [2.4.0] - 2026-09-26
 
 ### Changed

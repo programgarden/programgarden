@@ -8,6 +8,14 @@ deterministic self-correction without parsing free-form strings.
 
 from typing import Optional, List, Dict, Any, Set, Tuple
 
+# product_scope 값 → 그 스코프의 브로커 노드 타입. MISSING_REQUIRED_BROKER 안내에 쓴다.
+# (ProductScope.ALL 은 브로커가 필요 없으므로 없다.)
+_BROKER_NODE_BY_SCOPE: Dict[str, str] = {
+    "overseas_stock": "OverseasStockBrokerNode",
+    "overseas_futures": "OverseasFuturesBrokerNode",
+    "korea_stock": "KoreaStockBrokerNode",
+}
+
 from programgarden_core import (
     ErrorCode,
     ErrorInfo,
@@ -1663,8 +1671,11 @@ class WorkflowResolver:
 
             # product_scope match
             if scope.value not in available_brokers:
-                product_label = "overseas_stock" if scope == ProductScope.STOCK else "overseas_futures"
-                broker_node = "OverseasStockBrokerNode" if scope == ProductScope.STOCK else "OverseasFuturesBrokerNode"
+                # 스코프별 브로커 노드 매핑. 2.4.0 까지는 STOCK 이 아닌 모든 스코프를 해외선물로
+                # 표기해 국내주식 노드에 "OverseasFuturesBrokerNode 를 추가하라" 고 안내했다
+                # (AI 저작 루프가 그 말을 믿고 헤맴 — 2026-09-27 dev smoke).
+                product_label = scope.value
+                broker_node = _BROKER_NODE_BY_SCOPE.get(scope, "OverseasFuturesBrokerNode")
                 result.add(
                     build_error(
                         ErrorCode.MISSING_REQUIRED_BROKER,
