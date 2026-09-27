@@ -289,16 +289,3 @@ example. Print each tick as it arrives and handle reconnect cleanly.
 ````
 
 </details>
-
-
-## Retained performance evidence
-
-Engine 1.37.8 preserves explicit broker currency for retained stock fills.
-See [realized PnL currency evidence](docs/realized-pnl-currency.md) for migration,
-AS1/REST provenance, validation and unavailable historical/account-wide amounts.
-
-The [futures entry evidence contract](docs/futures-entry-evidence.md) documents
-contract-specific orderable quantity, observed quote ticks and fail-closed
-account reads introduced by engine1.39.0.
-
-Execution contracts: [Session gates and guarded Split](docs/session-gates-and-guarded-split.md).
