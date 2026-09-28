@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any, Type
 from pydantic import BaseModel, Field
 
 from programgarden_core.nodes.base import BaseNode, NodeCategory, InputPort, OutputPort, ProductScope, BrokerProvider
-from programgarden_core.i18n import translate_schema, translate_category
+from programgarden_core.i18n import translate_schema, translate_category, t
 
 
 class NodeTypeSchema(BaseModel):
@@ -110,6 +110,26 @@ class NodeTypeSchema(BaseModel):
             "request, iteration, reruns_on, emits_events, on_event, output_ports, "
             "dead_ports, internal_ports, reserved_output_ports, gating, order, "
             "time_rules, venue."
+        ),
+    )
+    connection: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Credential/connection declaration — one place the chatbot, editor "
+            "and validator read a node's credential need. Built by the core "
+            "registry from the node's `_connection` ClassVar + its credential "
+            "field's `credential_types` (locale-independent: both label_ko and "
+            "label_en are always present). None when the node needs no credential "
+            "of its own — broker-connected nodes (market data / account / order) "
+            "inherit their upstream broker's connection and declare nothing. "
+            "Keys (all present when set): types (== credential_types), purpose "
+            "(trading|data|ai|notify), need (run|validate|optional; run = needed "
+            "only to execute, validate = also needed for real-response "
+            "validation), when (always|auth_required|never; auth_required = only "
+            "when the node config marks the API authenticated), label_ko, "
+            "label_en (plain user-facing names), presets (HTTPRequestNode only; "
+            "[] elsewhere), missing (draft = may be saved without it and the run "
+            "gate blocks; block = must exist before build)."
         ),
     )
 
@@ -388,6 +408,14 @@ class NodeTypeRegistry:
 
         config_schema = self._build_config_schema(node_class, type_name)
 
+        # 연결(자격증명) 선언 직렬화 (_connection ClassVar → 챗봇/편집기/검증기 공용 dict).
+        # types 는 노드의 credential 필드가 export 한 credential_types 에서 그대로 뽑아
+        # 항상 동기화한다(별도 선언 안 함). label_ko/label_en 은 i18n 키를 양 언어로
+        # 즉시 해석해 locale-독립적으로 둘 다 싣는다(포트/설명과 달리 get_schema(locale)
+        # 재번역에 의존하지 않음). credential 필드가 없거나 _connection 미선언이면 None
+        # (브로커 연결을 상속하는 시세/계좌/주문 노드는 자기 선언이 없다).
+        connection = self._build_connection(node_class, config_schema)
+
         # Display 노드의 런타임 데이터 스키마
         display_data_schema = getattr(node_class, '_display_data_schema', None)
 
@@ -423,6 +451,7 @@ class NodeTypeRegistry:
             outputs=outputs,
             config_schema=config_schema,
             display_data_schema=display_data_schema,
+            connection=connection,
             connection_rules=serialized_connection_rules,
             rate_limit=serialized_rate_limit,
             usage=getattr(node_class, "_usage", None),
@@ -462,6 +491,45 @@ class NodeTypeRegistry:
             result.append(port_dict)
 
         return result
+
+    # 닫힌 값 집합 — 잘못된 선언을 조기에 잡는다(테스트에서도 이 집합으로 검증).
+    _CONNECTION_PURPOSES = ("trading", "data", "ai", "notify")
+    _CONNECTION_NEEDS = ("run", "validate", "optional")
+    _CONNECTION_WHENS = ("always", "auth_required", "never")
+    _CONNECTION_MISSINGS = ("draft", "block")
+
+    def _build_connection(
+        self, node_class: Type[BaseNode], config_schema: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """`_connection` ClassVar + credential_types → 공용 connection 선언.
+
+        모든 키가 항상 존재한다. `types` 는 config_schema 안 credential 필드가 export 한
+        `credential_types` 의 합집합이라 선언과 어긋나지 않는다. `label_ko`/`label_en` 은
+        `label_key` i18n 키를 양 언어로 해석해 둘 다 싣는다(locale-독립).
+        """
+        decl = getattr(node_class, "_connection", None)
+        if not decl:
+            return None
+
+        cred_types: List[str] = []
+        for field_cfg in config_schema.values():
+            if not isinstance(field_cfg, dict):
+                continue
+            for ct in field_cfg.get("credential_types") or []:
+                if ct not in cred_types:
+                    cred_types.append(ct)
+
+        label_key = decl.get("label_key", "")
+        return {
+            "types": cred_types,
+            "purpose": decl["purpose"],
+            "need": decl["need"],
+            "when": decl["when"],
+            "label_ko": t(label_key, "ko") if label_key else "",
+            "label_en": t(label_key, "en") if label_key else "",
+            "presets": [dict(p) for p in decl.get("presets", [])],
+            "missing": decl["missing"],
+        }
 
     def _build_config_schema(self, node_class: Type[BaseNode], node_type: str) -> Dict[str, Any]:
         """
@@ -515,6 +583,20 @@ class NodeTypeRegistry:
             translated = translate_schema(schema_dict, locale=locale)
             return NodeTypeSchema(**translated)
         return schema
+
+    def connection_declaration(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """이 노드가 필요로 하는 자격증명/연결 선언(챗봇·편집기·검증기 공용).
+
+        credential 이 필요 없는 노드(브로커 연결을 상속하는 시세/계좌/주문 등)는 None.
+        반환 dict 는 복사본이라 호출부가 수정해도 캐시에 영향 없다.
+        """
+        schema = self._schemas.get(node_type)
+        if schema is None or schema.connection is None:
+            return None
+        conn = dict(schema.connection)
+        conn["types"] = list(conn.get("types", []))
+        conn["presets"] = [dict(p) for p in conn.get("presets", [])]
+        return conn
 
     def list_types(self, category: Optional[str] = None) -> List[str]:
         """List registered node types"""

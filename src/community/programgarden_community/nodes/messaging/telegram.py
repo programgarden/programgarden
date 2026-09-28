@@ -46,6 +46,17 @@ class TelegramNode(BaseMessagingNode):
     """
     
     type: Literal["TelegramNode"] = "TelegramNode"
+
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. 텔레그램 봇 토큰은 발송에 필요하다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "notify",
+        "need": "run",
+        "when": "always",
+        "label_key": "connection.TelegramNode.label",
+        "presets": [],
+        "missing": "draft",
+    }
+
     description: str = "Send Telegram messages using a registered bot token and receiving chat ID; key-free drafts can be saved before linking credentials."
     
     # 노드 아이콘 (텔레그램 로고)

@@ -81,6 +81,19 @@ class OverseasStockBrokerNode(BaseBrokerNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. types 는 credential_id 필드의
+    # credential_types 에서 자동 추출된다. 이 계좌를 상속하는 시세/계좌/주문 노드는
+    # 자기 선언 없이 이 브로커 연결을 물려받는다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "trading",
+        "need": "run",
+        "when": "always",
+        "label_key": "connection.OverseasStockBrokerNode.label",
+        "presets": [],
+        "missing": "draft",
+    }
+
+
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
             "Every workflow that reads overseas stock market data, account state, or places orders",
@@ -283,6 +296,19 @@ class OverseasFuturesBrokerNode(BaseBrokerNode):
     _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
 
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. types 는 credential_id 필드의
+    # credential_types 에서 자동 추출된다. 이 계좌를 상속하는 시세/계좌/주문 노드는
+    # 자기 선언 없이 이 브로커 연결을 물려받는다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "trading",
+        "need": "run",
+        "when": "always",
+        "label_key": "connection.OverseasFuturesBrokerNode.label",
+        "presets": [],
+        "missing": "draft",
+    }
+
+
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
             "Every overseas futures workflow — CME ES / NQ, SGX Nikkei, HKEX HSI mini, etc.",
@@ -444,6 +470,19 @@ class KoreaStockBrokerNode(BaseBrokerNode):
     _img_url: ClassVar[str] = ""
     _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
     _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. types 는 credential_id 필드의
+    # credential_types 에서 자동 추출된다. 이 계좌를 상속하는 시세/계좌/주문 노드는
+    # 자기 선언 없이 이 브로커 연결을 물려받는다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "trading",
+        "need": "run",
+        "when": "always",
+        "label_key": "connection.KoreaStockBrokerNode.label",
+        "presets": [],
+        "missing": "draft",
+    }
+
 
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [

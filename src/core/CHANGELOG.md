@@ -12,8 +12,27 @@
   `results` entry. The node version is 1.1.0 and both locales carry
   `ports.http_results`. The per-item iteration itself lives in the
   `programgarden` engine 2.5.0.
+- `connection` declaration on every node schema that has `credential_types` —
+  one place the chatbot, editor and validator read a node's credential need
+  (owner decision 2026-09-28). Built by the registry from a node `_connection`
+  ClassVar + its credential field's `credential_types`. Keys (all always
+  present): `types` (== credential_types), `purpose`
+  (trading/data/ai/notify), `need` (run/validate/optional), `when`
+  (always/auth_required/never), `label_ko`, `label_en` (locale-independent,
+  both present; via `connection.<Node>.label` i18n keys), `presets`
+  (HTTPRequestNode → FMP/Finnhub `http_query`; `[]` elsewhere), `missing`
+  (draft/block). Brokers → trading/run/always, HTTPRequestNode →
+  data/validate/auth_required, LLMModelNode → ai/run/always, TelegramNode →
+  notify/run/always. Broker-connected nodes (market data/account/order) inherit
+  the broker connection and declare nothing (`connection` is None). New registry
+  helper `NodeTypeRegistry.connection_declaration(node_type) -> dict | None`.
+- HTTPRequestNode `auth_required` config field (`Optional[bool]`, default None =
+  the chatbot decides; True = private API needs a credential, False = public).
+  `connection.when="auth_required"` references it. i18n:
+  `fields.HTTPRequestNode.auth_required`.
 
 ## [2.4.0] - 2026-09-26
+
 
 ### Changed
 - ScheduleNode: `max_duration_hours` and `count` are optional (default None).

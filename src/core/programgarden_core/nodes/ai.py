@@ -42,6 +42,17 @@ class LLMModelNode(BaseNode):
     type: Literal["LLMModelNode"] = "LLMModelNode"
     category: NodeCategory = NodeCategory.AI
 
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. AI 모델 키는 실행에 반드시 필요하다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "ai",
+        "need": "run",
+        "when": "always",
+        "label_key": "connection.LLMModelNode.label",
+        "presets": [],
+        "missing": "draft",
+    }
+
+
     # === LLM 설정 ===
     credential_id: Optional[str] = Field(
         default=None,

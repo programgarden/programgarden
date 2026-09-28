@@ -552,6 +552,24 @@ class HTTPRequestNode(BaseNode):
         on_throttle="skip",
     )
 
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. HTTP 는 인증형 API 일 때만 키가
+    # 필요(when=auth_required, auth_required 설정 참조)하고, 실제 응답 검증에도 필요해
+    # need=validate 다. FMP/Finnhub 는 http_query 프리셋으로 param_name 을 잡아준다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "data",
+        "need": "validate",
+        "when": "auth_required",
+        "label_key": "connection.HTTPRequestNode.label",
+        "presets": [
+            {"id": "fmp", "label": "FMP", "type": "http_query",
+             "fields": {"param_name": "apikey"}},
+            {"id": "finnhub", "label": "Finnhub", "type": "http_query",
+             "fields": {"param_name": "token"}},
+        ],
+        "missing": "draft",
+    }
+
+
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
         default="GET",
@@ -572,6 +590,15 @@ class HTTPRequestNode(BaseNode):
 
     # === SETTINGS: 부가 설정 ===
     timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
+
+    # 이 API 가 인증이 필요한가(비공개 키). None = 챗봇이 판단(기본) — 문맥으로 결정한다.
+    # True = 인증 필요(credential 없으면 검증/실행 불가), False = 공개 API(credential 불필요).
+    # 기본값을 False 로 두면 비공개 API 에 위험하므로 None(미지정)으로 둔다.
+    # `connection.when="auth_required"` 가 이 값을 참조한다.
+    auth_required: Optional[bool] = Field(
+        default=None,
+        description="Does this API require authentication? None = chatbot decides (default), True = auth required, False = public.",
+    )
 
     # === Resilience: 재시도/실패 처리 (H-21: HTTP 요청은 기본 재시도 활성화) ===
     resilience: ResilienceConfig = Field(
@@ -832,6 +859,16 @@ class HTTPRequestNode(BaseNode):
                 max_value=300,
                 group="advanced",
             ),
+            "auth_required": FieldSchema(
+                name="auth_required", type=FieldType.BOOLEAN, required=False,
+                description="i18n:fields.HTTPRequestNode.auth_required",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=True,
+                expected_type="bool",
+                group="advanced",
+            ),
+
             # === RESILIENCE: 재시도/실패 처리 (단순화된 UI) ===
             "resilience": FieldSchema(
                 name="resilience", type=FieldType.OBJECT, required=False,

@@ -31,7 +31,13 @@
   HTTPRequestNode as `per_item` gated on `config_references_item_binding`, with
   per-item outcomes on the `results` port, so the AI's execution guidance is
   correct.
+- The AI node catalog (`tools.registry_tools.get_node_schema` /
+  `list_node_types`, read by pg-ai `load_catalog` and dsl-api `/get_node_types`)
+  now carries the core `connection` credential declaration per node
+  (programgarden-core 2.5.0) — no engine code change; it flows through the
+  schema `model_dump`.
 - deps: programgarden-core ^2.5.0.
+
 
 ### Fixed
 - Deliver brokerage PnL callbacks on the workflow event loop, including SDK websocket worker-thread notifications and shutdown races.
