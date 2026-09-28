@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("programgarden.retry_executor")
 
+# dry_run/검증 실행은 대략 60초 빌드 예산 안에서 끝나야 한다. 429 백오프(특히 서버가
+# 준 큰 Retry-After)가 이 예산을 잡아먹지 않도록, dry_run 에서는 재시도 1회 대기를 이
+# 값으로 상한한다. max_retries(기본 3) × 이 값 ≪ 60초이므로, 상한을 넘겨도 해당 항목만
+# 실패로 기록되고(호출부의 per-item try 가 잡음) 다음 항목으로 넘어간다 — 전체 실패 X.
+DRY_RUN_MAX_RETRY_WAIT_SEC: float = 5.0
+
 
 class RetryExecutor:
     """
@@ -106,12 +112,19 @@ class RetryExecutor:
                     )
                     break
 
-                # 대기 시간 계산 (exponential backoff with jitter)
-                delay = self._calculate_delay(config.retry, attempt)
+                # 대기 시간 계산 (exponential backoff with jitter).
+                # 429 예외가 Retry-After 를 실어 보냈으면 그 값을 백오프 하한으로 존중하고,
+                # dry_run 에서는 빌드 예산을 지키려 대기를 상한한다.
+                retry_after = getattr(e, "retry_after", None)
+                dry_run = bool(getattr(context, "is_dry_run", False))
+                delay = self._calculate_delay(
+                    config.retry, attempt, retry_after=retry_after, dry_run=dry_run
+                )
 
                 logger.info(
                     f"[{node.id}] {error_type.value} 발생, "
                     f"재시도 {attempt}/{config.retry.max_retries}... {delay:.1f}초 후"
+                    + (f" (Retry-After={retry_after:.0f}s)" if retry_after else "")
                 )
 
                 # 재시도 이벤트 발송 (context.notify_retry 사용)
@@ -159,13 +172,23 @@ class RetryExecutor:
         # Fallback 처리
         return self._handle_fallback(node, last_error, config.fallback)
 
-    def _calculate_delay(self, config: RetryConfig, attempt: int) -> float:
+    def _calculate_delay(
+        self,
+        config: RetryConfig,
+        attempt: int,
+        retry_after: Optional[float] = None,
+        dry_run: bool = False,
+    ) -> float:
         """
         대기 시간 계산 (exponential backoff with jitter).
 
         Args:
             config: RetryConfig
             attempt: 현재 시도 횟수 (1부터 시작)
+            retry_after: 서버가 준 Retry-After 대기(초). 있으면 지수 백오프 대기의
+                하한으로 존중한다(429). None 이면 순수 지수 백오프.
+            dry_run: dry_run/검증 실행 여부. True 면 빌드 예산을 지키려 대기를
+                `DRY_RUN_MAX_RETRY_WAIT_SEC` 로 추가 상한한다.
 
         Returns:
             대기 시간 (초)
@@ -183,8 +206,18 @@ class RetryExecutor:
         jitter = delay * 0.25 * (random.random() * 2 - 1)
         delay = delay + jitter
 
-        # max_delay 제한
-        return min(delay, config.max_delay)
+        # Retry-After 존중 — 서버가 요구한 대기보다 짧게 재시도하지 않는다.
+        if retry_after is not None and retry_after > delay:
+            delay = retry_after
+
+        # max_delay 제한 (Retry-After 가 크더라도 상한을 넘지 않는다)
+        delay = min(delay, config.max_delay)
+
+        # dry_run 은 빌드 예산(≈60초)을 지키려 한 번 대기를 더 짧게 상한한다.
+        if dry_run:
+            delay = min(delay, DRY_RUN_MAX_RETRY_WAIT_SEC)
+
+        return delay
 
     def _handle_fallback(
         self,

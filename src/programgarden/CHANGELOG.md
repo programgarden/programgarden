@@ -1,3 +1,19 @@
+## [2.5.1] - 2026-09-28
+
+### Changed
+- ScheduleNode live scheduler applies the new `jitter_seconds` (core 2.5.1) knob:
+  after the cron-delay wait and before emitting the tick, the executor delays the
+  fire by a random 0..jitter_seconds (clamped to [0, 300]), so many same-cron
+  workflows do not stampede a shared egress IP at the same second. dry_run emits a
+  single tick above this point and exits, so the build budget and replay semantics
+  are unaffected; the cron cadence anchor is unchanged.
+- HTTPRequestNode 429 backoff now honours the server's `Retry-After` header
+  (via core 2.5.1 `RetryExecutor`), and a per-host concurrency cap (default 1,
+  `programgarden_core.nodes.data.HTTP_MAX_CONCURRENCY_PER_HOST`) serialises
+  requests to the same host across the process. During dry_run / validation the
+  per-retry wait is capped so a 429 cannot exhaust the build budget — the item is
+  recorded with an error in the auto-iterate `results` and the loop continues.
+
 ## [2.5.0] - 2026-09-28
 
 ### Added

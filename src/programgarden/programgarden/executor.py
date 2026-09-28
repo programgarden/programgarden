@@ -2257,7 +2257,15 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         # 2026-09-26). A provided value is enforced as a cap in the loop below.
         count = config.get("count")  # None → no cycle cap
         max_duration_hours = config.get("max_duration_hours")  # None → no wall-clock cap
-        
+        # Schedule jitter (owner 2026-09-28): stagger each fire 0..jitter_seconds past
+        # the cron instant so many same-cron workflows do not stampede a shared egress
+        # IP. Clamp to [0, 300]; a non-numeric value falls back to 0 (no jitter).
+        try:
+            jitter_seconds = int(config.get("jitter_seconds", 0) or 0)
+        except (TypeError, ValueError):
+            jitter_seconds = 0
+        jitter_seconds = max(0, min(jitter_seconds, 300))
+
         if not enabled:
             context.log("info", f"Schedule disabled: {cron_expr}", node_id)
             return {"trigger": False}
@@ -2289,6 +2297,7 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         # 백그라운드 스케줄러 태스크
         async def scheduler_task():
             import time as _time
+            import random as _random
             cnt = 0
             start_mono = _time.monotonic()
             # None = unbounded; only compute a wall-clock cap when a bound was set.
@@ -2349,10 +2358,30 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                         sleep_time = min(delay, 1.0)
                         await asyncio.sleep(sleep_time)
                         delay -= sleep_time
-                    
+
                     if not context.is_running:
                         break
-                    
+
+                    # 스케줄 지터 (오너 2026-09-28): 같은 cron 순간을 공유하는 여러
+                    # 워크플로우가 공유 egress IP 로 동시에 몰리는 것을 막으려, 실제 실행을
+                    # cron 순간 이후 0~jitter 초 랜덤 지연한다. cron 케이던스 앵커는 그대로다.
+                    # dry_run 은 위에서 단일 틱 emit 후 break 하므로 여기 도달하지 않는다
+                    # (빌드 예산·replay 의미에 영향 없음).
+                    if jitter_seconds > 0 and context.is_running:
+                        jitter_delay = _random.uniform(0, jitter_seconds)
+                        context.log(
+                            "debug",
+                            f"Schedule jitter: delaying fire by {jitter_delay:.1f}s "
+                            f"(0..{jitter_seconds}s)",
+                            node_id,
+                        )
+                        while jitter_delay > 0 and context.is_running:
+                            sleep_time = min(jitter_delay, 1.0)
+                            await asyncio.sleep(sleep_time)
+                            jitter_delay -= sleep_time
+                        if not context.is_running:
+                            break
+
                     # 스케줄 시간 도달 - 이벤트 발생
                     cnt += 1
                     context.log("info", f"Schedule tick #{cnt}: {cron_expr}", node_id)

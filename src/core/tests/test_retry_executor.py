@@ -9,7 +9,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 
-from programgarden_core.retry_executor import RetryExecutor
+from programgarden_core.retry_executor import RetryExecutor, DRY_RUN_MAX_RETRY_WAIT_SEC
 from programgarden_core.models.resilience import (
     ResilienceConfig,
     RetryConfig,
@@ -371,6 +371,53 @@ class TestDelayCalculation:
         # attempt=10 → 2^9 = 512초 이지만 max_delay=5초로 제한
         delay = executor._calculate_delay(config, 10)
         assert delay <= 5.0 * 1.25  # max_delay + 25% jitter
+
+
+class TestRetryAfterAndDryRunCap:
+    """429 Retry-After 존중 + dry_run 대기 상한 (owner 2026-09-28)."""
+
+    def _cfg(self, **kw):
+        base = dict(enabled=True, base_delay=1.0, exponential_backoff=True, max_delay=120.0)
+        base.update(kw)
+        return RetryConfig(**base)
+
+    def test_retry_after_is_respected_as_floor(self):
+        """Retry-After 가 지수 백오프 대기보다 크면 그 값을 대기 하한으로 쓴다."""
+        executor = RetryExecutor()
+        # attempt=1 → 지수 백오프 ~1s ± jitter. Retry-After=10 이 이를 압도한다.
+        delay = executor._calculate_delay(self._cfg(), 1, retry_after=10.0)
+        assert delay == 10.0
+
+    def test_retry_after_capped_by_max_delay(self):
+        """서버가 준 큰 Retry-After 도 max_delay 를 넘지 않는다."""
+        executor = RetryExecutor()
+        delay = executor._calculate_delay(self._cfg(max_delay=30.0), 1, retry_after=1000.0)
+        assert delay == 30.0
+
+    def test_small_retry_after_does_not_shrink_backoff(self):
+        """Retry-After 가 지수 백오프보다 작으면 백오프를 줄이지 않는다."""
+        executor = RetryExecutor()
+        # attempt=3 → ~4s. Retry-After=1 이면 백오프(>=3s)를 유지.
+        delay = executor._calculate_delay(self._cfg(), 3, retry_after=1.0)
+        assert delay >= 3.0
+
+    def test_dry_run_caps_wait_even_with_large_retry_after(self):
+        """dry_run 은 큰 Retry-After 라도 빌드 예산을 지키려 대기를 상한한다."""
+        executor = RetryExecutor()
+        delay = executor._calculate_delay(self._cfg(), 1, retry_after=1000.0, dry_run=True)
+        assert delay == DRY_RUN_MAX_RETRY_WAIT_SEC
+
+    def test_dry_run_caps_exponential_backoff(self):
+        """Retry-After 가 없어도 dry_run 은 큰 지수 백오프 대기를 상한한다."""
+        executor = RetryExecutor()
+        delay = executor._calculate_delay(self._cfg(), 10, dry_run=True)
+        assert delay <= DRY_RUN_MAX_RETRY_WAIT_SEC
+
+    def test_runtime_not_capped_by_dry_run_bound(self):
+        """실전(dry_run=False)은 dry_run 상한을 적용하지 않는다."""
+        executor = RetryExecutor()
+        delay = executor._calculate_delay(self._cfg(max_delay=30.0), 1, retry_after=20.0, dry_run=False)
+        assert delay == 20.0
 
 
 class TestRetryEvent:

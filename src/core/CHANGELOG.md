@@ -1,3 +1,43 @@
+## [2.5.1] - 2026-09-28
+
+### Added
+- `connection.missing` gains a third value `ask` (owner decision 2026-09-28):
+  the chatbot must ask the user to register the credential before build and only
+  saves a key-free draft when the user explicitly says to proceed without it —
+  distinct from `draft` (silent auto-draft) and `block` (must exist before
+  build). `NodeTypeRegistry._CONNECTION_MISSINGS` now accepts
+  `draft`/`block`/`ask`.
+
+### Changed
+- `LLMModelNode.connection.missing` `draft` → `ask` and
+  `TelegramNode.connection.missing` `draft` → `ask` (owner decision 2026-09-28:
+  when the AI-model key / Telegram bot is absent the chatbot asks the user to
+  register it, drafting only if the user says to go without). Node versions:
+  `LLMModelNode` 1.1.0, `TelegramNode` (community) 1.1.0. Broker / HTTPRequestNode
+  keep `missing='draft'`.
+- HTTPRequestNode external-API protection (owner concern 2026-09-28: on a shared
+  cloud egress IP, per-symbol requests firing at once can get the account
+  blocked):
+  - A 429 now honours the server's `Retry-After` header (delta-seconds or
+    HTTP-date) as the exponential-backoff floor, still capped by
+    `RetryConfig.max_delay`. The 429 exception carries `retry_after`; the
+    `RetryExecutor` respects it. During dry_run / validation the per-retry wait
+    is additionally capped by `DRY_RUN_MAX_RETRY_WAIT_SEC` (5 s) so a rate limit
+    cannot exhaust the ~60 s build budget — the item is recorded with an error
+    and the auto-iterate loop moves to the next item (no whole-run failure).
+  - Per-host concurrency cap `HTTP_MAX_CONCURRENCY_PER_HOST` (default 1): a
+    process-wide, per-(event-loop, host) semaphore lets only one request per host
+    run at a time, so parallel / fan-out requests to the same API queue instead
+    of stampeding. Auto-iterate is already sequential and paced by
+    `rate_limit_interval`. HTTPRequestNode version 1.2.0.
+- ScheduleNode gains an optional `jitter_seconds` field (int, 0..300, default 0):
+  staggers each fire by a random 0..N seconds past the cron instant so many
+  workflows sharing one cron (`0 9 * * *`) do not all hit a shared egress IP at
+  the same second. 0 (default) fires exactly on the instant (unchanged); the cron
+  cadence anchor and replay semantics are not affected (the live executor applies
+  jitter; replay uses schedule_tick fixtures and dry_run never applies it).
+  ScheduleNode version 1.1.0.
+
 ## [2.5.0] - 2026-09-28
 
 ### Added

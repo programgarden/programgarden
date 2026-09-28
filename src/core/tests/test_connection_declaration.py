@@ -18,7 +18,7 @@ except Exception:  # pragma: no cover
 PURPOSES = {"trading", "data", "ai", "notify"}
 NEEDS = {"run", "validate", "optional"}
 WHENS = {"always", "auth_required", "never"}
-MISSINGS = {"draft", "block"}
+MISSINGS = {"draft", "block", "ask"}
 KEYS = {"types", "purpose", "need", "when", "label_ko", "label_en", "presets", "missing"}
 
 
@@ -125,6 +125,8 @@ def test_broker_connections():
 def test_llm_connection():
     conn = _reg().get_schema("LLMModelNode").connection
     assert conn["purpose"] == "ai" and conn["need"] == "run" and conn["when"] == "always"
+    # 오너 결정 2026-09-28: 키 없으면 챗봇이 등록을 묻는다("draft" 아님).
+    assert conn["missing"] == "ask"
     assert conn["label_ko"] == "AI 모델 키" and conn["label_en"] == "AI model key"
     assert conn["presets"] == []
     assert conn["types"] == ["llm_openai", "llm_anthropic", "llm_deepseek", "llm_google"]
@@ -135,6 +137,8 @@ def test_telegram_connection():
     conn = _reg().get_schema("TelegramNode").connection
     assert conn is not None
     assert conn["purpose"] == "notify" and conn["need"] == "run" and conn["when"] == "always"
+    # 오너 결정 2026-09-28: 봇 토큰 없으면 챗봇이 등록을 묻는다("draft" 아님).
+    assert conn["missing"] == "ask"
     assert conn["label_ko"] == "텔레그램 봇" and conn["label_en"] == "Telegram bot"
     assert conn["presets"] == []
 

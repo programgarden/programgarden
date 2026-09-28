@@ -13,7 +13,7 @@ MarketDataNode는 상품별 분리됨:
 계좌 조회는 account_stock/account_futures 참조
 """
 
-from typing import Optional, List, Literal, Dict, Any, ClassVar, TYPE_CHECKING
+from typing import Optional, List, Literal, Dict, Any, ClassVar, Tuple, TYPE_CHECKING
 from pydantic import Field
 
 if TYPE_CHECKING:
@@ -47,8 +47,15 @@ class HTTPServerError(Exception):
 
 
 class HTTPRateLimitError(Exception):
-    """HTTP 429 Rate Limit 에러 - 재시도 가능"""
-    pass
+    """HTTP 429 Rate Limit 에러 - 재시도 가능.
+
+    `Retry-After` 헤더가 있으면 그 값을 `retry_after`(초, float)에 실어 RetryExecutor 가
+    지수 백오프 대신(또는 그와 함께) 서버가 요구한 대기 시간을 존중하게 한다.
+    """
+
+    def __init__(self, message: str, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class HTTPNetworkError(Exception):
@@ -59,6 +66,68 @@ class HTTPNetworkError(Exception):
 class HTTPTimeoutError(Exception):
     """요청 타임아웃 에러 - 재시도 가능"""
     pass
+
+
+# ── HTTP 외부 API 보호 (오너 우려 2026-09-28: 클라우드 공유 IP 로 종목마다 요청이 동시에
+#    나가면 외부 API 사가 차단할 수 있다) ─────────────────────────────────────────────
+# 호스트별 동시 요청 상한. auto-iterate 반복은 원래 순차 실행 + rate_limit_interval 간격이라
+# 안전하지만, 실시간/병렬(fan-out) 경로에서 같은 호스트로 요청이 몰리는 것을 막는 프로세스
+# 전역 가드다. 기본 1 = 한 호스트에 한 번에 한 요청. 상수는 여기 한 곳에서만 정의한다.
+HTTP_MAX_CONCURRENCY_PER_HOST: int = 1
+
+# (event-loop id, host) → Semaphore. asyncio.Semaphore 는 생성된 이벤트 루프에 묶이므로
+# 루프별로 따로 만든다(워커는 보통 루프 하나지만, 다른 루프에서 재사용 시 RuntimeError 회피).
+_HOST_SEMAPHORES: Dict[Tuple[int, str], "object"] = {}
+
+
+def _host_semaphore(url: str):
+    """이 URL 호스트의 프로세스 전역 동시성 세마포어(현재 이벤트 루프 기준)."""
+    import asyncio
+    from urllib.parse import urlparse
+
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = 0
+    key = (loop_id, host)
+    sem = _HOST_SEMAPHORES.get(key)
+    if sem is None:
+        sem = asyncio.Semaphore(HTTP_MAX_CONCURRENCY_PER_HOST)
+        _HOST_SEMAPHORES[key] = sem
+    return sem
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """HTTP `Retry-After` 헤더 → 대기 초. delta-seconds(정수) 또는 HTTP-date 지원.
+
+    음수/파싱 실패는 None (그러면 RetryExecutor 가 순수 지수 백오프로 되돌아간다).
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # delta-seconds (가장 흔한 형태)
+    try:
+        secs = float(value)
+        return secs if secs >= 0 else None
+    except (TypeError, ValueError):
+        pass
+    # HTTP-date (RFC 7231)
+    try:
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+
+        dt = parsedate_to_datetime(value)
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        return None
 
 
 class SQLiteNode(BaseNode):
@@ -628,7 +697,8 @@ class HTTPRequestNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Supports all HTTP methods: GET, POST, PUT, PATCH, DELETE with optional query params and request body",
-        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3)",
+        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3). A 429 honours the server's `Retry-After` header (delta-seconds or HTTP-date) as the backoff floor, capped by max_delay; during dry_run/validation the wait is further capped so a rate limit cannot blow the build budget — the item is recorded with an error and iteration continues.",
+        "Per-host concurrency cap (default 1): the engine lets only one request per host run at a time process-wide, so many parallel/fan-out requests to the same external API (shared cloud egress IP) queue instead of stampeding. Auto-iterate is already sequential and paced by rate_limit_interval.",
         "Credential integration for Bearer token, HTTP Basic, custom header, and query-param auth patterns",
         "Rate-limited: minimum 1-second interval and max 3 concurrent calls; real-time node connections blocked",
         "is_tool_enabled=True — AI Agent can invoke HTTPRequestNode as a tool to fetch live external data",
@@ -767,11 +837,10 @@ class HTTPRequestNode(BaseNode):
 
     _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
 
-    _version: ClassVar[str] = "1.1.0"
+    _version: ClassVar[str] = "1.2.0"
     _updated_at: ClassVar[str] = "2026-09-28"
     _change_note: ClassVar[Optional[str]] = (
-        "Added `results` port: one entry per iterated item ({{ item }} refs); "
-        "scalar ports keep the last item's value."
+        "429 honours Retry-After + per-host concurrency cap (1) for shared-IP safety"
     )
 
     @classmethod
@@ -986,40 +1055,48 @@ class HTTPRequestNode(BaseNode):
                     else:
                         request_kwargs["data"] = self.body
 
-                async with session.request(**request_kwargs) as resp:
-                    status_code = resp.status
+                # 호스트별 동시성 상한(기본 1) — 같은 호스트로 요청이 병렬로 몰리는 것을
+                # 프로세스 전역에서 막는다(공유 IP 보호). 반복은 어차피 순차라 무영향.
+                async with _host_semaphore(self.url):
+                    async with session.request(**request_kwargs) as resp:
+                        status_code = resp.status
+                        # Retry-After 는 응답 컨텍스트를 벗어나기 전에 읽어둔다.
+                        retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
 
-                    # 응답 파싱 (JSON 시도 → 실패하면 text)
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        data = await resp.text()
+                        # 응답 파싱 (JSON 시도 → 실패하면 text)
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            data = await resp.text()
 
-                    # 5xx 서버 에러 → Exception raise (RetryExecutor가 재시도)
-                    if status_code >= 500:
-                        error_msg = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)[:200]
-                        raise HTTPServerError(f"HTTP {status_code}: {error_msg}")
+                # 5xx 서버 에러 → Exception raise (RetryExecutor가 재시도)
+                if status_code >= 500:
+                    error_msg = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)[:200]
+                    raise HTTPServerError(f"HTTP {status_code}: {error_msg}")
 
-                    # 429 Rate Limit → Exception raise (RetryExecutor가 재시도)
-                    if status_code == 429:
-                        raise HTTPRateLimitError(f"HTTP 429: Rate limit exceeded")
+                # 429 Rate Limit → Exception raise (RetryExecutor가 지수 백오프 재시도).
+                # Retry-After 헤더가 있으면 그 대기 시간을 예외에 실어 존중하게 한다.
+                if status_code == 429:
+                    raise HTTPRateLimitError(
+                        "HTTP 429: Rate limit exceeded", retry_after=retry_after
+                    )
 
-                    # 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
-                    if status_code >= 400:
-                        return {
-                            "response": data,
-                            "status_code": status_code,
-                            "success": False,
-                            "error": f"HTTP {status_code}",
-                        }
-
-                    # 성공 (2xx, 3xx)
+                # 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
+                if status_code >= 400:
                     return {
                         "response": data,
                         "status_code": status_code,
-                        "success": True,
-                        "error": None,
+                        "success": False,
+                        "error": f"HTTP {status_code}",
                     }
+
+                # 성공 (2xx, 3xx)
+                return {
+                    "response": data,
+                    "status_code": status_code,
+                    "success": True,
+                    "error": None,
+                }
 
         except aiohttp.ClientError as e:
             # 네트워크 에러 → RetryExecutor가 재시도

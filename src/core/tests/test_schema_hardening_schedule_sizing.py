@@ -88,6 +88,35 @@ def test_schedule_anti_patterns_flag_mode_schedule_keys():
     assert "cron" in joined
 
 
+# ── jitter_seconds (owner 2026-09-28: shared-egress-IP stampede protection) ──
+
+def test_schedule_jitter_seconds_defaults_to_zero():
+    """Omitting jitter_seconds means no jitter — exactly on the cron instant."""
+    node = ScheduleNode(id="s", cron="0 9 * * *")
+    assert node.jitter_seconds == 0
+
+
+def test_schedule_jitter_seconds_field_schema_range():
+    """jitter_seconds is an optional SETTINGS int, default 0, bounded 0..300."""
+    fs = ScheduleNode.get_field_schema()
+    assert "jitter_seconds" in fs
+    j = fs["jitter_seconds"]
+    assert j.default == 0
+    assert j.min_value == 0
+    assert j.max_value == 300
+
+
+def test_schedule_jitter_seconds_model_bounds_enforced():
+    """The model rejects negative jitter and jitter above the 300 s ceiling."""
+    import pytest as _pytest
+    ok = ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=30)
+    assert ok.jitter_seconds == 30
+    with _pytest.raises(Exception):
+        ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=-1)
+    with _pytest.raises(Exception):
+        ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=301)
+
+
 # ── ⑰ PositionSizingNode ──────────────────────────────────────────────────
 
 def test_sizing_method_field_schema_required_no_default():

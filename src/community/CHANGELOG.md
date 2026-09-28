@@ -1,3 +1,11 @@
+## [2.3.1] - 2026-09-28
+### Changed
+- `TelegramNode._connection.missing` `draft` → `ask` (owner decision 2026-09-28):
+  텔레그램 봇 토큰이 없으면 챗봇이 먼저 등록을 묻고, 사용자가 "봇 없이 진행" 이라고
+  명시할 때만 초안으로 저장한다. `ask` 값은 core 2.5.1 registry 의 닫힌 값 집합에 추가됐다.
+  노드 버전 1.1.0.
+- deps: programgarden-core ^2.5.1.
+
 ## [2.3.0] - 2026-09-28
 ### Added
 - `TelegramNode._connection` — 노드 연결(자격증명) 선언(notify/run/always, 「텔레그램 봇」).

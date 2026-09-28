@@ -129,7 +129,10 @@ class NodeTypeSchema(BaseModel):
             "when the node config marks the API authenticated), label_ko, "
             "label_en (plain user-facing names), presets (HTTPRequestNode only; "
             "[] elsewhere), missing (draft = may be saved without it and the run "
-            "gate blocks; block = must exist before build)."
+            "gate blocks; block = must exist before build; ask = the chatbot "
+            "must ask the user to register the credential and only drafts "
+            "without it when the user explicitly says to proceed without it — "
+            "owner decision 2026-09-28 for AI-model keys and the Telegram bot)."
         ),
     )
 
@@ -496,7 +499,7 @@ class NodeTypeRegistry:
     _CONNECTION_PURPOSES = ("trading", "data", "ai", "notify")
     _CONNECTION_NEEDS = ("run", "validate", "optional")
     _CONNECTION_WHENS = ("always", "auth_required", "never")
-    _CONNECTION_MISSINGS = ("draft", "block")
+    _CONNECTION_MISSINGS = ("draft", "block", "ask")
 
     def _build_connection(
         self, node_class: Type[BaseNode], config_schema: Dict[str, Any],
