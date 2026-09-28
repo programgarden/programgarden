@@ -163,7 +163,7 @@ class ReplayJob(WorkflowJob):
         # Validation never reads or writes a running strategy's execution DB.
         return None
 
-    async def _auto_iterate_pacing_sleep(self, node_id, node_type):
+    async def _auto_iterate_pacing_sleep(self, node_id, node_type, config=None):
         return None
 
     def _rate_limit_now(self):

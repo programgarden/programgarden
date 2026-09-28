@@ -35,6 +35,10 @@ class _MockContext:
     def __init__(self):
         self._node_states: Dict[str, Any] = {}
         self.is_running = True
+        # 실행기(_guard_whole_array_reevaluation / _auto_iterate_pacing_sleep)가 직접
+        # 참조하는 모드 플래그 — 누락 시 AttributeError 로 실패한다(stale mock 보강).
+        self.is_dry_run = False
+        self.is_deep_validate = False
         self.logs: List[dict] = []
         self._iteration_item: Any = None
         self._iteration_index: int = 0

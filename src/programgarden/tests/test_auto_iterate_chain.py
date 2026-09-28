@@ -302,3 +302,309 @@ class TestAutoIterateChainFlow:
     # corpus 패턴 검사 4건(예제 11/12/28/29 items/fields 규약)은 corpus 와 함께
     # programgarden_ai/tests/test_workflow_examples_corpus.py 로 이관 (2026-08-07 비공개화).
 
+
+
+# ===========================================================================
+# HTTPRequestNode 종목별 반복 (오너 결정 2026-09-28)
+# ===========================================================================
+#
+# HTTP 노드는 config 가 {{ item… }}/{{ index }}/{{ total }} 을 참조할 때만 상류
+# 목록의 항목마다 1회씩 실행되고(예: 종목별 외부 시세 조회), 참조가 없으면 오늘처럼
+# 1회만 실행된다(조건 → webhook POST 알림 예제는 N 번 발화하면 안 된다 — 하위 호환).
+# 반복 결과는 `results` 배열 포트로 노출되고, response/status_code/success/error 는
+# 마지막 항목 값을 유지한다.
+
+import asyncio as _asyncio
+import time as _time
+from unittest.mock import patch as _patch
+
+
+class _HTTPMockContext:
+    """HTTP 반복 실행 테스트용 최소 ExecutionContext (dry_run pacing 테스트와 동형)."""
+
+    def __init__(self, *, dry_run: bool = False, deep_validate: bool = False):
+        self._node_states: Dict[str, Any] = {}
+        self.is_running = True
+        self.is_dry_run = dry_run or deep_validate
+        self.is_deep_validate = deep_validate
+        self.logs: list = []
+        self._iteration_item: Any = None
+        self._iteration_index: int = 0
+        self._iteration_total: int = 0
+
+    def get_node_state(self, node_id, key):
+        return self._node_states.get(f"{node_id}:{key}")
+
+    def set_node_state(self, node_id, key, value):
+        self._node_states[f"{node_id}:{key}"] = value
+
+    def log(self, level, message, node_id=None):
+        self.logs.append({"level": level, "message": message, "node_id": node_id})
+
+    def get_output(self, node_id, port=None):
+        return None
+
+    def set_output(self, node_id, port_name, value):
+        pass
+
+    def get_all_outputs(self, node_id):
+        return {}
+
+    def set_iteration_context(self, item, idx, total):
+        self._iteration_item, self._iteration_index, self._iteration_total = item, idx, total
+
+    def clear_iteration_context(self):
+        self._iteration_item, self._iteration_index, self._iteration_total = None, 0, 0
+
+    def get_expression_context(self):
+        from programgarden.context import ExpressionContext
+        ctx = ExpressionContext.__new__(ExpressionContext)
+        ctx.node_outputs = {}
+        ctx.context_params = {}
+        ctx.iteration_item = self._iteration_item
+        ctx.iteration_index = self._iteration_index
+        ctx.iteration_total = self._iteration_total
+        return ctx
+
+
+class _ScriptedHTTPExecutor:
+    """execute_node 가 호출 순서대로 미리 정한 결과를 돌려주거나(예외면 raise) 한다."""
+
+    def __init__(self, outcomes: list):
+        self.outcomes = outcomes
+        self.calls = 0
+
+    async def execute_node(self, **kwargs):
+        i = self.calls
+        self.calls += 1
+        outcome = self.outcomes[i]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class _HTTPNode:
+    def __init__(self):
+        self.node_type = "HTTPRequestNode"
+        self.plugin = None
+        self.fields = {}
+
+
+def _http_job(outcomes, ctx=None):
+    from programgarden.executor import WorkflowJob
+    job = object.__new__(WorkflowJob)
+    job.context = ctx or _HTTPMockContext()
+    job.executor = _ScriptedHTTPExecutor(outcomes)
+    job.workflow = object()
+    return job
+
+
+_THREE_SYMBOLS = [
+    {"symbol": "AAPL", "exchange": "NASDAQ"},
+    {"symbol": "TSLA", "exchange": "NASDAQ"},
+    {"symbol": "NVDA", "exchange": "NASDAQ"},
+]
+
+# 반복을 즉시 끝내려고 rate_limit_interval=0 으로 pacing sleep 을 끈다(간격은 (e)에서 별도 검증).
+_NO_PACE = {"url": "https://api.example.com/quote", "rate_limit_interval": 0}
+
+
+def _ok(symbol, price):
+    return {"response": {"symbol": symbol, "price": price}, "status_code": 200, "success": True, "error": None}
+
+
+class TestHTTPConditionalIterate:
+    """_should_auto_iterate: HTTP 는 config 가 아이템 바인딩을 참조할 때만 반복."""
+
+    def _make_job(self):
+        from programgarden.executor import WorkflowJob
+        job = MagicMock(spec=WorkflowJob)
+        job.NO_AUTO_ITERATE_NODE_TYPES = WorkflowJob.NO_AUTO_ITERATE_NODE_TYPES
+        job.WHOLE_ARRAY_INPUT_PORTS = WorkflowJob.WHOLE_ARRAY_INPUT_PORTS
+        job._references_iteration_item = WorkflowJob._references_iteration_item
+        job._consumes_whole_array = WorkflowJob._consumes_whole_array.__get__(job)
+        job._should_auto_iterate = WorkflowJob._should_auto_iterate.__get__(job)
+        return job
+
+    def test_http_iterates_when_url_references_item(self):
+        job = self._make_job()
+        should, port, items = job._should_auto_iterate(
+            "HTTPRequestNode", _THREE_SYMBOLS,
+            {"method": "GET", "url": "https://fmp.example/quote/{{ item.symbol }}"},
+        )
+        assert should is True
+        assert port == "item"
+        assert len(items) == 3
+
+    def test_http_iterates_when_nested_body_references_item(self):
+        job = self._make_job()
+        should, _, items = job._should_auto_iterate(
+            "HTTPRequestNode", _THREE_SYMBOLS,
+            {"method": "POST", "url": "https://x", "body": {"ticker": "{{ item.symbol }}"}},
+        )
+        assert should is True and len(items) == 3
+
+    def test_http_iterates_on_index_reference(self):
+        job = self._make_job()
+        should, _, _ = job._should_auto_iterate(
+            "HTTPRequestNode", _THREE_SYMBOLS,
+            {"url": "https://x?page={{ index }}"},
+        )
+        assert should is True
+
+    def test_http_no_iterate_without_item_reference_webhook(self):
+        """조건 → webhook POST 예제: 아이템 참조 없음 → 1회 실행(반복 안 함)."""
+        job = self._make_job()
+        should, port, items = job._should_auto_iterate(
+            "HTTPRequestNode", _THREE_SYMBOLS,
+            {"method": "POST", "url": "https://hooks.slack.com/services/X",
+             "body": {"text": "Buy signal for {{ nodes.condition.passed_symbols }}"}},
+        )
+        assert should is False
+        assert items == []
+
+    def test_http_no_iterate_when_config_none(self):
+        """레거시 호출(config=None) → 아이템 참조 판정 불가 → 반복 안 함(안전 기본값)."""
+        job = self._make_job()
+        should, _, _ = job._should_auto_iterate("HTTPRequestNode", _THREE_SYMBOLS)
+        assert should is False
+
+
+class TestHTTPIterateResultsMerge:
+    """_execute_with_auto_iterate + _merge_http_iterate_results 결과 형태."""
+
+    @pytest.mark.asyncio
+    async def test_a_all_success_results_ordered_and_response_last(self):
+        outcomes = [_ok("AAPL", 189), _ok("TSLA", 250), _ok("NVDA", 900)]
+        job = _http_job(outcomes)
+        merged = await job._execute_with_auto_iterate(
+            node_id="http", node=_HTTPNode(), config=dict(_NO_PACE),
+            items=list(_THREE_SYMBOLS), port_name="item",
+        )
+        assert job.executor.calls == 3
+        assert len(merged["results"]) == 3
+        assert [r["item"]["symbol"] for r in merged["results"]] == ["AAPL", "TSLA", "NVDA"]
+        assert [r["response"]["symbol"] for r in merged["results"]] == ["AAPL", "TSLA", "NVDA"]
+        assert all(r["success"] for r in merged["results"])
+        # response(첫 포트)는 마지막 항목 값 — {{ nodes.http.response }} 호환
+        assert merged["response"] == {"symbol": "NVDA", "price": 900}
+        assert merged["status_code"] == 200
+        assert merged["success"] is True
+        assert merged["error"] == ""
+
+    @pytest.mark.asyncio
+    async def test_b_single_execution_when_no_iteration(self):
+        """아이템 참조가 없으면 실행 경로는 1회 실행(_should_auto_iterate=False).
+
+        webhook POST 예제가 종목 수만큼 발화하지 않음을 결정 단계에서 확인."""
+        from programgarden.executor import WorkflowJob
+        job = MagicMock(spec=WorkflowJob)
+        job.NO_AUTO_ITERATE_NODE_TYPES = WorkflowJob.NO_AUTO_ITERATE_NODE_TYPES
+        job.WHOLE_ARRAY_INPUT_PORTS = WorkflowJob.WHOLE_ARRAY_INPUT_PORTS
+        job._references_iteration_item = WorkflowJob._references_iteration_item
+        job._consumes_whole_array = WorkflowJob._consumes_whole_array.__get__(job)
+        job._should_auto_iterate = WorkflowJob._should_auto_iterate.__get__(job)
+        should, _, _ = job._should_auto_iterate(
+            "HTTPRequestNode", _THREE_SYMBOLS,
+            {"method": "POST", "url": "https://hooks.slack.com/services/X",
+             "body": {"text": "alert"}},
+        )
+        assert should is False
+
+    @pytest.mark.asyncio
+    async def test_c_first_item_errors_others_succeed(self):
+        outcomes = [RuntimeError("boom"), _ok("TSLA", 250), _ok("NVDA", 900)]
+        job = _http_job(outcomes)
+        merged = await job._execute_with_auto_iterate(
+            node_id="http", node=_HTTPNode(), config=dict(_NO_PACE),
+            items=list(_THREE_SYMBOLS), port_name="item",
+        )
+        assert job.executor.calls == 3
+        # 첫 항목 오류에도 3건 전부 results 에 순서대로 남는다(results[0] 키만 뽑는 결함 회귀 방지)
+        assert len(merged["results"]) == 3
+        assert [r["item"]["symbol"] for r in merged["results"]] == ["AAPL", "TSLA", "NVDA"]
+        assert merged["results"][0]["success"] is False
+        assert merged["results"][0]["error"] == "boom"
+        assert merged["results"][0]["response"] is None
+        assert merged["results"][1]["success"] is True
+        assert merged["results"][2]["success"] is True
+        # 최상위: 일부 성공 → error 비움, success 는 AND(False), response 는 마지막 성공 값
+        assert merged["error"] == ""
+        assert merged["success"] is False
+        assert merged["response"] == {"symbol": "NVDA", "price": 900}
+
+    @pytest.mark.asyncio
+    async def test_d_all_fail_sets_top_level_error(self):
+        # 전 항목 4xx(명시 success=False + error 문자열)
+        outcomes = [
+            {"response": {"m": "nf"}, "status_code": 404, "success": False, "error": "HTTP 404"},
+            {"response": {"m": "nf"}, "status_code": 404, "success": False, "error": "HTTP 404"},
+            {"response": {"m": "nf"}, "status_code": 404, "success": False, "error": "HTTP 404"},
+        ]
+        job = _http_job(outcomes)
+        merged = await job._execute_with_auto_iterate(
+            node_id="http", node=_HTTPNode(), config=dict(_NO_PACE),
+            items=list(_THREE_SYMBOLS), port_name="item",
+        )
+        assert len(merged["results"]) == 3
+        assert all(r["success"] is False for r in merged["results"])
+        assert merged["success"] is False
+        # 전부 실패 → 최상위 error 채움(재생 bool(error) 규칙에서 실패로 읽힌다)
+        assert merged["error"] == "HTTP 404"
+
+    @pytest.mark.asyncio
+    async def test_d2_all_fail_via_exceptions(self):
+        outcomes = [RuntimeError("e1"), RuntimeError("e2"), RuntimeError("e3")]
+        job = _http_job(outcomes)
+        merged = await job._execute_with_auto_iterate(
+            node_id="http", node=_HTTPNode(), config=dict(_NO_PACE),
+            items=list(_THREE_SYMBOLS), port_name="item",
+        )
+        assert len(merged["results"]) == 3
+        assert merged["success"] is False
+        assert merged["error"]  # non-empty (대표 사유)
+        assert merged["error"] == "e1"
+
+
+class TestHTTPIterateRateLimitInterval:
+    """(e) per-item 간격이 사용자 config 의 rate_limit_interval 을 반영한다(min 1s 기본 유지)."""
+
+    @pytest.mark.asyncio
+    async def test_config_rate_limit_interval_honoured(self):
+        outcomes = [_ok("AAPL", 1), _ok("TSLA", 2), _ok("NVDA", 3)]
+        job = _http_job(outcomes)
+        slept = []
+
+        async def _fake_sleep(sec):
+            slept.append(sec)
+
+        with _patch("programgarden.executor.asyncio.sleep", new=_fake_sleep):
+            await job._execute_with_auto_iterate(
+                node_id="http", node=_HTTPNode(),
+                config={"url": "https://x/{{ item.symbol }}", "rate_limit_interval": 0.2},
+                items=list(_THREE_SYMBOLS), port_name="item",
+            )
+        assert job.executor.calls == 3
+        # 첫 항목은 대기 없음 → 나머지 2번만 sleep, 값은 config 의 0.2 (ClassVar 기본 1초가 아님)
+        assert len(slept) == 2, slept
+        assert all(0.15 <= s <= 0.25 for s in slept), slept
+
+    @pytest.mark.asyncio
+    async def test_default_interval_stays_one_second_without_config(self):
+        outcomes = [_ok("AAPL", 1), _ok("TSLA", 2), _ok("NVDA", 3)]
+        job = _http_job(outcomes)
+        slept = []
+
+        async def _fake_sleep(sec):
+            slept.append(sec)
+
+        with _patch("programgarden.executor.asyncio.sleep", new=_fake_sleep):
+            await job._execute_with_auto_iterate(
+                node_id="http", node=_HTTPNode(),
+                config={"url": "https://x/{{ item.symbol }}"},  # rate_limit_interval 없음
+                items=list(_THREE_SYMBOLS), port_name="item",
+            )
+        assert job.executor.calls == 3
+        assert len(slept) == 2, slept
+        # HTTPRequestNode._rate_limit.min_interval_sec = 1 (클래스 기본) 유지
+        assert all(0.9 <= s <= 1.1 for s in slept), slept

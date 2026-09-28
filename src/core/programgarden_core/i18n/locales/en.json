@@ -872,6 +872,8 @@
   "ports.http_error": "Error message",
   "ports.http_request_data": "Request data",
   "ports.http_response": "API response data",
+  "ports.http_results": "Per-item results (one {item, response, status_code, success, error} entry per iterated item)",
+
   "ports.http_status_code": "HTTP status code",
   "ports.http_success": "Request success flag",
   "ports.items": "Item list",

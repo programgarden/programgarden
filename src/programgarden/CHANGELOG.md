@@ -1,9 +1,44 @@
-## Unreleased
+## [2.5.0] - 2026-09-28
+
+### Added
+- HTTPRequestNode now auto-iterates over an upstream list (e.g. a WatchlistNode's
+  symbols) **only when its config references an iteration binding**
+  (`{{ item… }}` / `{{ index }}` / `{{ total }}`) — one request per element (owner
+  decision 2026-09-28). A config without such a reference keeps running once, so
+  the existing `ConditionNode → HTTPRequestNode (POST webhook)` example still
+  fires a single request (backward compatible). The decision lives in
+  `WorkflowJob._should_auto_iterate`; `HTTPRequestNode` was removed from
+  `NO_AUTO_ITERATE_NODE_TYPES`.
+- `results` output port on HTTPRequestNode (`programgarden-core` 2.5.0): one
+  `{item, response, status_code, success, error}` entry per iterated item, in
+  order. `response` / `status_code` / `success` / `error` keep the LAST item's
+  scalar values so `{{ nodes.x.response }}` stays compatible. A node that runs
+  once exposes that single execution as the sole `results` entry.
+
+### Changed
+- Per-item auto-iterate merge for HTTPRequestNode (`_merge_http_iterate_results`)
+  walks every item instead of taking keys from `results[0]`, so a failing first
+  item no longer drops the later items' response/status_code/success. Top-level
+  `success` is the AND of all items, top-level `error` is set **only when every
+  item fails** (empty otherwise, so validation replay's `bool(output["error"])`
+  failure rule does not trip on a partial success), and top-level keys are the
+  union across items.
+- The per-item pacing sleep (`_auto_iterate_pacing_sleep`) now honours the user's
+  `rate_limit_interval` (falling back to `cooldown_sec`) config value, matching
+  `_apply_rate_limit_guard`; the node-class default (HTTP = 1 s minimum) still
+  applies when unset, so a free-tier API's per-minute limit can be spaced out.
+- Replay execution metadata (`replay_semantics._iterates`) describes
+  HTTPRequestNode as `per_item` gated on `config_references_item_binding`, with
+  per-item outcomes on the `results` port, so the AI's execution guidance is
+  correct.
+- deps: programgarden-core ^2.5.0.
+
 ### Fixed
 - Deliver brokerage PnL callbacks on the workflow event loop, including SDK websocket worker-thread notifications and shutdown races.
 - Retain explicitly reported TC3 currency in standalone futures fill records without inferring a monetary accounting basis.
 
 ## [2.4.1] - 2026-09-27
+
 
 ### Fixed
 - `MISSING_REQUIRED_BROKER` now names the broker node of the node's *own* product

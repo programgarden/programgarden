@@ -872,6 +872,8 @@
   "ports.http_error": "에러 메시지",
   "ports.http_request_data": "요청 데이터",
   "ports.http_response": "API 응답 데이터",
+  "ports.http_results": "항목별 결과 (반복된 항목마다 {item, response, status_code, success, error} 한 건)",
+
   "ports.http_status_code": "HTTP 상태 코드",
   "ports.http_success": "요청 성공 여부",
   "ports.items": "아이템 목록",

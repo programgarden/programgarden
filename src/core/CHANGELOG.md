@@ -1,7 +1,23 @@
+## [2.5.0] - 2026-09-28
+
+### Added
+- HTTPRequestNode gains a `results` output port (`array`). When the workflow
+  engine auto-iterates the node over an upstream list — which it does only when
+  the node's config references `{{ item… }}` / `{{ index }}` / `{{ total }}`
+  (owner decision 2026-09-28) — `results` holds one
+  `{item, response, status_code, success, error}` entry per item, in order. The
+  existing `response` / `status_code` / `success` / `error` ports stay first and
+  carry the LAST item's scalar values, so `{{ nodes.x.response }}` bindings keep
+  working; a node that runs once exposes that single execution as the sole
+  `results` entry. The node version is 1.1.0 and both locales carry
+  `ports.http_results`. The per-item iteration itself lives in the
+  `programgarden` engine 2.5.0.
+
 ## [2.4.0] - 2026-09-26
 
 ### Changed
 - ScheduleNode: `max_duration_hours` and `count` are optional (default None).
+
   Omitting both means the schedule runs until the workflow is stopped (owner
   decision 2026-09-26: when the investor names no duration, a recurring check
   keeps running instead of quietly ending after 24 h / 1000 cycles). A provided

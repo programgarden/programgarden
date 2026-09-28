@@ -22023,7 +22023,11 @@ class WorkflowJob:
         "OverseasStockAccountNode", "OverseasFuturesAccountNode",  # 계좌 노드
         "OverseasStockRealAccountNode", "OverseasFuturesRealAccountNode",
         "KoreaStockAccountNode", "KoreaStockRealAccountNode",
-        "SQLiteNode", "HTTPRequestNode", "SessionGateNode",  # 데이터 노드
+        # HTTPRequestNode 는 여기서 뺐다(오너 결정 2026-09-28) — config 가
+        # {{ item… }}/{{ index }}/{{ total }} 을 참조하면 상류 목록의 종목마다 1회씩
+        # 반복하고, 참조가 없으면(조건→webhook POST 예제 등) 1회만 실행한다. 분기는
+        # `_should_auto_iterate` 의 HTTPRequestNode 전용 가드가 담당한다.
+        "SQLiteNode", "SessionGateNode",  # 데이터 노드
         "CodeNode",  # custom code: receives the whole array in `data`, loops in-code (one subprocess call)
         "BacktestEngineNode", "BenchmarkCompareNode",  # 분석 노드
     }
@@ -22346,6 +22350,15 @@ class WorkflowJob:
         if config and self._consumes_whole_array(node_type, config) is True:
             return False, "", []
 
+        # HTTPRequestNode: 상류에 배열이 붙어도 config 가 {{ item… }}/{{ index }}/{{ total }}
+        # 을 참조할 때만 종목별로 반복한다(오너 결정 2026-09-28). 참조가 없으면 오늘처럼
+        # 1회만 실행 — 하위 호환(조건 → webhook POST 알림 예제는 N 번 발화하면 안 된다).
+        # 이 시점의 config 는 최상위 {{ item… }} 키가 미평가로 남아 있어(iteration_item 이
+        # 아직 없어 `_resolve_config_expressions` 가 deferred 처리) 판정에 쓸 수 있다.
+        # config 가 None(레거시 호출)이면 `_references_iteration_item` 이 False → 반복 안 함.
+        if node_type == "HTTPRequestNode" and not self._references_iteration_item(config):
+            return False, "", []
+
         # 배열 입력이면 자동 반복 실행
         return True, "item", input_data
 
@@ -22419,7 +22432,8 @@ class WorkflowJob:
                 # _rate_limit ClassVar가 있는 노드(주문, HTTP 등)에 한해 min_interval_sec
                 # 만큼 간격을 보장한다. skip이 아니라 sleep → 모든 N 아이템이 실행됨.
                 # rate-limit이 없는 순수 데이터/계산 노드는 영향 없음 (하위 호환).
-                await self._auto_iterate_pacing_sleep(node_id, node.node_type)
+                # config 를 넘겨 사용자 rate_limit_interval(무료 API 분당 제한 등)을 반영.
+                await self._auto_iterate_pacing_sleep(node_id, node.node_type, config)
 
                 try:
                     outputs = await self.executor.execute_node(
@@ -22457,6 +22471,12 @@ class WorkflowJob:
 
         # 결과 병합: 배열 필드는 병합, 단일 필드는 마지막 값
         merged = self._merge_iterate_results(all_results)
+        # HTTPRequestNode 전용 후처리 — 일반 병합은 키를 `results[0]` 에서만 뽑아
+        # 첫 항목이 오류(`{"error":…, "item":…}`)면 나머지 항목의 response/status_code/
+        # success 가 통째로 유실된다. HTTP 는 항목 전체를 훑어 `results` 배열을 만들고
+        # 최상위 error/success/키를 항목 기준으로 재계산한다.
+        if node.node_type == "HTTPRequestNode":
+            merged = self._merge_http_iterate_results(all_results, items)
         _safe_print(f"  ✅ Auto-iterate complete: {len(all_results)} results merged")
 
         return merged
@@ -22591,6 +22611,70 @@ class WorkflowJob:
                         break
 
         return merged
+
+    def _merge_http_iterate_results(self, all_results: list, items: list) -> Dict[str, Any]:
+        """HTTPRequestNode auto-iterate 결과 전용 병합.
+
+        일반 병합(`_merge_iterate_results`)은 array_fields 가 아닌 포트를 마지막 값으로
+        접고 병합 키를 `results[0].keys()` 에서만 뽑는다 — HTTP 는 첫 항목이 오류
+        (`{"error":…, "item":…}`)면 나머지 항목의 response/status_code/success 포트가
+        통째로 사라진다. 여기서는 항목 전체를 순회해:
+          - `results`: 항목당 {item, response, status_code, success, error} (순서 보존).
+          - `response`/`status_code`: **마지막 항목** 값(기존 {{ nodes.x.response }} 호환,
+            첫 포트 유지).
+          - `success`: 전 항목 AND.
+          - `error`: **전 항목 실패**일 때만 대표 사유(재생은 bool(output["error"]) 로
+            실패를 판정하므로, 한 건이라도 성공하면 "" 로 비워 실패로 안 읽히게 한다).
+          - 최상위 키: 항목 전체의 합집합(첫 항목 오류로 나머지 포트 유실 방지).
+
+        per-item 결과 dict 모양(`programgarden_core.nodes.data.HTTPRequestNode.execute`):
+          성공 2xx/3xx → {"response","status_code","success":True,"error":None}
+          4xx        → {"response","status_code","success":False,"error":"HTTP 4xx"}
+          예외(5xx/네트워크/타임아웃, 재시도 소진) → 반복 루프가 {"error":str(e),"item":…}.
+        """
+        entries: list = []
+        for idx, r in enumerate(all_results):
+            rec = r if isinstance(r, dict) else {}
+            item = items[idx] if idx < len(items) else rec.get("item")
+            err = rec.get("error")
+            success = rec.get("success")
+            if success is None:
+                # 명시 success 가 없으면 error 유무로 판정(예외 항목은 error 만 있다).
+                success = not err
+            entries.append({
+                "item": item,
+                "response": rec.get("response"),
+                "status_code": rec.get("status_code"),
+                "success": bool(success),
+                "error": err,
+            })
+
+        out: Dict[str, Any] = {}
+        # 최상위 키 = 항목 전체 합집합(마지막 non-None 우선). `item` 은 예외 항목이 끼워
+        # 넣는 반복 문맥일 뿐 HTTP 출력 포트가 아니므로 최상위에서 제외한다.
+        union_keys: Set[str] = set()
+        for r in all_results:
+            if isinstance(r, dict):
+                union_keys.update(r.keys())
+        union_keys.discard("item")
+        for key in union_keys:
+            for r in reversed(all_results):
+                if isinstance(r, dict) and r.get(key) is not None:
+                    out[key] = r[key]
+                    break
+
+        out["results"] = entries
+        out["response"] = entries[-1]["response"] if entries else None
+        out["status_code"] = entries[-1]["status_code"] if entries else None
+        out["success"] = all(e["success"] for e in entries) if entries else False
+        all_failed = bool(entries) and all(not e["success"] for e in entries)
+        if all_failed:
+            out["error"] = next((e["error"] for e in entries if e["error"]),
+                                "All HTTP requests failed")
+        else:
+            # 한 건이라도 성공 → 최상위 error 는 비운다(재생/하류에서 실패로 안 읽히게).
+            out["error"] = ""
+        return out
 
     def _dependent_descendants(self, node_id: str) -> Set[str]:
         """A waiting data dependency blocks its chain, including dependent joins.
@@ -23494,11 +23578,16 @@ class WorkflowJob:
     # A-3: auto-iterate per-item pacing (spacing, NOT skipping)
     # ============================================================
 
-    async def _auto_iterate_pacing_sleep(self, node_id: str, node_type: str) -> None:
+    async def _auto_iterate_pacing_sleep(
+        self, node_id: str, node_type: str, config: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """auto-iterate 루프에서 per-item 간격을 보장하는 sleep.
 
-        노드의 _rate_limit.min_interval_sec를 읽어 직전 아이템 실행으로부터
-        충분한 시간이 지나지 않았으면 잔여 시간만큼 sleep 후 실행.
+        간격은 사용자 config 의 `rate_limit_interval`(없으면 `cooldown_sec`)을 우선하고,
+        미지정이면 노드의 `_rate_limit.min_interval_sec`(HTTP=1초 기본) 을 쓴다 —
+        `_apply_rate_limit_guard` 의 우선순위와 동일. 이로써 무료 API 의 분당 제한을
+        사용자가 종목별 간격으로 조절할 수 있다(예: FMP 무료 티어).
+        직전 아이템 실행으로부터 충분한 시간이 지나지 않았으면 잔여 시간만큼 sleep 후 실행.
         모든 N 아이템이 반드시 실행된다 (skip 없음).
 
         rate-limit이 없는 노드(ConditionNode 등)는 즉시 통과 — 하위 호환.
@@ -23537,7 +23626,18 @@ class WorkflowJob:
         if not class_rate_limit:
             return
 
+        # 사용자 config 오버라이드 (rate_limit_interval 명시이면 우선, 없으면 cooldown_sec)
+        # — `_apply_rate_limit_guard` 와 같은 규칙. 미지정이면 클래스 기본값 유지(HTTP=1초).
         min_interval_sec = class_rate_limit.min_interval_sec
+        if config:
+            user_interval = config.get("rate_limit_interval")
+            if user_interval is None:
+                user_interval = config.get("cooldown_sec")
+            if user_interval is not None:
+                try:
+                    min_interval_sec = float(user_interval)
+                except (TypeError, ValueError):
+                    pass
         if min_interval_sec <= 0:
             return
 
