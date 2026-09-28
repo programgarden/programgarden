@@ -48,16 +48,18 @@ class TelegramNode(BaseMessagingNode):
     type: Literal["TelegramNode"] = "TelegramNode"
 
     # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. 텔레그램 봇 토큰은 발송에 필요하다.
+    # missing="ask" (오너 결정 2026-09-28): 봇 토큰이 없으면 챗봇이 먼저 등록을 묻고,
+    # 사용자가 "봇 없이 진행" 이라고 명시할 때만 초안으로 저장한다("draft" 의 조용한 자동 초안과 구분).
     _connection: ClassVar[Dict[str, Any]] = {
         "purpose": "notify",
         "need": "run",
         "when": "always",
         "label_key": "connection.TelegramNode.label",
         "presets": [],
-        "missing": "draft",
+        "missing": "ask",
     }
 
-    description: str = "Send Telegram messages using a registered bot token and receiving chat ID; key-free drafts can be saved before linking credentials."
+    description: str = "Send Telegram messages using a registered bot token and receiving chat ID; the chatbot asks the user to register the bot before build and only saves a key-free draft when the user says to proceed without it."
     
     # 노드 아이콘 (텔레그램 로고)
     _img_url: ClassVar[str] = "https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg"
@@ -232,10 +234,12 @@ class TelegramNode(BaseMessagingNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
-    
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "connection.missing='ask' — chatbot asks the user to register the Telegram bot before build"
+    )
+
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         """

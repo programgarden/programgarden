@@ -1,3 +1,10 @@
+## [2.3.1] - 2026-09-29
+### Changed
+- TelegramNode uses the `ask` missing-credential policy: the authoring client
+  should request bot registration and save a draft only when the user explicitly
+  chooses to continue without it. Node version: 1.1.0.
+- Require programgarden-core ^2.5.1, whose registry accepts this policy.
+
 ## [2.3.0] - 2026-09-28
 ### Added
 - `TelegramNode._connection` — 노드 연결(자격증명) 선언(notify/run/always, 「텔레그램 봇」).

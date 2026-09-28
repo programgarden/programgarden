@@ -74,6 +74,22 @@ class ScheduleNode(BaseNode):
             "investor named a fixed number of cycles (>= 1)."
         ),
     )
+    # Owner concern 2026-09-28: many workflows sharing one cron instant (e.g.
+    # "0 9 * * *") all fire at the same second and stampede a shared cloud
+    # egress IP. jitter_seconds staggers the ACTUAL fire by a random 0..jitter
+    # seconds past each cron instant. 0 (default) = fire exactly on the instant
+    # (unchanged). Max 300s. dry_run never applies jitter (it emits one tick and
+    # exits), so it does not affect the build budget or replay semantics.
+    jitter_seconds: int = Field(
+        default=0,
+        ge=0,
+        le=300,
+        description=(
+            "Random 0..N second delay applied to each fire past the cron instant, "
+            "to spread many same-cron workflows across a shared egress IP. "
+            "0 (default) fires exactly on the cron instant; max 300."
+        ),
+    )
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
@@ -106,6 +122,7 @@ class ScheduleNode(BaseNode):
         "Standard 5-field cron expression — minute / hour / day / month / weekday",
         "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
         "max_duration_hours and count are optional bounds: omit both and the schedule runs until the workflow is stopped; set one and the scheduler exits cleanly at that limit",
+        "jitter_seconds (optional, 0..300, default 0) delays each fire by a random 0..N seconds past the cron instant, so many workflows sharing one cron ('0 9 * * *') do not all hit a shared egress IP at the same second; the cron cadence anchor is unchanged and the logical replay instant is not affected. Keep jitter well below the interval (do not set 300s jitter on an every-minute cron).",
         "enabled=False freezes the trigger without removing the node from the DAG",
         "A tick re-executes the whole main flow: the ScheduleNode returns {trigger: true} without re-registering, so every node downstream of it runs again on each tick",
         "Startup account and open-order snapshots are not retained across schedule ticks; they are retained only across realtime events",
@@ -189,7 +206,7 @@ class ScheduleNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, and the optional bounds `max_duration_hours` / `count` (omit both to run until the workflow is stopped).",
+        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, the optional bounds `max_duration_hours` / `count` (omit both to run until the workflow is stopped), and the optional `jitter_seconds` (0..300, default 0) which staggers each fire a random 0..N seconds past the cron instant to avoid a shared-IP stampede.",
         "output_consumption": "`trigger` output carries `{fired_at, cycle_index}`. Downstream nodes usually just need an incoming edge; explicit binding is optional.",
         "common_combinations": [
             "StartNode → ScheduleNode → trading body (plain cron workflow)",
@@ -203,9 +220,11 @@ class ScheduleNode(BaseNode):
         ],
     }
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "Added optional jitter_seconds (0..300) to stagger fires past the cron instant"
+    )
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -270,6 +289,18 @@ class ScheduleNode(BaseNode):
                 category=FieldCategory.SETTINGS,
                 expected_type="int",
                 example=1000,
+            ),
+            "jitter_seconds": FieldSchema(
+                name="jitter_seconds",
+                type=FieldType.INTEGER,
+                description="Random 0..N second delay applied to each fire past the cron instant, to spread many same-cron workflows across a shared egress IP. 0 (default) fires exactly on the cron instant; max 300.",
+                default=0,
+                min_value=0,
+                max_value=300,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="int",
+                example=30,
             ),
         }
 

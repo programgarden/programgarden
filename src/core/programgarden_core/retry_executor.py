@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("programgarden.retry_executor")
 
+# Validation has a bounded wait budget. If Retry-After exceeds it, stop this
+# retry sequence and preserve the failure instead of contacting the API early.
+DRY_RUN_MAX_RETRY_WAIT_SEC: float = 5.0
+
 
 class RetryExecutor:
     """
@@ -106,12 +110,23 @@ class RetryExecutor:
                     )
                     break
 
-                # 대기 시간 계산 (exponential backoff with jitter)
-                delay = self._calculate_delay(config.retry, attempt)
+                # A server-directed wait is a floor, never a delay to truncate.
+                retry_after = getattr(e, "retry_after", None)
+                dry_run = bool(getattr(context, "is_dry_run", False))
+                delay = self._calculate_delay(
+                    config.retry, attempt, retry_after=retry_after, dry_run=dry_run
+                )
+                if delay is None:
+                    logger.warning(
+                        "[%s] Retry-After exceeds the retry wait budget; no further attempt",
+                        node.id,
+                    )
+                    break
 
                 logger.info(
                     f"[{node.id}] {error_type.value} 발생, "
                     f"재시도 {attempt}/{config.retry.max_retries}... {delay:.1f}초 후"
+                    + (f" (Retry-After={retry_after:.0f}s)" if retry_after else "")
                 )
 
                 # 재시도 이벤트 발송 (context.notify_retry 사용)
@@ -143,13 +158,14 @@ class RetryExecutor:
                     category=NotificationCategory.RETRY_EXHAUSTED,
                     severity=NotificationSeverity.WARNING,
                     title=f"Retry exhausted: {node.id}",
-                    message=f"{node.__class__.__name__} failed after {config.retry.max_retries} retries: {last_error}",
+                    message=f"{node.__class__.__name__} failed after {attempt} attempts: {last_error}",
                     node_id=node.id,
                     node_type=node.__class__.__name__,
                     data={
                         "node_id": node.id,
                         "node_type": node.__class__.__name__,
                         "max_retries": config.retry.max_retries,
+                        "attempts": attempt,
                         "last_error": str(last_error),
                     },
                 )
@@ -159,16 +175,19 @@ class RetryExecutor:
         # Fallback 처리
         return self._handle_fallback(node, last_error, config.fallback)
 
-    def _calculate_delay(self, config: RetryConfig, attempt: int) -> float:
+    def _calculate_delay(
+        self,
+        config: RetryConfig,
+        attempt: int,
+        retry_after: Optional[float] = None,
+        dry_run: bool = False,
+    ) -> Optional[float]:
         """
-        대기 시간 계산 (exponential backoff with jitter).
+        Return bounded exponential backoff with the server's minimum wait.
 
-        Args:
-            config: RetryConfig
-            attempt: 현재 시도 횟수 (1부터 시작)
-
-        Returns:
-            대기 시간 (초)
+        None means Retry-After cannot fit the configured wait budget: callers
+        must end the retry sequence, retaining the original failure. Ordinary
+        backoff remains capped when no server-directed floor prevents a retry.
         """
         if config.exponential_backoff:
             # 2^(attempt-1) * base_delay
@@ -183,8 +202,10 @@ class RetryExecutor:
         jitter = delay * 0.25 * (random.random() * 2 - 1)
         delay = delay + jitter
 
-        # max_delay 제한
-        return min(delay, config.max_delay)
+        limit = min(config.max_delay, DRY_RUN_MAX_RETRY_WAIT_SEC) if dry_run else config.max_delay
+        if retry_after is not None and retry_after > limit:
+            return None
+        return max(min(delay, limit), retry_after or 0.0)
 
     def _handle_fallback(
         self,

@@ -1,3 +1,27 @@
+## [2.5.1] - 2026-09-29
+
+### Changed
+- HTTP provider registration intent survives the native `credential_preset`
+  field. Explicit authenticated requests without injected credentials fail before
+  network access; legacy public requests keep their behavior (core 2.5.1).
+- ScheduleNode live scheduler applies the new `jitter_seconds` (core 2.5.1) knob:
+  after the cron-delay wait and before emitting the tick, the executor delays the
+  fire by a random 0..jitter_seconds (clamped to [0, 300]), so many same-cron
+  workflows do not stampede a shared egress IP at the same second. dry_run emits a
+  single tick above this point and exits, so the build budget and replay semantics
+  are unaffected; the cron cadence anchor is unchanged.
+- HTTPRequestNode 429 backoff now honours the server's `Retry-After` header
+  (via core 2.5.1 `RetryExecutor`), and a per-host concurrency cap (default 1,
+  `programgarden_core.nodes.data.HTTP_MAX_CONCURRENCY_PER_HOST`) serialises
+  requests to the same host across the process. If the server's minimum wait
+  exceeds the configured retry budget (at most 5 seconds during validation),
+  retrying stops with the original failure instead of making an early request.
+  Existing fallback and per-item error handling apply.
+
+- LLM and Telegram connection declarations use the explicit `ask` policy.
+- Dependencies: programgarden-core ^2.5.1, programgarden-community ^2.3.1;
+  programgarden-finance remains ^2.0.1.
+
 ## [2.5.0] - 2026-09-28
 
 ### Added

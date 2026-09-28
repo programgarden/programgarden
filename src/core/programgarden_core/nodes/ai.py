@@ -43,13 +43,15 @@ class LLMModelNode(BaseNode):
     category: NodeCategory = NodeCategory.AI
 
     # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. AI 모델 키는 실행에 반드시 필요하다.
+    # missing="ask" (오너 결정 2026-09-28): 키가 없으면 챗봇이 먼저 등록을 묻고, 사용자가
+    # "키 없이 진행" 이라고 명시할 때만 초안으로 저장한다("draft" 의 조용한 자동 초안과 구분).
     _connection: ClassVar[Dict[str, Any]] = {
         "purpose": "ai",
         "need": "run",
         "when": "always",
         "label_key": "connection.LLMModelNode.label",
         "presets": [],
-        "missing": "draft",
+        "missing": "ask",
     }
 
 
@@ -204,7 +206,7 @@ class LLMModelNode(BaseNode):
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
-        "input_handling": "credential_id is mandatory and fixed (no expressions). It must reference a registered credential of kind llm_openai, llm_anthropic, llm_deepseek or llm_google whose api_key the user entered themselves; until the user registers and selects such a key the workflow can be built and saved but not run. Set model to the exact model ID for that provider. No data input is needed — this node only establishes the API connection.",
+        "input_handling": "credential_id is mandatory and fixed (no expressions). It must reference a registered credential of kind llm_openai, llm_anthropic, llm_deepseek or llm_google whose api_key the user entered themselves; until the user registers and selects such a key the workflow can be built and saved but not run. Because the key is required to run, the chatbot asks the user to register the AI-model key before building (connection.missing='ask'); it only saves a key-free draft when the user explicitly says to proceed without it. Set model to the exact model ID for that provider. No data input is needed — this node only establishes the API connection.",
         "output_consumption": "The 'connection' output port uses edge type 'ai_model', NOT 'main'. Connect it to AIAgentNode's ai_model input. The connection object is not a data value — it is an internal LLM client handle passed to the agent.",
         "common_combinations": [
             "LLMModelNode → AIAgentNode (ai_model edge) — always paired",
@@ -234,9 +236,11 @@ class LLMModelNode(BaseNode):
         ),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "connection.missing='ask' — chatbot asks the user to register the AI-model key before build"
+    )
 
     @classmethod
     def is_tool_enabled(cls) -> bool:
