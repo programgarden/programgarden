@@ -11,6 +11,7 @@ import pytest
 from programgarden_core.nodes.data import (
     HTTPRequestNode,
     HTTPRateLimitError,
+    HTTPCredentialError,
     HTTP_MAX_CONCURRENCY_PER_HOST,
     _host_semaphore,
     _parse_retry_after,
@@ -122,6 +123,38 @@ async def test_200_success_returns_response(monkeypatch):
     assert out["success"] is True
     assert out["status_code"] == 200
     assert out["response"] == {"price": 189.2}
+
+
+@pytest.mark.asyncio
+async def test_authenticated_draft_sends_no_request_without_injected_key(monkeypatch):
+    from types import SimpleNamespace
+    from programgarden_core.retry_executor import RetryExecutor
+
+    aiohttp = pytest.importorskip("aiohttp")
+
+    def unexpected_session(**kwargs):
+        raise AssertionError("A pending-key draft must not contact the provider")
+
+    monkeypatch.setattr(aiohttp, "ClientSession", unexpected_session)
+    node = HTTPRequestNode(id="fmp", url="https://example.invalid/estimates", auth_required=True,
+                           credential_preset="fmp", credential_id="unresolved-key")
+    with pytest.raises(HTTPCredentialError, match="CREDENTIAL_REQUIRED_TO_RUN"):
+        await RetryExecutor().execute_with_retry(node, lambda: node.execute(None), SimpleNamespace())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("injected", [
+    {"token": "synthetic-token"},
+    {"header_name": "X-Test-Key", "header_value": "synthetic-key"},
+    {"username": "synthetic-user", "password": "synthetic-password"},
+    {"param_name": "apikey", "param_value": "synthetic-key"},
+])
+async def test_authenticated_node_accepts_each_injected_auth_style(monkeypatch, injected):
+    aiohttp = pytest.importorskip("aiohttp")
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda **kw: _FakeSession(_FakeResp(200)))
+    node = HTTPRequestNode(id="h", url="https://example.invalid/data", auth_required=True)
+    node = node.model_copy(update=injected)
+    assert (await node.execute(None))["success"] is True
 
 
 @pytest.mark.asyncio

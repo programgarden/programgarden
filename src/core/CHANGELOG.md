@@ -1,6 +1,12 @@
 ## [2.5.1] - 2026-09-28
 
 ### Added
+- HTTPRequestNode exposes `credential_preset` (`fmp` / `finnhub`) as a native,
+  non-secret field, so compilation and catalog export preserve registration-form
+  intent. It does not choose a stored key or infer provider ownership.
+- An HTTP node explicitly declaring `auth_required=true` refuses execution with
+  `CREDENTIAL_REQUIRED_TO_RUN` before opening a network session when no supported
+  credential was injected. A pending-key draft is not a public HTTP request.
 - `connection.missing` gains a third value `ask` (owner decision 2026-09-28):
   the chatbot must ask the user to register the credential before build and only
   saves a key-free draft when the user explicitly says to proceed without it —

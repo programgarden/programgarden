@@ -68,6 +68,10 @@ class HTTPTimeoutError(Exception):
     pass
 
 
+class HTTPCredentialError(Exception):
+    """An authenticated HTTP node has no injected credential; no request was sent."""
+
+
 # ── HTTP 외부 API 보호 (오너 우려 2026-09-28: 클라우드 공유 IP 로 종목마다 요청이 동시에
 #    나가면 외부 API 사가 차단할 수 있다) ─────────────────────────────────────────────
 # 호스트별 동시 요청 상한. auto-iterate 반복은 원래 순차 실행 + rate_limit_interval 간격이라
@@ -653,6 +657,10 @@ class HTTPRequestNode(BaseNode):
         default=None, 
         description="Credential ID (credentials 섹션에서 참조)"
     )
+    credential_preset: Optional[Literal["fmp", "finnhub"]] = Field(
+        default=None,
+        description="Non-secret provider preset for the credential registration form; never selects a stored key.",
+    )
 
     # === Headers: UI에서 동적 추가 ===
     headers: Optional[Dict[str, str]] = Field(default=None, description="HTTP headers")
@@ -901,6 +909,14 @@ class HTTPRequestNode(BaseNode):
                 credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
                 ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
             ),
+            "credential_preset": FieldSchema(
+                name="credential_preset", type=FieldType.ENUM, required=False,
+                description="Non-secret provider preset for credential registration",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                enum_values=[p["id"] for p in cls._connection["presets"]],
+                group="advanced",
+            ),
             "headers": FieldSchema(
                 name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
                 description="i18n:fields.HTTPRequestNode.headers",
@@ -1002,6 +1018,16 @@ class HTTPRequestNode(BaseNode):
         - 5xx 서버 에러, 네트워크 에러, 타임아웃 → Exception raise → 재시도
         - 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
         """
+        if self.auth_required is True and not (
+            getattr(self, "token", None)
+            or (getattr(self, "header_name", None) and getattr(self, "header_value", None))
+            or (getattr(self, "username", None) and getattr(self, "password", None))
+            or (getattr(self, "param_name", None) and getattr(self, "param_value", None))
+        ):
+            raise HTTPCredentialError(
+                "CREDENTIAL_REQUIRED_TO_RUN: register and bind this HTTP node's API credential"
+            )
+
         import aiohttp
         import asyncio
         import json

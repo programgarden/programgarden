@@ -1,6 +1,9 @@
 ## [2.5.1] - 2026-09-28
 
 ### Changed
+- HTTP provider registration intent survives the native `credential_preset`
+  field. Explicit authenticated requests without injected credentials fail before
+  network access; legacy public requests keep their behavior (core 2.5.1).
 - ScheduleNode live scheduler applies the new `jitter_seconds` (core 2.5.1) knob:
   after the cron-delay wait and before emitting the tick, the executor delays the
   fire by a random 0..jitter_seconds (clamped to [0, 300]), so many same-cron

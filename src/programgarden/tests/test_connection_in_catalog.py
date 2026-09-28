@@ -19,6 +19,21 @@ def test_http_connection_in_catalog():
     assert conn["label_ko"] == "API 키" and conn["label_en"] == "API key"
     # auth_required 설정 필드도 catalog config_schema 에 있다
     assert "auth_required" in schema.get("config_schema", {})
+    preset = schema["config_schema"]["credential_preset"]
+    assert preset["enum_values"] == [p["id"] for p in conn["presets"]]
+
+
+def test_http_provider_preset_survives_native_model_roundtrip():
+    import pytest
+    from pydantic import ValidationError
+    from programgarden_core.nodes.data import HTTPRequestNode
+
+    for provider in ("fmp", "finnhub"):
+        node = HTTPRequestNode(id="h", url="https://example.invalid/data", credential_preset=provider)
+        assert HTTPRequestNode.model_validate(node.model_dump()).credential_preset == provider
+        assert node.credential_id is None
+    with pytest.raises(ValidationError):
+        HTTPRequestNode(id="h", url="https://example.invalid/data", credential_preset="unknown")
 
 
 def test_connection_in_list_catalog():
