@@ -38,7 +38,7 @@ litellm = ">=1.40.0"
 #  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
 programgarden-core = "^2.5.0"
 programgarden-finance = "^2.0.1"
-programgarden-community = "^2.2.0"
+programgarden-community = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

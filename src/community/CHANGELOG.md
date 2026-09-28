@@ -1,3 +1,10 @@
+## [2.3.0] - 2026-09-28
+### Added
+- `TelegramNode._connection` — 노드 연결(자격증명) 선언(notify/run/always, 「텔레그램 봇」).
+  core 2.5.0 registry 가 `NodeTypeSchema.connection` 으로 노출한다(챗봇·편집기·검증기가 읽는 단일 선언).
+### Changed
+- deps: programgarden-core ^2.5.0.
+
 ## [2.2.0] - 2026-09-25
 
 ### Removed
