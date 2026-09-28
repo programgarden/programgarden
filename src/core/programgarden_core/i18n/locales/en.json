@@ -294,7 +294,9 @@
   "fields.PerformanceReportNode.benchmark": "Optional benchmark series (same format as data). When provided, beta and alpha are added to metrics.",
   "fields.PerformanceReportNode.periods_per_year": "Annualization factor (252 for daily, 12 for monthly data). Default 252.",
   "fields.PerformanceReportNode.risk_free_rate": "Annual risk-free rate as a fraction (e.g. 0.02 for 2%) for Sharpe/Sortino. Default 0.",
+  "fields.HTTPRequestNode.auth_required": "Does the API require authentication? Leave unset to let the chatbot decide from context; set true for private APIs (a credential is then required), false for public APIs.",
   "fields.HTTPRequestNode.body": "Request body for POST/PUT/PATCH. Automatically serialized to JSON.",
+
   "fields.HTTPRequestNode.credential_id": "Credential ID for authentication. Supports: http_bearer, http_header, http_basic, http_query",
   "fields.HTTPRequestNode.headers": "HTTP headers. Click + to add custom headers (e.g., Content-Type, X-API-Key).",
   "fields.HTTPRequestNode.method": "HTTP method for the request",
@@ -598,7 +600,9 @@
   "fieldNames.PerformanceReportNode.benchmark": "Benchmark",
   "fieldNames.PerformanceReportNode.periods_per_year": "Periods / Year",
   "fieldNames.PerformanceReportNode.risk_free_rate": "Risk-Free Rate",
+  "fieldNames.HTTPRequestNode.auth_required": "Requires Auth",
   "fieldNames.HTTPRequestNode.body": "Request Body",
+
   "fieldNames.HTTPRequestNode.credential_id": "Credential",
   "fieldNames.HTTPRequestNode.headers": "Headers",
   "fieldNames.HTTPRequestNode.method": "HTTP Method",
@@ -872,6 +876,8 @@
   "ports.http_error": "Error message",
   "ports.http_request_data": "Request data",
   "ports.http_response": "API response data",
+  "ports.http_results": "Per-item results (one {item, response, status_code, success, error} entry per iterated item)",
+
   "ports.http_status_code": "HTTP status code",
   "ports.http_success": "Request success flag",
   "ports.items": "Item list",
@@ -1194,7 +1200,14 @@
   "connection_rules.realtime_to_ai_agent.suggestion": "Place a ThrottleNode between the realtime node and AI Agent to control call frequency.",
   "connection_rules.realtime_to_external_api.reason": "Direct connection from realtime node to external API node is not recommended. Each tick would trigger an external API request, potentially hitting rate limits.",
   "connection_rules.realtime_to_external_api.suggestion": "Place a ThrottleNode between the realtime node and external API node to control request frequency.",
+  "connection.HTTPRequestNode.label": "API key",
+  "connection.KoreaStockBrokerNode.label": "LS Securities Korea stock account",
+  "connection.LLMModelNode.label": "AI model key",
+  "connection.OverseasFuturesBrokerNode.label": "LS Securities overseas futures account",
+  "connection.OverseasStockBrokerNode.label": "LS Securities overseas stock account",
+  "connection.TelegramNode.label": "Telegram bot",
   "connection_rules.realtime_to_http.reason": "Direct connection from realtime node to HTTPRequestNode is not recommended. Each tick would trigger an HTTP request, potentially hitting external API rate limits.",
+
   "connection_rules.realtime_to_http.suggestion": "Place a ThrottleNode between the realtime node and HTTP request node to control request frequency.",
   "fields.BaseOrderNode.rate_limit_interval": "Minimum order interval (seconds). Default 5 seconds. The next order will only execute after this time has elapsed since the last order.",
   "fields.BaseOrderNode.rate_limit_action": "Action when order interval is not met. skip: silently skip, error: raise error",

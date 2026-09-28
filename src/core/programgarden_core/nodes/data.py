@@ -552,6 +552,24 @@ class HTTPRequestNode(BaseNode):
         on_throttle="skip",
     )
 
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. HTTP 는 인증형 API 일 때만 키가
+    # 필요(when=auth_required, auth_required 설정 참조)하고, 실제 응답 검증에도 필요해
+    # need=validate 다. FMP/Finnhub 는 http_query 프리셋으로 param_name 을 잡아준다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "data",
+        "need": "validate",
+        "when": "auth_required",
+        "label_key": "connection.HTTPRequestNode.label",
+        "presets": [
+            {"id": "fmp", "label": "FMP", "type": "http_query",
+             "fields": {"param_name": "apikey"}},
+            {"id": "finnhub", "label": "Finnhub", "type": "http_query",
+             "fields": {"param_name": "token"}},
+        ],
+        "missing": "draft",
+    }
+
+
     # === PARAMETERS: 핵심 HTTP 요청 설정 ===
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
         default="GET",
@@ -572,6 +590,15 @@ class HTTPRequestNode(BaseNode):
 
     # === SETTINGS: 부가 설정 ===
     timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
+
+    # 이 API 가 인증이 필요한가(비공개 키). None = 챗봇이 판단(기본) — 문맥으로 결정한다.
+    # True = 인증 필요(credential 없으면 검증/실행 불가), False = 공개 API(credential 불필요).
+    # 기본값을 False 로 두면 비공개 API 에 위험하므로 None(미지정)으로 둔다.
+    # `connection.when="auth_required"` 가 이 값을 참조한다.
+    auth_required: Optional[bool] = Field(
+        default=None,
+        description="Does this API require authentication? None = chatbot decides (default), True = auth required, False = public.",
+    )
 
     # === Resilience: 재시도/실패 처리 (H-21: HTTP 요청은 기본 재시도 활성화) ===
     resilience: ResilienceConfig = Field(
@@ -606,6 +633,7 @@ class HTTPRequestNode(BaseNode):
         "Rate-limited: minimum 1-second interval and max 3 concurrent calls; real-time node connections blocked",
         "is_tool_enabled=True — AI Agent can invoke HTTPRequestNode as a tool to fetch live external data",
         "Outputs response (parsed JSON or raw text), status_code, success flag, and error string for downstream branching",
+        "Runs once per upstream list element when the config references {{ item… }}/{{ index }}/{{ total }} (e.g. one request per watchlist symbol); the per-item outcomes are exposed on the `results` array port while response/status_code/success/error hold the last item's values. A config without an item reference runs once (unchanged).",
     ]
     _anti_patterns: ClassVar[List[Dict[str, str]]] = [
         {
@@ -693,7 +721,7 @@ class HTTPRequestNode(BaseNode):
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": "The 'url' field is the only required config. Use 'body' for POST/PUT/PATCH payloads (auto-serialized to JSON). Use 'query_params' for GET parameters. The 'data' input port can supply dynamic values from upstream nodes via expression.",
-        "output_consumption": "Check 'success' (boolean) before consuming 'response'. On failure, 'error' contains the HTTP status string. 'response' is auto-parsed JSON when the Content-Type is application/json, otherwise raw text.",
+        "output_consumption": "Check 'success' (boolean) before consuming 'response'. On failure, 'error' contains the HTTP status string. 'response' is auto-parsed JSON when the Content-Type is application/json, otherwise raw text. When the config references {{ item… }} the node runs once per upstream item: read the 'results' array (one {item, response, status_code, success, error} entry per item, in order) for per-item outcomes; 'response'/'status_code'/'success'/'error' then reflect the LAST item, and top-level 'success' is the AND of all items while top-level 'error' is set only when every item failed.",
         "common_combinations": [
             "StartNode → HTTPRequestNode (GET) → FieldMappingNode → ConditionNode",
             "ConditionNode → HTTPRequestNode (POST webhook) → SummaryDisplayNode",
@@ -719,13 +747,32 @@ class HTTPRequestNode(BaseNode):
         OutputPort(name="status_code", type="number", description="i18n:ports.http_status_code"),
         OutputPort(name="success", type="boolean", description="i18n:ports.http_success"),
         OutputPort(name="error", type="string", description="i18n:ports.http_error"),
+        # Per-item results when the node auto-iterates over an upstream list
+        # (config references {{ item… }}/{{ index }}/{{ total }}). One entry per
+        # item, in order: {item, response, status_code, success, error}. A node
+        # that does not reference an iteration item runs once and this array holds
+        # that single execution. `response`/`status_code`/`success`/`error` above
+        # stay as the LAST item's scalar values (backward compatible with
+        # {{ nodes.x.response }}).
+        OutputPort(
+            name="results", type="array",
+            description="i18n:ports.http_results",
+            example=[
+                {"item": {"symbol": "AAPL", "exchange": "NASDAQ"},
+                 "response": {"price": 189.2}, "status_code": 200,
+                 "success": True, "error": None},
+            ],
+        ),
     ]
 
     _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "Added `results` port: one entry per iterated item ({{ item }} refs); "
+        "scalar ports keep the last item's value."
+    )
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -812,6 +859,16 @@ class HTTPRequestNode(BaseNode):
                 max_value=300,
                 group="advanced",
             ),
+            "auth_required": FieldSchema(
+                name="auth_required", type=FieldType.BOOLEAN, required=False,
+                description="i18n:fields.HTTPRequestNode.auth_required",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=True,
+                expected_type="bool",
+                group="advanced",
+            ),
+
             # === RESILIENCE: 재시도/실패 처리 (단순화된 UI) ===
             "resilience": FieldSchema(
                 name="resilience", type=FieldType.OBJECT, required=False,

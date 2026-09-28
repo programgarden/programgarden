@@ -278,6 +278,24 @@ def _iterates(node_type: str, role: str, c, own_fields: List[str]) -> Optional[D
         return None
     if node_type in c["no_auto_iterate"] or role == "broker":
         return None
+    if node_type == "HTTPRequestNode":
+        # HTTPRequestNode fans out per item ONLY when its config references an
+        # iteration binding ({{ item... }} / {{ index }} / {{ total }}); a config
+        # without such a reference runs ONCE (executor _should_auto_iterate,
+        # owner decision 2026-09-28 -- the condition->webhook POST example must
+        # not fire N times). It has no fixed `symbols` field, so `item` follows
+        # the upstream element shape and the per-item outcomes are exposed on the
+        # `results` output port; the recording key is EXCHANGE:SYMBOL for
+        # {symbol, exchange} items and a string/other item falls back to the
+        # index key (replay_external.py).
+        return {
+            "mode": "per_item",
+            "item": "upstream_element",
+            "when": "config_references_item_binding",
+            "record_key": "EXCHANGE:SYMBOL",
+            "single": "no_item_binding",
+            "results_port": "results",
+        }
     if "symbols" not in own_fields:
         return None
     block: Dict[str, Any] = {
@@ -523,11 +541,18 @@ def execution_semantics_text(node_type: str) -> List[str]:
 
     it = block.get("iteration")
     if isinstance(it, dict):
-        line = ("Auto-iterates per item over an upstream symbol array; each per-item "
-                "recording is keyed EXCHANGE:SYMBOL and a single non-iterated "
-                "recording sets item=null.")
-        if it.get("default_exchange"):
-            line = line[:-1] + " (exchange defaults to KRX when omitted)."
+        if it.get("when") == "config_references_item_binding":
+            line = ("Auto-iterates per item over the upstream list ONLY when the config "
+                    "references an item binding ({{ item }} / {{ index }} / {{ total }}); "
+                    "otherwise it runs once. Each per-item recording is keyed EXCHANGE:SYMBOL "
+                    "(a string or other item falls back to the index key), and per-item "
+                    "outcomes are exposed on the 'results' output port.")
+        else:
+            line = ("Auto-iterates per item over an upstream symbol array; each per-item "
+                    "recording is keyed EXCHANGE:SYMBOL and a single non-iterated "
+                    "recording sets item=null.")
+            if it.get("default_exchange"):
+                line = line[:-1] + " (exchange defaults to KRX when omitted)."
         lines.append(line)
 
     emits = block.get("emits_events") or []
