@@ -1,4 +1,4 @@
-## [2.5.1] - 2026-09-28
+## [2.5.1] - 2026-09-29
 
 ### Changed
 - HTTP provider registration intent survives the native `credential_preset`
@@ -17,6 +17,10 @@
   exceeds the configured retry budget (at most 5 seconds during validation),
   retrying stops with the original failure instead of making an early request.
   Existing fallback and per-item error handling apply.
+
+- LLM and Telegram connection declarations use the explicit `ask` policy.
+- Dependencies: programgarden-core ^2.5.1, programgarden-community ^2.3.1;
+  programgarden-finance remains ^2.0.1.
 
 ## [2.5.0] - 2026-09-28
 

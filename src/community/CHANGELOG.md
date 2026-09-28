@@ -1,10 +1,9 @@
-## [2.3.1] - 2026-09-28
+## [2.3.1] - 2026-09-29
 ### Changed
-- `TelegramNode._connection.missing` `draft` → `ask` (owner decision 2026-09-28):
-  텔레그램 봇 토큰이 없으면 챗봇이 먼저 등록을 묻고, 사용자가 "봇 없이 진행" 이라고
-  명시할 때만 초안으로 저장한다. `ask` 값은 core 2.5.1 registry 의 닫힌 값 집합에 추가됐다.
-  노드 버전 1.1.0.
-- deps: programgarden-core ^2.5.1.
+- TelegramNode uses the `ask` missing-credential policy: the authoring client
+  should request bot registration and save a draft only when the user explicitly
+  chooses to continue without it. Node version: 1.1.0.
+- Require programgarden-core ^2.5.1, whose registry accepts this policy.
 
 ## [2.3.0] - 2026-09-28
 ### Added

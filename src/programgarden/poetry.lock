@@ -2589,18 +2589,18 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "programgarden-community"
-version = "2.3.0"
+version = "2.3.1"
 description = "ProgramGarden Community - 전략 플러그인 모음"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_community-2.3.0-py3-none-any.whl", hash = "sha256:b4897510ef426efa57329f44638c2d712f4651d79d5858411faf1053e444e666"},
-    {file = "programgarden_community-2.3.0.tar.gz", hash = "sha256:02d3ce636e26b41fb1f6f5db1e7ac9b8a1494b9d2c371a7affc6cf5f9552c9e6"},
+    {file = "programgarden_community-2.3.1-py3-none-any.whl", hash = "sha256:736141003b46f5374082e52767e409973da2bb24b145f10a00c88f719a3c3388"},
+    {file = "programgarden_community-2.3.1.tar.gz", hash = "sha256:e7a810cab8fba4ae11e37a079211b3c09c20e2f96e6a7340a968abafa49243a9"},
 ]
 
 [package.dependencies]
-programgarden-core = ">=2.5.0,<3.0.0"
+programgarden-core = ">=2.5.1,<3.0.0"
 pypdf = ">=4.0.0"
 
 [package.extras]
@@ -2610,14 +2610,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "2.5.0"
+version = "2.5.1"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-2.5.0-py3-none-any.whl", hash = "sha256:c869d8af373477221ad13af79899181135409f171c92073014442f3fbd0bc1be"},
-    {file = "programgarden_core-2.5.0.tar.gz", hash = "sha256:1e48c9e8fe2109033b1bcb06ef12d7d24ff7481ae27d5ac8bed067723e40ce75"},
+    {file = "programgarden_core-2.5.1-py3-none-any.whl", hash = "sha256:2fe3981802c89540889aa052831caf08f27b05b58746129a8ec3e7e12b0e5705"},
+    {file = "programgarden_core-2.5.1.tar.gz", hash = "sha256:dbfe656e48c4c564d1e33f395dec8601b0dd6c324bd04c1f7597b121b9a8ff64"},
 ]
 
 [package.dependencies]
@@ -4180,4 +4180,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "c57b9c0c2679993ab6615251b2b93c0d194147ebc684bb6d4c98b7d7ae666af6"
+content-hash = "b887433de2e7c51aaf60a3dbc384062be1ff18160cae1449e40f7070004d9786"

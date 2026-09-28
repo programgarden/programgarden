@@ -1,4 +1,4 @@
-## [2.5.1] - 2026-09-28
+## [2.5.1] - 2026-09-29
 
 ### Added
 - HTTPRequestNode exposes `credential_preset` (`fmp` / `finnhub`) as a native,
