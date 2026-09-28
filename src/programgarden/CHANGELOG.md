@@ -10,9 +10,10 @@
 - HTTPRequestNode 429 backoff now honours the server's `Retry-After` header
   (via core 2.5.1 `RetryExecutor`), and a per-host concurrency cap (default 1,
   `programgarden_core.nodes.data.HTTP_MAX_CONCURRENCY_PER_HOST`) serialises
-  requests to the same host across the process. During dry_run / validation the
-  per-retry wait is capped so a 429 cannot exhaust the build budget — the item is
-  recorded with an error in the auto-iterate `results` and the loop continues.
+  requests to the same host across the process. If the server's minimum wait
+  exceeds the configured retry budget (at most 5 seconds during validation),
+  retrying stops with the original failure instead of making an early request.
+  Existing fallback and per-item error handling apply.
 
 ## [2.5.0] - 2026-09-28
 

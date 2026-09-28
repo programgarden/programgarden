@@ -18,13 +18,12 @@
 - HTTPRequestNode external-API protection (owner concern 2026-09-28: on a shared
   cloud egress IP, per-symbol requests firing at once can get the account
   blocked):
-  - A 429 now honours the server's `Retry-After` header (delta-seconds or
-    HTTP-date) as the exponential-backoff floor, still capped by
-    `RetryConfig.max_delay`. The 429 exception carries `retry_after`; the
-    `RetryExecutor` respects it. During dry_run / validation the per-retry wait
-    is additionally capped by `DRY_RUN_MAX_RETRY_WAIT_SEC` (5 s) so a rate limit
-    cannot exhaust the ~60 s build budget — the item is recorded with an error
-    and the auto-iterate loop moves to the next item (no whole-run failure).
+  - A 429 honours the server's `Retry-After` header (delta-seconds or HTTP-date)
+    as a minimum wait. If it exceeds `RetryConfig.max_delay`, or the 5-second
+    validation wait budget, this retry sequence stops with the original failure.
+    It never truncates the server's wait and retries early. Ordinary exponential
+    backoff remains bounded. Existing fallback and per-item error handling apply;
+    a skipped retry is not a successful API validation.
   - Per-host concurrency cap `HTTP_MAX_CONCURRENCY_PER_HOST` (default 1): a
     process-wide, per-(event-loop, host) semaphore lets only one request per host
     run at a time, so parallel / fan-out requests to the same API queue instead

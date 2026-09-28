@@ -388,11 +388,11 @@ class TestRetryAfterAndDryRunCap:
         delay = executor._calculate_delay(self._cfg(), 1, retry_after=10.0)
         assert delay == 10.0
 
-    def test_retry_after_capped_by_max_delay(self):
-        """서버가 준 큰 Retry-After 도 max_delay 를 넘지 않는다."""
+    def test_retry_after_over_max_delay_stops_retrying(self):
+        """A bounded runtime must stop rather than retry before the server allows."""
         executor = RetryExecutor()
         delay = executor._calculate_delay(self._cfg(max_delay=30.0), 1, retry_after=1000.0)
-        assert delay == 30.0
+        assert delay is None
 
     def test_small_retry_after_does_not_shrink_backoff(self):
         """Retry-After 가 지수 백오프보다 작으면 백오프를 줄이지 않는다."""
@@ -401,11 +401,11 @@ class TestRetryAfterAndDryRunCap:
         delay = executor._calculate_delay(self._cfg(), 3, retry_after=1.0)
         assert delay >= 3.0
 
-    def test_dry_run_caps_wait_even_with_large_retry_after(self):
-        """dry_run 은 큰 Retry-After 라도 빌드 예산을 지키려 대기를 상한한다."""
+    def test_dry_run_rejects_retry_after_over_wait_budget(self):
+        """Validation preserves the rate-limit failure without an early retry."""
         executor = RetryExecutor()
         delay = executor._calculate_delay(self._cfg(), 1, retry_after=1000.0, dry_run=True)
-        assert delay == DRY_RUN_MAX_RETRY_WAIT_SEC
+        assert delay is None
 
     def test_dry_run_caps_exponential_backoff(self):
         """Retry-After 가 없어도 dry_run 은 큰 지수 백오프 대기를 상한한다."""

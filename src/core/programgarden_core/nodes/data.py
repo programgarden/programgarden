@@ -697,7 +697,7 @@ class HTTPRequestNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Supports all HTTP methods: GET, POST, PUT, PATCH, DELETE with optional query params and request body",
-        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3). A 429 honours the server's `Retry-After` header (delta-seconds or HTTP-date) as the backoff floor, capped by max_delay; during dry_run/validation the wait is further capped so a rate limit cannot blow the build budget — the item is recorded with an error and iteration continues.",
+        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3). Retry-After is a minimum wait. When it exceeds max_delay or the 5-second validation wait budget, retrying stops with the original failure; the server's wait is never shortened. Existing fallback and per-item error handling apply.",
         "Per-host concurrency cap (default 1): the engine lets only one request per host run at a time process-wide, so many parallel/fan-out requests to the same external API (shared cloud egress IP) queue instead of stampeding. Auto-iterate is already sequential and paced by rate_limit_interval.",
         "Credential integration for Bearer token, HTTP Basic, custom header, and query-param auth patterns",
         "Rate-limited: minimum 1-second interval and max 3 concurrent calls; real-time node connections blocked",

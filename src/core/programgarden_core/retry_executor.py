@@ -34,10 +34,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("programgarden.retry_executor")
 
-# dry_run/검증 실행은 대략 60초 빌드 예산 안에서 끝나야 한다. 429 백오프(특히 서버가
-# 준 큰 Retry-After)가 이 예산을 잡아먹지 않도록, dry_run 에서는 재시도 1회 대기를 이
-# 값으로 상한한다. max_retries(기본 3) × 이 값 ≪ 60초이므로, 상한을 넘겨도 해당 항목만
-# 실패로 기록되고(호출부의 per-item try 가 잡음) 다음 항목으로 넘어간다 — 전체 실패 X.
+# Validation has a bounded wait budget. If Retry-After exceeds it, stop this
+# retry sequence and preserve the failure instead of contacting the API early.
 DRY_RUN_MAX_RETRY_WAIT_SEC: float = 5.0
 
 
@@ -112,14 +110,18 @@ class RetryExecutor:
                     )
                     break
 
-                # 대기 시간 계산 (exponential backoff with jitter).
-                # 429 예외가 Retry-After 를 실어 보냈으면 그 값을 백오프 하한으로 존중하고,
-                # dry_run 에서는 빌드 예산을 지키려 대기를 상한한다.
+                # A server-directed wait is a floor, never a delay to truncate.
                 retry_after = getattr(e, "retry_after", None)
                 dry_run = bool(getattr(context, "is_dry_run", False))
                 delay = self._calculate_delay(
                     config.retry, attempt, retry_after=retry_after, dry_run=dry_run
                 )
+                if delay is None:
+                    logger.warning(
+                        "[%s] Retry-After exceeds the retry wait budget; no further attempt",
+                        node.id,
+                    )
+                    break
 
                 logger.info(
                     f"[{node.id}] {error_type.value} 발생, "
@@ -156,13 +158,14 @@ class RetryExecutor:
                     category=NotificationCategory.RETRY_EXHAUSTED,
                     severity=NotificationSeverity.WARNING,
                     title=f"Retry exhausted: {node.id}",
-                    message=f"{node.__class__.__name__} failed after {config.retry.max_retries} retries: {last_error}",
+                    message=f"{node.__class__.__name__} failed after {attempt} attempts: {last_error}",
                     node_id=node.id,
                     node_type=node.__class__.__name__,
                     data={
                         "node_id": node.id,
                         "node_type": node.__class__.__name__,
                         "max_retries": config.retry.max_retries,
+                        "attempts": attempt,
                         "last_error": str(last_error),
                     },
                 )
@@ -178,20 +181,13 @@ class RetryExecutor:
         attempt: int,
         retry_after: Optional[float] = None,
         dry_run: bool = False,
-    ) -> float:
+    ) -> Optional[float]:
         """
-        대기 시간 계산 (exponential backoff with jitter).
+        Return bounded exponential backoff with the server's minimum wait.
 
-        Args:
-            config: RetryConfig
-            attempt: 현재 시도 횟수 (1부터 시작)
-            retry_after: 서버가 준 Retry-After 대기(초). 있으면 지수 백오프 대기의
-                하한으로 존중한다(429). None 이면 순수 지수 백오프.
-            dry_run: dry_run/검증 실행 여부. True 면 빌드 예산을 지키려 대기를
-                `DRY_RUN_MAX_RETRY_WAIT_SEC` 로 추가 상한한다.
-
-        Returns:
-            대기 시간 (초)
+        None means Retry-After cannot fit the configured wait budget: callers
+        must end the retry sequence, retaining the original failure. Ordinary
+        backoff remains capped when no server-directed floor prevents a retry.
         """
         if config.exponential_backoff:
             # 2^(attempt-1) * base_delay
@@ -206,18 +202,10 @@ class RetryExecutor:
         jitter = delay * 0.25 * (random.random() * 2 - 1)
         delay = delay + jitter
 
-        # Retry-After 존중 — 서버가 요구한 대기보다 짧게 재시도하지 않는다.
-        if retry_after is not None and retry_after > delay:
-            delay = retry_after
-
-        # max_delay 제한 (Retry-After 가 크더라도 상한을 넘지 않는다)
-        delay = min(delay, config.max_delay)
-
-        # dry_run 은 빌드 예산(≈60초)을 지키려 한 번 대기를 더 짧게 상한한다.
-        if dry_run:
-            delay = min(delay, DRY_RUN_MAX_RETRY_WAIT_SEC)
-
-        return delay
+        limit = min(config.max_delay, DRY_RUN_MAX_RETRY_WAIT_SEC) if dry_run else config.max_delay
+        if retry_after is not None and retry_after > limit:
+            return None
+        return max(min(delay, limit), retry_after or 0.0)
 
     def _handle_fallback(
         self,
