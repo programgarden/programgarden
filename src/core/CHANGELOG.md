@@ -1,3 +1,10 @@
+## [2.5.2] - 2026-09-29
+
+### Added
+- Overseas-stock REST positions expose `sellable_qty` separately from total
+  holdings. A missing raw broker value is nullable and must not be treated as
+  permission to sell.
+
 ## [2.5.1] - 2026-09-29
 
 ### Added

@@ -20,5 +20,5 @@ fractional and missing values independently of holdings. They also check the
 consumed field names against that model and preserve the SDK example's request
 filters. No credentials, broker request or order is used by these tests.
 
-Status: unreleased source correction after 2.5.1. A new engine/core release and
-consumer pins are required before claiming this field in deployed runtimes.
+Release: programgarden and programgarden-core 2.5.2. Deployed consumers and their
+node catalog must use this release before claiming support for this field.
