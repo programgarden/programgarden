@@ -1,3 +1,15 @@
+## [2.5.4] - 2026-09-30
+
+### Fixed
+- Managed execution storage can be created on Windows. Publication flushed the
+  prepared database through a read-only handle, which Windows rejects with
+  EBADF, so every new managed run (broker nodes or server-confirmed execution
+  IDs) stopped with "Execution storage could not be verified or prepared".
+  The flush now uses a writable handle; macOS and Linux behavior is unchanged.
+
+### Changed
+- Core remains ^2.5.3, finance ^2.0.1 and community ^2.3.1.
+
 ## [2.5.3] - 2026-09-29
 
 ### Fixed

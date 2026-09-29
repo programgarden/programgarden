@@ -182,7 +182,8 @@ def prepare_execution_storage(data_dir, *, project_id, workflow_id, execution_id
             dest.execute("INSERT INTO managed_execution_storage VALUES (1, ?, ?, ?)",
                          (project_id, execution_id, source[0].name if source else None))
             dest.commit()
-        with temporary.open("rb") as handle:
+        # Windows rejects fsync on a read-only descriptor (EBADF); open for writing.
+        with temporary.open("r+b") as handle:
             os.fsync(handle.fileno())
         os.link(temporary, target)  # Exclusive atomic publication, no overwrite.
         return ExecutionStorageLease(key, target, "adopted" if source else "created", locks)
