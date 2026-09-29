@@ -1,5 +1,9 @@
 # ProgramGarden
 
+The REST overseas-stock account output preserves broker-reported `sellable_qty`
+separately from holdings; absent capacity remains null. See
+[the sell-capacity contract](../../docs/overseas-stock-sellable-quantity.md).
+
 Unreleased execution reconciliation work is documented in
 [execution-reconciliation.md](../../docs/execution-reconciliation.md). Its
 optional host storage identity is not yet enabled in deployed worker/tray hosts;

@@ -5966,6 +5966,12 @@ class AccountNodeExecutor(NodeExecutorBase):
                 "name": item.JpnMktHanglIsuNm.strip() if item.JpnMktHanglIsuNm else symbol,
                 "qty": item.AstkBalQty,
                 "quantity": item.AstkBalQty,  # NewOrderNode 호환
+                # SDK defaults are not evidence that LS returned this quantity.
+                "sellable_qty": (
+                    item.AstkSellAbleQty
+                    if "AstkSellAbleQty" in getattr(item, "model_fields_set", set())
+                    else None
+                ),
                 "direction": "long",  # 주식은 보유=매수(long)
                 "close_side": "sell",  # 청산=매도
                 "avg_price": item.FcstckUprc,

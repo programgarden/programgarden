@@ -1,3 +1,15 @@
+## [2.5.2] - 2026-09-29
+
+### Fixed
+- Preserve the observed COSOQ00201 `AstkSellAbleQty` in overseas-stock REST
+  account positions. Keep positive, zero and fractional values; retain null
+  when the raw field was absent instead of promoting the SDK default to evidence.
+  Existing holdings, request filters and the number of broker calls are unchanged.
+
+### Changed
+- Require programgarden-core ^2.5.2 for the matching account output catalog.
+  Finance remains ^2.0.1 and community remains ^2.3.1.
+
 ## [2.5.1] - 2026-09-29
 
 ### Changed
