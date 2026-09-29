@@ -1,6 +1,8 @@
 """Exercise SQLite/WAL adoption and ownership failures without broker transport."""
 
+import errno
 import json
+import os
 from pathlib import Path
 import sqlite3
 
@@ -167,3 +169,23 @@ def test_source_symlink_and_unsafe_workflow_name_are_rejected(tmp_path):
         prepare(tmp_path)
     with pytest.raises(ExecutionStorageUnavailable, match="filename"):
         prepare(tmp_path, workflow_id="../escape")
+
+
+def test_publication_fsyncs_a_writable_descriptor(tmp_path, monkeypatch):
+    # Windows FlushFileBuffers rejects read-only descriptors with EBADF; enforce that everywhere.
+    real_fsync = os.fsync
+
+    def windows_fsync(fd):
+        if os.name != "nt":
+            import fcntl
+            if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY:
+                raise OSError(errno.EBADF, "Bad file descriptor")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", windows_fsync)
+    lease = prepare(tmp_path)
+    assert lease.action == "created"
+    lease.close()
+    resumed = prepare(tmp_path)
+    assert resumed.action == "resumed"
+    resumed.close()
