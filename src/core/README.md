@@ -1,5 +1,9 @@
 # ProgramGarden Core
 
+The REST overseas-stock position catalog declares `sellable_qty`, matching the
+broker-reported capacity preserved by the engine. Missing evidence remains null;
+see [the contract](../../docs/overseas-stock-sellable-quantity.md).
+
 ProgramGarden은 AI 시대에 맞춰 파이썬을 모르는 투자자도 개인화된 시스템 트레이딩을 자동으로 수행할 수 있게 돕는 오픈소스입니다. 본 저장소는 노드 기반 DSL의 핵심 타입, 베이스 클래스, 레지스트리, i18n을 정의하는 "코어" 모듈입니다.
 
 - 문서(비개발자 빠른 시작): https://programgarden.gitbook.io/docs/invest/non_dev_quick_guide

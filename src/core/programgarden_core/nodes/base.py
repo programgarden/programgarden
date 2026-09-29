@@ -316,6 +316,7 @@ OVERSEAS_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
     {"name": "name", "type": "string", "description": "종목명"},
     {"name": "qty", "type": "number", "description": "보유 수량"},
     {"name": "quantity", "type": "number", "description": "보유 수량 (주문 노드 호환 별칭)"},
+    {"name": "sellable_qty", "type": "number", "description": "Observed COSOQ00201 sellable quantity; null when the broker field is absent"},
     {"name": "direction", "type": "string", "description": "포지션 방향 (주식은 항상 long)"},
     {"name": "close_side", "type": "string", "description": "청산 주문 방향 (주식은 항상 sell)"},
     {"name": "avg_price", "type": "number", "description": "평균 매입가"},
