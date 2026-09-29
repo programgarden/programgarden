@@ -5,7 +5,7 @@ authors = [
 homepage = "https://programgarden.com"
 requires-python = ">=3.12"
 name = "programgarden-core"
-version = "2.5.2"
+version = "2.5.3"
 license = "AGPL-3.0-or-later"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 readme = "README.md"
@@ -18,6 +18,7 @@ packages = [
 [tool.poetry.dependencies]
 pydantic = ">=2.0.1,<3.0.0"
 tzdata = "^2025.2"
+exchange-calendars = {version = "4.13.2", python = ">=3.12,<4.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

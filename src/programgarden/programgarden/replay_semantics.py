@@ -372,7 +372,11 @@ def _time_rules(node_type: str, role: str) -> List[Dict[str, Any]]:
              "max_duration_hours": {"default": None, "gt": 0}, "pin": "range_not_const"},
         ]
     if node_type == "SessionGateNode":
-        return [{"id": "evaluate_at_fixture_instant"}]   # validation_replay.py:276-283
+        return [{"id": "evaluate_at_fixture_instant"},
+                {"id": "optional_exchange_calendar", "field": "exchange_calendar",
+                 "supported": ["XNYS", "XNAS"], "mode": "intersect_configured_windows",
+                 "holidays": True, "early_closes": True, "live_halts": False,
+                 "failure": "allowed_false", "close_exclusive": True}]   # validation_replay.py:276-283
     if node_type == "TradingHoursFilterNode":
         return [{"id": "wait_blocks_replay"}]            # replay_triggers.py:62-71
     if node_type == "ThrottleNode":

@@ -1266,6 +1266,7 @@
   "enums.query_type.new": "신규",
   "enums.query_type.close": "청산",
   "enums.query_type.total": "총가능",
+  "nodes.SessionGateNode.exchange_calendar": "미국 정규장 달력을 선택합니다. XNYS(뉴욕증권거래소) 또는 XNAS(나스닥)의 휴장일·조기폐장을 적용합니다. 실시간 거래정지는 확인하지 않습니다.",
   "nodes.SessionGateNode.allowed": "허용 구간 안에서만 true입니다. IfNode에 연결하세요.",
   "nodes.SessionGateNode.closed_dates": "YYYY-MM-DD 제외일 목록입니다. 현지 날짜 또는 구간 시작 날짜가 해당하면 차단합니다.",
   "nodes.SessionGateNode.days": "시작일 기준 허용 요일입니다. 자정 이후 구간은 전날의 시작 요일에 속합니다.",

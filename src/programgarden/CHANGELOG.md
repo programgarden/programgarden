@@ -1,3 +1,15 @@
+## [2.5.3] - 2026-09-29
+
+### Fixed
+- Replay uses the same opt-in US equity holiday and early-close decision as live
+  SessionGateNode execution. Its capability contract exposes calendar limitations
+  and the runtime identity includes the calendar package version.
+
+### Changed
+- Require programgarden-core ^2.5.3 with exchange-calendars 4.13.2. Finance remains
+  ^2.0.1 and community remains ^2.3.1. Existing workflows keep their configured
+  time windows unless an exchange calendar is explicitly selected.
+
 ## [2.5.2] - 2026-09-29
 
 ### Fixed
