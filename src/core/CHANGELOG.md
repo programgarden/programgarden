@@ -1,3 +1,13 @@
+## [2.5.3] - 2026-09-29
+
+### Fixed
+- SessionGateNode can opt into `exchange_calendar=XNAS` or `XNYS` to intersect
+  configured windows with scheduled US equity sessions, including holidays and
+  early closes. Closing instants are exclusive and missing calendar data blocks
+  entry. The default remains explicit-window behavior for existing workflows.
+- Pin exchange-calendars 4.13.2. This local schedule does not observe live halts,
+  new emergency closures, or a broker's ability to accept an order.
+
 ## [2.5.2] - 2026-09-29
 
 ### Added

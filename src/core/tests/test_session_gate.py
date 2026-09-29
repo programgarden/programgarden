@@ -52,6 +52,53 @@ async def test_dry_run_uses_same_gate_and_registry_exposes_contract():
         result=await node.execute(SimpleNamespace(is_dry_run=True))
     assert not result['allowed']
     schema=NodeTypeRegistry().get_schema('SessionGateNode')
-    assert set(schema.config_schema)=={'timezone','windows','days','closed_dates'}
+    assert set(schema.config_schema)=={'timezone','windows','days','closed_dates','exchange_calendar'}
     assert {'allowed','local_date','session_date','local_time','reason'}=={p['name'] for p in schema.outputs}
     with pytest.raises(ValueError):node.evaluate_at(datetime(2026,1,1))
+
+
+@pytest.mark.parametrize('calendar', ['XNYS', 'XNAS'])
+@pytest.mark.parametrize('instant,allowed', [
+    ('2026-12-25T11:00:00-05:00', False),
+    ('2026-11-27T14:00:00-05:00', False),
+    ('2026-11-27T12:59:59-05:00', True),
+    ('2026-11-27T13:00:00-05:00', False),
+    ('2026-12-24T13:00:00-05:00', False),
+    ('2026-07-03T11:00:00-04:00', False),
+    ('2026-07-02T14:00:00-04:00', True),
+    ('2026-06-19T11:00:00-04:00', False),
+    ('2026-04-03T11:00:00-04:00', False),
+    ('2026-11-11T11:00:00-05:00', True),
+    ('2026-10-12T11:00:00-04:00', True),
+    ('2026-03-09T13:35:00Z', True),
+    ('2026-11-02T14:35:00Z', True),
+    ('2025-01-09T11:00:00-05:00', False),
+    ('2027-12-24T11:00:00-05:00', False),
+])
+def test_published_us_equity_calendar(calendar, instant, allowed):
+    # Exchange calendars, not the broader federal/bond holiday calendar.
+    assert gate(exchange_calendar=calendar).evaluate_at(datetime.fromisoformat(instant))['allowed'] is allowed
+
+
+def test_calendar_is_opt_in_and_cannot_widen_the_user_window():
+    holiday = datetime.fromisoformat('2026-12-25T11:00:00-05:00')
+    assert gate().evaluate_at(holiday)['allowed'] is True
+    node = gate(exchange_calendar='XNAS', closed_dates=['2026-09-29'])
+    assert node.evaluate_at(datetime.fromisoformat('2026-09-29T11:00:00-04:00'))['allowed'] is False
+    assert node.evaluate_at(datetime.fromisoformat('2026-09-30T09:32:00-04:00'))['allowed'] is False
+
+
+def test_calendar_failure_blocks_instead_of_falling_back_to_weekdays():
+    with patch('programgarden_core.market_calendar.scheduled_session_open', side_effect=ImportError('missing dependency')):
+        result = gate(exchange_calendar='XNAS').evaluate_at(datetime.fromisoformat('2026-09-29T11:00:00-04:00'))
+    assert result['allowed'] is False
+    assert result['reason'] == 'calendar_unavailable'
+    assert result['session_date'] == ''
+
+
+def test_calendar_contract_rejects_unimplemented_markets_and_is_discoverable():
+    with pytest.raises(ValidationError):
+        gate(exchange_calendar='KRX')
+    field = SessionGateNode.get_field_schema()['exchange_calendar']
+    assert field.required is False
+    assert field.enum_values == ['XNYS', 'XNAS']

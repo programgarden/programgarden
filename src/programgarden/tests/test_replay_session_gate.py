@@ -57,3 +57,21 @@ async def test_closed_date_is_not_overridden_by_open_time():
     assert result.passed, result.errors
     assert result.outputs["session"]["allowed"] is False
     assert "work" not in result.executed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("as_of,allowed", [
+    ("2026-12-25T16:00:00Z", False),
+    ("2026-11-27T19:00:00Z", False),
+    ("2026-11-27T17:59:59Z", True),
+    ("2026-11-27T18:00:00Z", False),
+    ("2026-07-02T18:00:00Z", True),
+])
+async def test_exchange_calendar_controls_native_branch(as_of, allowed):
+    definition = graph()
+    definition["nodes"][1]["exchange_calendar"] = "XNAS"
+    result = await replay(definition, {"as_of": as_of})
+    assert result.passed, result.errors
+    assert result.outputs["session"]["allowed"] is allowed
+    assert ("work" in result.executed) is allowed
+    assert ("work" in result.skipped) is not allowed

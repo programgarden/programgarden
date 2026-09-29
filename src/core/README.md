@@ -1,3 +1,5 @@
+US regular-session requests can opt into SessionGateNode.exchange_calendar (XNYS/XNAS) for scheduled holidays and early closes. See [session gates](../../docs/session-gates-and-guarded-split.md).
+
 # ProgramGarden Core
 
 The REST overseas-stock position catalog declares `sellable_qty`, matching the

@@ -21,7 +21,8 @@ join. A merge reached by the selected alternative branch remains eligible.
   "timezone": "America/New_York",
   "windows": [{"start": "09:35", "end": "15:50"}],
   "days": ["mon", "tue", "wed", "thu", "fri"],
-  "closed_dates": []
+  "closed_dates": [],
+  "exchange_calendar": "XNAS"
 }
 ```
 
@@ -33,9 +34,27 @@ even when blocked and can anchor completed-bar analysis outside trading hours.
 A window includes its start and excludes its end. Multiple windows represent
 breaks. In an overnight interval, times after midnight belong to the opening
 weekday. Either a matching local date or opening date in `closed_dates` blocks
-the interval. IANA timezone data handles DST; it is not an exchange holiday or
-halt calendar. Operators must maintain those exclusions or add an authoritative
-market-status source. Recheck the window immediately before an order because
+the interval. `exchange_calendar` is optional (`XNYS` for NYSE, `XNAS` for
+Nasdaq), and defaults to null for backward compatibility. When selected, its
+scheduled session intersects the explicit windows and exclusions: holidays close
+the whole day and early closes shorten it. The close instant is excluded. Set
+the same calendar on the initial and final pre-order gates. Missing/broken
+calendar data returns `allowed=false, reason=calendar_unavailable`; it never
+falls back to weekdays.
+
+The pinned exchange-calendars4.13.2 rules include published US equity holidays,
+early closes and known historic exceptions. They do not observe live instrument
+halts or newly announced emergency closures; requirements for real-time market
+state still need a live source. Do not apply this regular-session calendar to a
+requested extended-hours or futures strategy. The replay uses the identical
+predicate at its trusted fixture instant. Dependency version participates in
+runtime identity, so every consumer/replay must update together.
+
+Source checks: [Nasdaq schedule](https://www.nasdaqtrader.com/Trader.aspx?id=Calendar),
+[NYSE schedule](https://www.nyse.com/markets/hours-calendars), and the
+[calendar implementation](https://github.com/gerrymanoim/exchange_calendars).
+The two observed failures were2026-12-25 at11:00 ET and2026-11-27 at14:00 ET;
+both now block, while12:59:59 on the early-close date remains open. Recheck the window immediately before an order because
 analysis/API work can cross the end boundary.
 
 ## Split routing

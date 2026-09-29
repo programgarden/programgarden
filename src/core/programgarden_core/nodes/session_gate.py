@@ -32,8 +32,9 @@ class SessionWindow(BaseModel):
 class SessionGateNode(BaseNode):
     """Return a time decision immediately; use IfNode to enforce it.
 
-    This does not query an exchange calendar, infer holidays, wait for the next
-    session, or grant trading authority. Recheck near the order boundary.
+    An explicit exchange_calendar intersects the window with scheduled US
+    equity sessions. It does not observe live halts or grant trading authority.
+    Recheck near the order boundary.
     """
     type: Literal['SessionGateNode'] = 'SessionGateNode'
     category: NodeCategory = NodeCategory.SCHEDULE
@@ -42,6 +43,7 @@ class SessionGateNode(BaseNode):
     windows: list[SessionWindow] = Field(..., min_length=1, description='i18n:nodes.SessionGateNode.windows')
     days: list[Literal['mon','tue','wed','thu','fri','sat','sun']] = Field(..., min_length=1, description='i18n:nodes.SessionGateNode.days')
     closed_dates: list[str] = Field(default_factory=list, description='i18n:nodes.SessionGateNode.closed_dates')
+    exchange_calendar: Literal['XNYS', 'XNAS'] | None = Field(default=None, description='i18n:nodes.SessionGateNode.exchange_calendar')
 
     _inputs: list[InputPort] = [InputPort(name='trigger',type='signal',required=False,description='i18n:nodes.SessionGateNode.trigger')]
     _outputs: list[OutputPort] = [OutputPort(name=k,type=t,description=d) for k,t,d in [
@@ -51,21 +53,21 @@ class SessionGateNode(BaseNode):
         ('local_time','string','i18n:nodes.SessionGateNode.local_time'),
         ('reason','string','i18n:nodes.SessionGateNode.reason'),
     ]]
-    _change_note: ClassVar[str] = 'Add immediate DST-aware and overnight session decisions.'
-    _version: ClassVar[str] = '1.0.0'
-    _updated_at: ClassVar[str] = '2026-09-20'
+    _change_note: ClassVar[str] = 'Add opt-in scheduled US equity holidays and early closes.'
+    _version: ClassVar[str] = '1.1.0'
+    _updated_at: ClassVar[str] = '2026-09-29'
     _usage: ClassVar[dict[str,Any]] = {
         'when_to_use':['Check a market-local order window immediately before submission.','Handle overnight sessions, breaks and daylight-saving time.'],
-        'when_not_to_use':['An authoritative exchange-open or holiday feed is required.','Wait until opening: use TradingHoursFilterNode.'],
+        'when_not_to_use':['Live trading halts or new emergency closures must be observed.','Wait until opening: use TradingHoursFilterNode.'],
         'typical_scenarios':['ScheduleNode -> SessionGateNode -> IfNode(allowed) -> strategy','Reservation -> SessionGateNode -> IfNode(allowed) -> OrderNode'],
     }
-    _features: ClassVar[list[str]] = ['No credentials or network.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.','Output is a pure function of the evaluation instant and the configuration (windows are start-inclusive and end-exclusive, plus days, closed_dates and the IANA timezone); replay evaluates it at the scenario as_of.','Two frames at the same instant produce the same allowed value; an outside-window scenario must sit at an instant outside the window.','allowed skips nothing by itself; bind it to an IfNode and hang the order chain on the IfNode true edge.']
+    _features: ClassVar[list[str]] = ['No credentials or network.', 'Optional exchange_calendar XNYS/XNAS intersects user windows with scheduled holidays and early closes; missing/broken calendar data blocks entry. Default null preserves explicit-window behavior.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.','Output is a pure function of the evaluation instant and the configuration (windows are start-inclusive and end-exclusive, plus days, closed_dates and the IANA timezone); replay evaluates it at the scenario as_of.','Two frames at the same instant produce the same allowed value; an outside-window scenario must sit at an instant outside the window.','allowed skips nothing by itself; bind it to an IfNode and hang the order chain on the IfNode true edge.']
     _anti_patterns: ClassVar[list[dict[str,str]]] = [{'pattern':'Connect directly to an order and assume an ordinary edge checks allowed.','reason':'Edges sequence execution; false output does not automatically skip successors.','alternative':'Bind allowed to IfNode and use its true edge.'}]
     _node_guide: ClassVar[dict[str,Any]] = {
         'input_handling':'Configure timezone, windows, days and optional closed_dates. No current-time override is accepted from workflow data.',
         'output_consumption':'Bind nodes.session.allowed to an explicit IfNode; local_date can anchor completed-bar calculations.',
         'common_combinations':['ScheduleNode, IfNode, CodeNode, SQLiteNode, OrderNode'],
-        'pitfalls':['Refresh closed_dates or use an authoritative market-state source for holidays/halts.','Recheck near the order: earlier success does not stay valid indefinitely.','Independent workflows still require independent order guards.'],
+        'pitfalls':['For US regular-session requests set exchange_calendar=XNAS or XNYS on BOTH initial and final gates. Weekdays alone do not handle holidays or early closes.', 'Calendar rules do not observe live halts or new emergency closures; use a live market-state source when required.','Recheck near the order: earlier success does not stay valid indefinitely.','Independent workflows still require independent order guards.'],
     }
     _examples: ClassVar[list[dict[str, Any]]] = [
         {
@@ -113,10 +115,17 @@ class SessionGateNode(BaseNode):
     def get_field_schema(cls):
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
         descriptions={name:cls.model_fields[name].description for name in ('timezone','windows','days','closed_dates')}
-        return {name:FieldSchema(name=name,type=kind,description=descriptions[name],required=name!='closed_dates',
+        fields = {name:FieldSchema(name=name,type=kind,description=descriptions[name],required=name!='closed_dates',
                 category=FieldCategory.PARAMETERS,expression_mode=ExpressionMode.FIXED_ONLY,
                 **({'array_item_type':FieldType.OBJECT if name=='windows' else FieldType.STRING} if kind==FieldType.ARRAY else {}))
                 for name,kind in [('timezone',FieldType.STRING),('windows',FieldType.ARRAY),('days',FieldType.ARRAY),('closed_dates',FieldType.ARRAY)]}
+        fields['exchange_calendar'] = FieldSchema(
+            name='exchange_calendar', type=FieldType.STRING,
+            description=cls.model_fields['exchange_calendar'].description, required=False,
+            enum_values=['XNYS', 'XNAS'], category=FieldCategory.PARAMETERS,
+            expression_mode=ExpressionMode.FIXED_ONLY,
+        )
+        return fields
 
     def evaluate_at(self, instant: datetime) -> dict[str, Any]:
         """Pure time decision; the executable node always supplies the real clock."""
@@ -134,8 +143,17 @@ class SessionGateNode(BaseNode):
             if inside and opening.weekday() in allowed_days and not {local.date().isoformat(),opening.isoformat()} & set(self.closed_dates):
                 matched=opening.isoformat()
                 break
+        reason = 'inside_configured_window' if matched else 'outside_configured_window'
+        if matched and self.exchange_calendar is not None:
+            from programgarden_core.market_calendar import scheduled_session_open
+            try:
+                if not scheduled_session_open(self.exchange_calendar, instant):
+                    matched, reason = None, 'outside_exchange_session'
+            except Exception:
+                # A broken/missing calendar must never fall back to weekdays.
+                matched, reason = None, 'calendar_unavailable'
         return {'allowed':matched is not None,'local_date':local.date().isoformat(),'session_date':matched or '',
-                'local_time':local.isoformat(),'reason':'inside_configured_window' if matched else 'outside_configured_window'}
+                'local_time':local.isoformat(),'reason':reason}
 
     async def execute(self, context: Any) -> dict[str, Any]:
         return self.evaluate_at(datetime.now(timezone.utc))

@@ -1266,6 +1266,7 @@
   "enums.query_type.new": "New",
   "enums.query_type.close": "Liquidation",
   "enums.query_type.total": "Total",
+  "nodes.SessionGateNode.exchange_calendar": "Optional scheduled regular-session calendar: XNYS (NYSE) or XNAS (Nasdaq). Intersects configured windows with holidays and early closes. Does not observe live halts.",
   "nodes.SessionGateNode.allowed": "True only inside a configured window; bind to IfNode.",
   "nodes.SessionGateNode.closed_dates": "Explicit YYYY-MM-DD exclusions. Either local calendar date or opening date blocks the window.",
   "nodes.SessionGateNode.days": "Allowed opening weekdays. The post-midnight portion belongs to the previous opening day.",

@@ -60,7 +60,7 @@ def runtime_identity() -> str:
     packages = {}
     for name in ("programgarden", "programgarden-core", "programgarden-community", "programgarden-finance",
                  "pydantic", "pydantic-core", "numpy", "pandas", "scipy", "tzdata", "pytz", "croniter", "aiosqlite",
-                 "pyportfolioopt", "quantstats", "scikit-learn", "statsmodels"):
+                 "pyportfolioopt", "quantstats", "scikit-learn", "statsmodels", "exchange-calendars"):
         try:
             packages[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
