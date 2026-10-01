@@ -86,3 +86,10 @@
 - 5분마다: `*/5 * * * *`
 - 평일 09:00: `0 9 * * mon-fri`
 - 매월 마지막 날 18:00: `0 18 l * *`
+
+
+## Calendar runtime semantics
+
+See [calendar-runtime.md](calendar-runtime.md). Registering a schedule waits for
+its first due time. Seven-field cron uses `second minute hour day month weekday year`;
+an explicit year does not repeat annually. Exhausted dates finish normally.

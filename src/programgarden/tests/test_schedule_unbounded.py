@@ -82,7 +82,7 @@ async def test_unbounded_schedule_ticks_until_stopped():
             config={"cron": "*/5 * * * *", "timezone": "UTC"},  # no count / max_duration_hours
             context=ctx,
         )
-        assert result == {"trigger": True}
+        assert result == {"trigger": False}
         task = ctx._persistent_tasks["sched"]
         await asyncio.wait_for(task, timeout=5.0)
 
