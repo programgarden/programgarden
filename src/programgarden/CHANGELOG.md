@@ -1,3 +1,14 @@
+## [2.5.5] - 2026-10-01
+
+### Fixed
+- Register schedules without executing descendants before the first due tick.
+- Activate only the branch belonging to the due timer when multiple schedules coexist.
+- Finish exhausted finite calendar schedules after queued ticks drain; preserve explicit dry-run behavior.
+
+### Changed
+- Preserve the Windows writable-handle fsync correction from 2.5.4.
+- Core remains ^2.5.3, finance ^2.0.1 and community ^2.3.1.
+
 ## [2.5.4] - 2026-09-30
 
 ### Fixed

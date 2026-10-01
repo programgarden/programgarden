@@ -2227,12 +2227,12 @@ class ScheduleNodeExecutor(NodeExecutorBase):
     ) -> Dict[str, Any]:
         from datetime import datetime
         from zoneinfo import ZoneInfo
-        from croniter import croniter
+        from croniter import croniter, CroniterBadDateError
         
         # 이미 스케줄러가 실행 중이면 재등록하지 않음 (schedule_tick 이벤트로 인한 재실행 시)
         if node_id in context._persistent_tasks:
             context.log("debug", f"Scheduler already running for {node_id}, skip", node_id)
-            return {"trigger": True}
+            return {"trigger": bool(context.is_dry_run or context._schedule_tick_source == node_id)}
         
         # ⑭ cron is required — NO silent "*/5 * * * *" fallback. A missing cron
         # used to make the schedule quietly run every 5 minutes ("looks fine,
@@ -2305,7 +2305,7 @@ class ScheduleNodeExecutor(NodeExecutorBase):
             try:
                 # second_at_beginning=True로 초 단위 cron도 지원
                 try:
-                    itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True)
+                    itr = croniter(cron_expr, datetime.now(tz), second_at_beginning=True, max_years_between_matches=130)
                 except TypeError:
                     itr = croniter(cron_expr, datetime.now(tz))
 
@@ -2340,7 +2340,12 @@ class ScheduleNodeExecutor(NodeExecutorBase):
                         )
                         break
                     # 다음 실행 시간 계산
-                    next_dt = itr.get_next(datetime)
+                    try:
+                        next_dt = itr.get_next(datetime)
+                    except CroniterBadDateError:
+                        # A calendar date/year can be exhausted. It is not an
+                        # execution failure and must never roll into another year.
+                        break
                     now = datetime.now(tz)
                     delay = (next_dt - now).total_seconds()
                     
@@ -2421,8 +2426,9 @@ class ScheduleNodeExecutor(NodeExecutorBase):
         task = asyncio.create_task(scheduler_task())
         context.register_persistent_task(node_id, task)
         
-        # 초기 트리거 반환 (첫 플로우 실행용)
-        return {"trigger": True}
+        # Register the timer without executing downstream trading work early.
+        # Explicit dry-run simulation still exercises one synthetic cycle.
+        return {"trigger": bool(context.is_dry_run)}
 
 
 class WatchlistNodeExecutor(NodeExecutorBase):
@@ -23557,6 +23563,14 @@ class WorkflowJob:
             event = await self.context.wait_for_event(timeout=1.0)
             
             if event is None:
+                has_realtime_source = any(
+                    self.workflow.nodes[n].node_type in REALTIME_NODE_TYPES
+                    for n in self._stay_connected_nodes
+                )
+                if (self._has_schedule_node and not has_realtime_source
+                        and all(task.done() for task in self.context._persistent_tasks.values())):
+                    # Finite calendar/count schedules finish after queued ticks drain.
+                    break
                 continue
             
             # Wait if paused
@@ -23595,6 +23609,7 @@ class WorkflowJob:
                 # RuntimeError 등)가 스케줄 잡 전체를 종료시키지 않도록 한다.
                 # 실패 사이클은 silent 하지 않게 'cycle_failed' 로 통지하고
                 # 다음 tick 에서 재시도한다 (24시간 무인 운영 보호).
+                self.context._schedule_tick_source = event.source_node_id
                 try:
                     await self._execute_main_flow()
                 except Exception as cycle_err:
@@ -23606,6 +23621,8 @@ class WorkflowJob:
                     await self.context.notify_job_state("cycle_failed", self.stats)
                 else:
                     await self.context.notify_job_state("cycle_completed", self.stats)
+                finally:
+                    self.context._schedule_tick_source = None
         
         logger.info("Event loop ended")
 

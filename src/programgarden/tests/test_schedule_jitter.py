@@ -61,7 +61,7 @@ async def _run_once(config, uniform_return=0.02):
         result = await executor.execute(
             node_id="sched", node_type="ScheduleNode", config=config, context=ctx,
         )
-        assert result == {"trigger": True}
+        assert result == {"trigger": False}
         task = ctx._persistent_tasks["sched"]
         await asyncio.wait_for(task, timeout=5.0)
 

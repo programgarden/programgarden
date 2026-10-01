@@ -260,6 +260,7 @@ class ExecutionContext:
         # Stores trackers/connections that should stay alive between flow executions
         self._persistent_nodes: Dict[str, Any] = {}  # node_id -> tracker/connection
         self._persistent_tasks: Dict[str, asyncio.Task] = {}  # node_id -> background task
+        self._schedule_tick_source: Optional[str] = None  # Only this timer may trigger the current cycle.
         self._persistent_metadata: Dict[str, Dict[str, Any]] = {}  # node_id -> {key: value}
         
         # === New: Order Event Dispatcher ===
