@@ -1818,10 +1818,16 @@ class WorkflowPositionTracker:
         """Read the immutable recovery audit; this is not individual fill history."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            return [dict(row) for row in conn.execute(
+            rows = [dict(row) for row in conn.execute(
                 "SELECT * FROM workflow_order_recoveries WHERE product=? AND provider=? "
                 "AND trading_mode=? ORDER BY id",
                 (self.product, self.provider, self.trading_mode))]
+        for row in rows:
+            unknown = Decimal(row["unpriced_quantity"]) > 0
+            row["cost_basis_status"] = "unavailable" if unknown else "estimated"
+            if unknown:
+                row["estimated_pnl"] = None
+        return rows
 
     def get_position_adjustments(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Return the current product/mode audit without creating synthetic trades."""
@@ -2249,6 +2255,10 @@ class WorkflowPositionTracker:
                 reason = "futures_fifo_not_monetary"
             elif not symbol:
                 reason = "missing_symbol"
+            elif any(fill.get("cost_basis_status") == "unavailable" for fill in fills):
+                # Verified order quantity can permit startup without establishing
+                # historical profit. Preserve the existing unavailable contract.
+                reason = "incomplete_fifo_basis"
             elif len(units - {None}) > 1 or unit_conflict:
                 # Contradictory units cannot establish a comparable FIFO basis.
                 reason = "incomplete_fifo_basis"
