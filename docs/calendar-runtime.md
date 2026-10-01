@@ -12,5 +12,7 @@ regressions. No credentials, broker calls or orders. Calendar tests execute the
 actual local async engine, with future waiting, due execution, separate timers,
 expired dates, leap days, day31 and2099 coverage.
 
-This is a development candidate based on engine2.5.4. No PyPI publication or
-production rollout is implied. Dev images must record this exact source commit.
+Release 2.5.5 promotes the calendar correction previously verified in the dev
+worker at source 69516812. It preserves the 2.5.4 Windows writable-handle fsync
+fix. Consumers must pin engine 2.5.5 and core 2.5.3 together; installing this
+library does not start or restart any workflow.
