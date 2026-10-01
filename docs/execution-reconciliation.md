@@ -1,5 +1,42 @@
 # Execution reconciliation foundation
 
+## Historical sells without purchase cost (2.5.6)
+
+Account-wide strategies can sell holdings acquired outside this workflow or
+before its retained history. A broker-confirmed terminal sell no longer blocks
+startup solely because its missing quantity exceeds the workflow's purchase
+lots. Recovery consumes only eligible existing lots; the remainder is recorded
+as `unpriced_quantity`. A stored zero-cost lot is also unpriced, never treated
+as a free purchase. Invalid quantities and conflicting broker evidence still fail.
+
+The SQLite recovery audit gains `unpriced_quantity TEXT NOT NULL DEFAULT '0'`;
+older estimates are preserved. The existing stored `estimated_pnl` contains only
+the matched portion for audit. `get_order_recoveries()` and recovery events
+return `estimated_pnl: null` plus `cost_basis_status: unavailable` whenever any
+quantity is unpriced. Otherwise the status is `estimated`. Consumers must use
+these public readers rather than summing that internal audit column.
+
+Personal metrics retain the existing version-3 contract: affected symbol groups
+have null amounts/outcomes and `incomplete_fifo_basis`; unrelated groups remain
+available. No zero return, invented purchase, individual fill ID or win is
+created. Persistent coverage still absorbs late individual executions once.
+Newly discovered earlier buys require historical replay before changing an
+already recovered sale. This release does not automatically rewrite such history.
+
+The fresh balance/pending-order check still runs after recovery. Startup is
+allowed only when those independent identity, completeness and revision checks
+pass. Account-wide holdings remain accessible through the broker account output;
+they are not imported as workflow-owned lots. No customer restart is automatic.
+
+Validation: 178 focused recovery, startup, cancellation, reconciliation and
+personal-metric tests passed. An offline copy of the reported ledger also
+recovered idempotently, preserved existing positions and passed the production
+API metrics reader. That fixture used a synthetic fresh snapshot and sent no
+orders; it is not a claim of a live customer execution. Runtime consumers must
+adopt 2.5.6 before the fix is available on cloud or desktop.
+
+## Earlier release history
+
 Status: published in engine1.40.0/core1.30.1/finance1.10.5. Engine1.40.1
 also permits editor presentation metadata in strict validation; execution
 configuration typos still fail. Active runners are never upgraded automatically.

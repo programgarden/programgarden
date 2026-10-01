@@ -177,14 +177,15 @@ async def test_unverified_or_conflicting_total_cannot_change_quantity(tmp_path, 
     assert tracker.get_order_recoveries() == []
 
 
-async def test_batch_rollback_unknown_basis_and_revision_hold(tmp_path):
+async def test_batch_rollback_conflicting_evidence_and_revision_hold(tmp_path):
     tracker = make_tracker(tmp_path)
     await buy(tracker, 1, 3, 20)
     order(tracker)
     order(tracker, number="3", qty=4)
     revision = tracker.fill_revision
-    with pytest.raises(ReconciliationUnavailable, match="cost_basis"):
-        await recover(tracker, total(tracker), replace(total(tracker, number="3", qty=4), fill_time="120000000"))
+    with pytest.raises(ReconciliationUnavailable, match="ownership_mismatch"):
+        await recover(tracker, total(tracker), replace(total(tracker, number="3", qty=4),
+                                                     symbol="OTHER", fill_time="120000000"))
     assert tracker.get_workflow_positions()["AAA"].quantity == 3
     assert tracker.get_order_recoveries() == []
     with pytest.raises(ReconciliationUnavailable, match="ledger_changed"):
@@ -195,6 +196,81 @@ async def test_batch_rollback_unknown_basis_and_revision_hold(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         await recover(tracker, total(tracker))
     assert tracker.get_workflow_positions()["AAA"].quantity == 3
+
+
+@pytest.mark.parametrize("owned_quantity", [0, 1])
+async def test_account_wide_sell_with_missing_basis_recovers_without_inventing_pnl(tmp_path, owned_quantity):
+    tracker = make_tracker(tmp_path)
+    if owned_quantity:
+        await buy(tracker, 1, owned_quantity, 20)
+    order(tracker)
+    before = history(tracker)
+    callback = AsyncMock()
+    tracker.set_fill_classified_callback(callback)
+    result = await recover(tracker, total(tracker))
+    assert result[0]["estimated_pnl"] is None
+    assert result[0]["cost_basis_status"] == "unavailable"
+    assert Decimal(result[0]["unpriced_quantity"]) == 3 - owned_quantity
+    assert tracker.get_workflow_positions() == {}
+    assert history(tracker) == before
+    metrics = tracker.personal_metrics()
+    assert metrics["realized_pnl"][0]["amount"] is None
+    assert metrics["realized_pnl"][0]["status"] == "unavailable"
+    assert metrics["closed_trade_count"] is None
+    assert metrics["profit_loss_ratio"] is None
+    assert metrics["executed_order_count"] == int(owned_quantity > 0)
+    # Remaining account holdings are external; they are never imported as a buy.
+    assert await tracker.reconcile_from_broker(snapshot(tracker, {"AAA": 7}),
+                                               expected_revision=tracker.fill_revision) == []
+    assert tracker.get_workflow_positions() == {}
+    await late(tracker, qty=1)
+    tracker = make_tracker(tmp_path)
+    tracker.set_fill_classified_callback(callback)
+    await late(tracker, qty=2, execution="22")
+    assert await recover(tracker, total(tracker)) == []
+    assert len(tracker.get_order_recoveries()) == 1
+    assert tracker.get_order_recoveries()[0]["estimated_pnl"] is None
+    assert history(tracker) == before
+    callback.assert_not_awaited()
+    with pytest.raises(ExecutionIdentityConflictError):
+        await late(tracker, qty=1, execution="23")
+
+
+async def test_zero_basis_lot_does_not_become_zero_cost_profit(tmp_path):
+    tracker = make_tracker(tmp_path)
+    await buy(tracker, 1, 3, 20)
+    with sqlite3.connect(tracker.db_path) as conn:
+        conn.execute("UPDATE workflow_position_lots SET buy_price=0")
+    order(tracker)
+    result = await recover(tracker, total(tracker))
+    assert result[0]["estimated_pnl"] is None
+    assert result[0]["unpriced_quantity"] == "3"
+    assert tracker.personal_metrics()["realized_pnl"][0]["amount"] is None
+
+
+async def test_later_discovered_buy_cannot_rewrite_unpriced_recovery(tmp_path):
+    tracker = make_tracker(tmp_path)
+    order(tracker)
+    await recover(tracker, total(tracker))
+    order(tracker, number="1", side="buy")
+    with pytest.raises(ReconciliationUnavailable, match="historical_buy_requires_full_replay"):
+        await recover(tracker, replace(total(tracker, number="1", side="buy"), fill_time="100000000"))
+    assert tracker.get_workflow_positions() == {}
+    assert len(tracker.get_order_recoveries()) == 1
+
+
+async def test_existing_recovery_schema_upgrade_preserves_estimates(tmp_path):
+    tracker = make_tracker(tmp_path)
+    await buy(tracker, 1, 10, 20)
+    order(tracker)
+    await recover(tracker, total(tracker))
+    with sqlite3.connect(tracker.db_path) as conn:
+        conn.execute("ALTER TABLE workflow_order_recoveries DROP COLUMN unpriced_quantity")
+    tracker = make_tracker(tmp_path)
+    recovery = tracker.get_order_recoveries()[0]
+    assert recovery["unpriced_quantity"] == "0"
+    assert Decimal(recovery["estimated_pnl"]) == 15
+    assert tracker.personal_metrics()["realized_pnl"][0]["amount"] == 15
 
 
 async def test_conflicting_second_snapshot_does_not_rewrite_first_estimate(tmp_path):

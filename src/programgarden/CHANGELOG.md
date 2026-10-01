@@ -1,3 +1,20 @@
+## [2.5.6] - 2026-10-01
+
+### Fixed
+- Permit startup after recovering a broker-confirmed historical sell whose
+  purchase cost is absent from the workflow ledger. Account-wide strategies
+  keep their current holdings scope; unknown historical profit remains unavailable.
+- Persist unpriced recovery quantity and exclude it from monetary/outcome
+  statistics. Late fill replay remains deduplicated without synthetic fills.
+- Require historical replay before a newly discovered earlier buy could rewrite
+  an already recovered sale.
+
+### Compatibility
+- Existing SQLite recovery audits gain a default-zero `unpriced_quantity` column.
+  Public recovery records return null PnL when any cost basis is unavailable.
+- Fresh account/pending-order checks, exact ownership and broker-total identity
+  guards remain in force. Core/finance/community dependencies are unchanged.
+
 ## [2.5.5] - 2026-10-01
 
 ### Fixed

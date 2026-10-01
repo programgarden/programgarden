@@ -208,3 +208,32 @@ async def test_committed_recovery_is_notified_even_when_later_snapshot_holds(tmp
     assert context._startup_reconciled
     assert context.notify_risk_event.await_count == 1
     assert len(tracker.get_order_recoveries()) == 1
+
+
+async def test_account_wide_startup_continues_without_historical_purchase_basis(tmp_path, monkeypatch):
+    from programgarden.context import ExecutionContext
+    from programgarden.executor import BrokerNodeExecutor
+
+    context = ExecutionContext("job", workflow_id="strategy", storage_dir=str(tmp_path),
+                               execution_key="project:execution")
+    context.init_workflow_position_tracker("broker", "overseas_stock", "ls", False)
+    tracker = context._workflow_position_tracker
+    order(tracker)  # Filled sell of account holdings, no workflow purchase lot.
+    ls, calls = client([row()])
+    monkeypatch.setattr("programgarden.executor.ensure_ls_login", lambda *args, **kwargs: (ls, True, None))
+    context.notify_risk_event = AsyncMock()
+    kwargs = dict(context=context, node_id="broker", product="overseas_stock", provider="ls",
+                  appkey="test-key", appsecret="test-secret", paper_trading=False)
+    await BrokerNodeExecutor()._reconcile_startup_account(**kwargs)
+    assert context._startup_reconciled
+    assert context._startup_broker_snapshot.positions.quantities["AAA"] == 7
+    assert tracker.get_workflow_positions() == {}  # No fabricated ownership.
+    assert [request.ExecYn for request in calls] == ["0", "2"]
+    recovery = context.order_recoveries[0]
+    assert recovery["estimated_pnl"] is None
+    assert recovery["cost_basis_status"] == "unavailable"
+    assert tracker.personal_metrics()["realized_pnl"][0]["amount"] is None
+    await BrokerNodeExecutor()._reconcile_startup_account(**kwargs)
+    assert context._startup_reconciled
+    assert len(context.order_recoveries) == 1
+    assert context.notify_risk_event.await_count == 1

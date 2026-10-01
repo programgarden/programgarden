@@ -97,6 +97,9 @@ def initialize_recovery(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(workflow_position_lots)")}
     if "recovery_id" not in columns:
         conn.execute("ALTER TABLE workflow_position_lots ADD COLUMN recovery_id INTEGER")
+    recovery_columns = {row[1] for row in conn.execute("PRAGMA table_info(workflow_order_recoveries)")}
+    if "unpriced_quantity" not in recovery_columns:
+        conn.execute("ALTER TABLE workflow_order_recoveries ADD COLUMN unpriced_quantity TEXT NOT NULL DEFAULT '0'")
 
 
 def recovery_for_order(conn, tracker, day, number):
@@ -159,7 +162,8 @@ def recover_totals(tracker, totals):
     with sqlite3.connect(tracker.db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         # Aggregate execution times are only a recovery ordering, never invented
-        # timestamps for individual executions. Missing basis fails closed.
+        # timestamps for individual executions. Missing basis invalidates PnL,
+        # not a broker-verified execution or the later fresh holdings check.
         for total, (number, symbol, total_qty, price) in sorted(
                 validated, key=lambda item: (item[0].order_date, item[0].fill_time, int(item[1][0]))):
             scope = tracker.product, tracker.provider, tracker.trading_mode
@@ -232,13 +236,18 @@ def recover_totals(tracker, totals):
                     SELECT 1 FROM trade_history WHERE product=? AND provider=? AND trading_mode=?
                     AND symbol=? AND classification='workflow' AND side='sell' AND fill_datetime>=? LIMIT 1
                 """, (*scope, symbol, fill_datetime)).fetchone()
+                later_recovery = conn.execute("""
+                    SELECT 1 FROM workflow_order_recoveries WHERE product=? AND provider=? AND trading_mode=?
+                    AND symbol=? AND side='sell' AND fill_datetime>=? LIMIT 1
+                """, (*scope, symbol, fill_datetime)).fetchone()
                 adjusted = conn.execute("SELECT 1 FROM sqlite_master WHERE name='position_adjustments'").fetchone()
                 if adjusted:
                     adjusted = conn.execute("""SELECT 1 FROM position_adjustments WHERE product=?
                         AND provider=? AND trading_mode=? AND symbol=? LIMIT 1""", (*scope, symbol)).fetchone()
-                if later_sell or adjusted:
+                if later_sell or later_recovery or adjusted:
                     raise ReconciliationUnavailable("historical_buy_requires_full_replay")
             pnl = Decimal(0)
+            unpriced = Decimal(0)
             lots = []
             if total.side == "sell" and missing:
                 lots = conn.execute("""
@@ -246,9 +255,12 @@ def recover_totals(tracker, totals):
                     AND provider=? AND trading_mode=? AND symbol=? AND classification='workflow'
                     AND remaining_qty>0 AND fill_datetime<=? ORDER BY fill_datetime,id
                 """, (*scope, symbol, fill_datetime)).fetchall()
-                if (any(quantity(row[1]) <= 0 for row in lots)
-                        or sum((quantity(row[2]) for row in lots), Decimal(0)) < missing):
-                    raise ReconciliationUnavailable("recovery_cost_basis_unavailable")
+                # Account-wide strategies can sell holdings acquired before this
+                # workflow. Never invent their purchase lots or a zero-cost basis.
+                # Validate stored numbers even when there are too few owned lots.
+                for _, basis, available in lots:
+                    quantity(basis)
+                    quantity(available)
             cursor = conn.execute("""
                 INSERT INTO workflow_order_recoveries
                 (product,provider,trading_mode,order_date,order_no,symbol,exchange,side,
@@ -273,16 +285,25 @@ def recover_totals(tracker, totals):
                 remainder = missing
                 for lot_id, basis, available in lots:
                     used = min(remainder, quantity(available))
-                    pnl += (recovered_price - quantity(basis)) * used
+                    if quantity(basis) > 0:
+                        pnl += (recovered_price - quantity(basis)) * used
+                    else:
+                        unpriced += used
                     conn.execute("UPDATE workflow_position_lots SET remaining_qty=? WHERE id=?",
                                  (float(quantity(available) - used), lot_id))
                     remainder -= used
                     if not remainder:
                         break
-                conn.execute("UPDATE workflow_order_recoveries SET estimated_pnl=? WHERE id=?", (str(pnl), recovery_id))
+                unpriced += remainder
+                # estimated_pnl stores only the matched portion for audit. Public
+                # readers must return null whenever any quantity lacks a basis.
+                conn.execute("UPDATE workflow_order_recoveries SET estimated_pnl=?, unpriced_quantity=? WHERE id=?",
+                             (str(pnl), str(unpriced), recovery_id))
             results.append({"id": recovery_id, "order_date": total.order_date, "order_no": number,
                             "symbol": symbol, "side": total.side, "quantity": str(missing),
-                            "estimated_pnl": str(pnl), "currency": total.currency,
+                            "estimated_pnl": None if unpriced else str(pnl), "currency": total.currency,
+                            "unpriced_quantity": str(unpriced),
+                            "cost_basis_status": "unavailable" if unpriced else "estimated",
                             "basis": "broker_order_total", "is_estimated": True, "is_trade": False})
     return results
 
