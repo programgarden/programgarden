@@ -10,7 +10,7 @@ from programgarden.replay_external import external_record
 from programgarden.replay_triggers import fixture_instant
 
 SOURCE_NODES = frozenset({"MarketUniverseNode",
-    "FuturesContractNode", "ScreenerNode", "OverseasFuturesOrderableQuantityNode"})
+    "FuturesContractNode", "ScreenerNode", "OverseasFuturesOrderableQuantityNode", "OverseasFuturesContractInfoNode"})
 
 
 def source_contract_catalog():
@@ -21,6 +21,7 @@ def source_contract_catalog():
     The parser and independently written assertions remain authoritative.
     """
     from programgarden_finance.ls.overseas_futureoption.market.o3101.blocks import O3101OutBlock
+    from programgarden_finance.ls.overseas_futureoption.market.o3105.blocks import O3105Response
     from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01400.blocks import CIDBQ01400Response
     from programgarden_finance.ls.overseas_stock.market.g3101.blocks import G3101OutBlock
     from programgarden.executor import MarketUniverseNodeExecutor
@@ -39,6 +40,11 @@ def source_contract_catalog():
             "required_row_fields": ["Symbol", "BscGdsCd", "ExchCd", "LstngYr", "LstngM"],
             "notes": "Supply raw o3101 model fields, including explicit contract identity/month. "
                      "Native expiry/exchange/front-next selection runs at as_of; do not preselect results."},
+        "OverseasFuturesContractInfoNode": {"source_schema": O3105Response.model_json_schema(),
+            "notes": "Use the raw SDK o3105 response envelope, with status_code=200, rsp_cd=00000, "
+                     "no error_msg, and matching block.Symbol and block.ExchCd. Optional dates use "
+                     "YYYYMMDD, times HHMMSS. Omitted fields stay null; no quote is required. "
+                     "The recorded response is parsed by the native live detail parser."},
         "OverseasFuturesOrderableQuantityNode": {"source_schema": CIDBQ01400Response.model_json_schema(),
             "notes": "Use the SDK response envelope (block1, block2, status_code, rsp_cd, error_msg), "
                      "not LS wire block names. status_code=200, error_msg absent and rsp_cd=00000 or00136 "
@@ -104,6 +110,11 @@ async def execute_source(node, config, fixture, context):
         return FuturesContractNodeExecutor().select_recorded_master(rows,
             [p.strip().upper() for p in node.base_products], node.contract_selection, exchange,
             context, node.id, as_of=fixture_instant(context, node.id))
+    if node.type == "OverseasFuturesContractInfoNode":
+        from programgarden.futures_contract_info import read_contract_info
+        from programgarden_finance.ls.overseas_futureoption.market.o3105.blocks import O3105Response
+        response = O3105Response.model_validate(source, strict=True)
+        return read_contract_info(response, config, observed_at=fixture_instant(context, node.id))
     if node.type == "OverseasFuturesOrderableQuantityNode":
         from programgarden.futures_orderable import build_orderable_request, read_orderable_quantity
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01400.blocks import CIDBQ01400Response

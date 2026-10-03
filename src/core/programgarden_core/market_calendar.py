@@ -1,4 +1,4 @@
-"""Scheduled US equity sessions, independent of credentials and live market data.
+"""Scheduled equity sessions, independent of credentials and live market data.
 
 This schedule includes published holidays and early closes. It cannot observe
 new emergency closures, instrument halts, or a broker's ability to accept orders.
@@ -19,15 +19,22 @@ def _calendar(name: str, year: int):
 
 def scheduled_session_open(name: str, instant: datetime) -> bool:
     """Exact seconds: opening is inclusive and closing is exclusive."""
-    if name not in {"XNYS", "XNAS"}:
+    if name not in {"XNYS", "XNAS", "XHKG"}:
         raise ValueError("Unsupported exchange calendar")
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("Calendar clock must include timezone")
-    market_date = instant.astimezone(ZoneInfo("America/New_York")).date()
+    zone = "Asia/Hong_Kong" if name == "XHKG" else "America/New_York"
+    market_date = instant.astimezone(ZoneInfo(zone)).date()
     schedule = _calendar(name, market_date.year).schedule
     day = market_date.isoformat()
     if day not in schedule.index:
         return False
     row = schedule.loc[day]
     clock = instant.astimezone(timezone.utc)
-    return bool(row["open"] <= clock < row["close"])
+    if not row["open"] <= clock < row["close"]:
+        return False
+    # XHKG has a scheduled midday break. NaT comparisons are false for markets
+    # without breaks; do not admit the lunch interval as an open session.
+    if "break_start" in row and row["break_start"] <= clock < row["break_end"]:
+        return False
+    return True

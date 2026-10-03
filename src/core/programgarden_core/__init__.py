@@ -57,6 +57,7 @@ __all__ = [
     "OverseasFuturesRealMarketDataNode",
     "OverseasFuturesSymbolQueryNode",
     "FuturesContractNode",
+    "OverseasFuturesContractInfoNode",
     # Nodes - Market (국내주식)
     "KoreaStockMarketDataNode",
     "KoreaStockHistoricalDataNode",

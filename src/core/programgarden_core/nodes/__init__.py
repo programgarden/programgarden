@@ -28,6 +28,7 @@ from programgarden_core.nodes.broker import OverseasStockBrokerNode, OverseasFut
 from programgarden_core.nodes.data_stock import OverseasStockMarketDataNode
 from programgarden_core.nodes.fundamental_stock import OverseasStockFundamentalNode
 from programgarden_core.nodes.data_futures import OverseasFuturesMarketDataNode
+from programgarden_core.nodes.contract_info_futures import OverseasFuturesContractInfoNode
 from programgarden_core.nodes.backtest_stock import OverseasStockHistoricalDataNode
 from programgarden_core.nodes.backtest_futures import OverseasFuturesHistoricalDataNode
 from programgarden_core.nodes.realtime_stock import (
@@ -131,6 +132,7 @@ __all__ = [
     "OverseasFuturesRealMarketDataNode",
     "OverseasFuturesSymbolQueryNode",
     "FuturesContractNode",
+    "OverseasFuturesContractInfoNode",
     # Account - Stock (해외주식)
     "OverseasStockAccountNode",
     "OverseasStockRealAccountNode",

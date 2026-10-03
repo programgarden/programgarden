@@ -43,7 +43,7 @@ class SessionGateNode(BaseNode):
     windows: list[SessionWindow] = Field(..., min_length=1, description='i18n:nodes.SessionGateNode.windows')
     days: list[Literal['mon','tue','wed','thu','fri','sat','sun']] = Field(..., min_length=1, description='i18n:nodes.SessionGateNode.days')
     closed_dates: list[str] = Field(default_factory=list, description='i18n:nodes.SessionGateNode.closed_dates')
-    exchange_calendar: Literal['XNYS', 'XNAS'] | None = Field(default=None, description='i18n:nodes.SessionGateNode.exchange_calendar')
+    exchange_calendar: Literal['XNYS', 'XNAS', 'XHKG'] | None = Field(default=None, description='i18n:nodes.SessionGateNode.exchange_calendar')
 
     _inputs: list[InputPort] = [InputPort(name='trigger',type='signal',required=False,description='i18n:nodes.SessionGateNode.trigger')]
     _outputs: list[OutputPort] = [OutputPort(name=k,type=t,description=d) for k,t,d in [
@@ -53,15 +53,15 @@ class SessionGateNode(BaseNode):
         ('local_time','string','i18n:nodes.SessionGateNode.local_time'),
         ('reason','string','i18n:nodes.SessionGateNode.reason'),
     ]]
-    _change_note: ClassVar[str] = 'Add opt-in scheduled US equity holidays and early closes.'
-    _version: ClassVar[str] = '1.1.0'
-    _updated_at: ClassVar[str] = '2026-09-29'
+    _change_note: ClassVar[str] = 'Add the XHKG cash-session intersection, including lunch breaks; this is not a derivatives calendar.'
+    _version: ClassVar[str] = '1.2.0'
+    _updated_at: ClassVar[str] = '2026-10-03'
     _usage: ClassVar[dict[str,Any]] = {
         'when_to_use':['Check a market-local order window immediately before submission.','Handle overnight sessions, breaks and daylight-saving time.'],
         'when_not_to_use':['Live trading halts or new emergency closures must be observed.','Wait until opening: use TradingHoursFilterNode.'],
         'typical_scenarios':['ScheduleNode -> SessionGateNode -> IfNode(allowed) -> strategy','Reservation -> SessionGateNode -> IfNode(allowed) -> OrderNode'],
     }
-    _features: ClassVar[list[str]] = ['No credentials or network.', 'Optional exchange_calendar XNYS/XNAS intersects user windows with scheduled holidays and early closes; missing/broken calendar data blocks entry. Default null preserves explicit-window behavior.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.','Output is a pure function of the evaluation instant and the configuration (windows are start-inclusive and end-exclusive, plus days, closed_dates and the IANA timezone); replay evaluates it at the scenario as_of.','Two frames at the same instant produce the same allowed value; an outside-window scenario must sit at an instant outside the window.','allowed skips nothing by itself; bind it to an IfNode and hang the order chain on the IfNode true edge.']
+    _features: ClassVar[list[str]] = ['No credentials or network.', 'Optional exchange_calendar XNYS/XNAS/XHKG intersects user windows with scheduled holidays, breaks and early closes; XHKG is the cash calendar, not all futures sessions; missing/broken calendar data blocks entry. Default null preserves explicit-window behavior.','No sleeping and no dry-run bypass.','IANA timezone/DST and opening-weekday semantics.','Explicit IfNode controls downstream work.','Output is a pure function of the evaluation instant and the configuration (windows are start-inclusive and end-exclusive, plus days, closed_dates and the IANA timezone); replay evaluates it at the scenario as_of.','Two frames at the same instant produce the same allowed value; an outside-window scenario must sit at an instant outside the window.','allowed skips nothing by itself; bind it to an IfNode and hang the order chain on the IfNode true edge.']
     _anti_patterns: ClassVar[list[dict[str,str]]] = [{'pattern':'Connect directly to an order and assume an ordinary edge checks allowed.','reason':'Edges sequence execution; false output does not automatically skip successors.','alternative':'Bind allowed to IfNode and use its true edge.'}]
     _node_guide: ClassVar[dict[str,Any]] = {
         'input_handling':'Configure timezone, windows, days and optional closed_dates. No current-time override is accepted from workflow data.',
@@ -122,7 +122,7 @@ class SessionGateNode(BaseNode):
         fields['exchange_calendar'] = FieldSchema(
             name='exchange_calendar', type=FieldType.STRING,
             description=cls.model_fields['exchange_calendar'].description, required=False,
-            enum_values=['XNYS', 'XNAS'], category=FieldCategory.PARAMETERS,
+            enum_values=['XNYS', 'XNAS', 'XHKG'], category=FieldCategory.PARAMETERS,
             expression_mode=ExpressionMode.FIXED_ONLY,
         )
         return fields

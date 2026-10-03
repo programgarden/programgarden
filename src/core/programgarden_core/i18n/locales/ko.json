@@ -296,7 +296,6 @@
   "fields.PerformanceReportNode.risk_free_rate": "무위험 수익률(소수, 예 0.02=2%) — Sharpe/Sortino용. 기본 0.",
   "fields.HTTPRequestNode.auth_required": "이 API 가 인증이 필요한가요? 미설정이면 챗봇이 문맥으로 판단합니다. 비공개 API 는 true(자격증명 필요), 공개 API 는 false 로 두세요.",
   "fields.HTTPRequestNode.body": "요청 본문 (POST/PUT/PATCH용). 자동으로 JSON 직렬화됨.",
-
   "fields.HTTPRequestNode.credential_id": "인증정보 ID. 지원: http_bearer, http_header, http_basic, http_query",
   "fields.HTTPRequestNode.headers": "HTTP 헤더. + 버튼으로 커스텀 헤더 추가 (예: Content-Type, X-API-Key).",
   "fields.HTTPRequestNode.method": "HTTP 요청 메서드",
@@ -602,7 +601,6 @@
   "fieldNames.PerformanceReportNode.risk_free_rate": "무위험 수익률",
   "fieldNames.HTTPRequestNode.auth_required": "인증 필요 여부",
   "fieldNames.HTTPRequestNode.body": "요청본문",
-
   "fieldNames.HTTPRequestNode.credential_id": "인증정보",
   "fieldNames.HTTPRequestNode.headers": "헤더",
   "fieldNames.HTTPRequestNode.method": "HTTP메소드",
@@ -877,7 +875,6 @@
   "ports.http_request_data": "요청 데이터",
   "ports.http_response": "API 응답 데이터",
   "ports.http_results": "항목별 결과 (반복된 항목마다 {item, response, status_code, success, error} 한 건)",
-
   "ports.http_status_code": "HTTP 상태 코드",
   "ports.http_success": "요청 성공 여부",
   "ports.items": "아이템 목록",
@@ -1207,7 +1204,6 @@
   "connection.OverseasStockBrokerNode.label": "LS증권 해외주식 계좌",
   "connection.TelegramNode.label": "텔레그램 봇",
   "connection_rules.realtime_to_http.reason": "실시간 노드에서 HTTPRequestNode로의 직접 연결은 권장하지 않습니다. 틱 데이터마다 HTTP 요청이 발생하여 외부 API 제한에 걸릴 수 있습니다.",
-
   "connection_rules.realtime_to_http.suggestion": "실시간 노드와 HTTP 요청 노드 사이에 ThrottleNode를 배치하여 요청 빈도를 제어하세요.",
   "fields.BaseOrderNode.rate_limit_interval": "최소 주문 간격 (초). 기본값 5초. 직전 주문 후 이 시간이 지나야 다음 주문이 실행됩니다.",
   "fields.BaseOrderNode.rate_limit_action": "주문 간격 미달 시 동작. skip: 조용히 건너뜀, error: 에러 발생",
@@ -1251,6 +1247,9 @@
   "enums.contract_selection.front": "근월물 (만기 가장 가까움)",
   "enums.contract_selection.next": "차월물 (롤오버 대상)",
   "enums.contract_selection.quarterly": "분기월물 (3·6·9·12월)",
+  "nodes.OverseasFuturesContractInfoNode.name": "해외선물 종목상세 조회",
+  "nodes.OverseasFuturesContractInfoNode.description": "연결된 증권사를 통해 선물 종목의 만기일·최종거래일·증거금·거래시간을 조회합니다. 확인되지 않은 값은 비워 두며 주문을 실행하지 않습니다.",
+  "fieldNames.OverseasFuturesContractInfoNode.symbol": "선물 종목",
   "nodes.OverseasFuturesOrderableQuantityNode.name": "해외선물 주문가능수량",
   "nodes.OverseasFuturesOrderableQuantityNode.description": "연결된 해외선물 계좌에서 해당 종목의 주문가능수량을 조회합니다. 주문은 제출하지 않으며, 확인 성공 여부와 가능 수량을 확인한 뒤 진입합니다.",
   "fieldNames.OverseasFuturesOrderableQuantityNode.symbol": "선물 종목",
@@ -1278,5 +1277,6 @@
   "nodes.SessionGateNode.session_date": "허용 구간의 시작일입니다. 차단되면 빈 문자열입니다.",
   "nodes.SessionGateNode.timezone": "IANA 시간대입니다. 설치된 시간대 데이터로 서머타임을 반영합니다.",
   "nodes.SessionGateNode.trigger": "실행 시점의 현지 시간을 확인합니다.",
-  "nodes.SessionGateNode.windows": "현지 HH:MM 구간입니다. 시작은 포함하고 종료는 제외하며 자정을 넘는 구간도 지원합니다."
+  "nodes.SessionGateNode.windows": "현지 HH:MM 구간입니다. 시작은 포함하고 종료는 제외하며 자정을 넘는 구간도 지원합니다.",
+  "fields.SQLiteNode.storage_scope": "저장 범위: 공용 파일 또는 실행별로 분리한 영구 저장 파일"
 }

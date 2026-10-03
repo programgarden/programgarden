@@ -23,7 +23,7 @@ def check_financial_expectations(simulation, schema):
         raise ContractViolation("live_order_count", "Replay must never submit live orders")
 
 
-def check_final_expectations(result, fixture, graph):
+def check_final_expectations(result, fixture, graph, *, event_limit=32):
     """Final acceptance asserts outputs and financial state, not just no error."""
     expected = fixture.get("expected")
     if not isinstance(expected,dict) or not expected:
@@ -39,7 +39,7 @@ def check_final_expectations(result, fixture, graph):
         if node_id not in result.initial_executed:
             raise ContractViolation(node_id, "Required path was not reached")
     from programgarden.replay_events import checked_events
-    events = checked_events(fixture)
+    events = checked_events(fixture, event_limit=event_limit)
     if len(events) != len(result.events):
         raise ContractViolation("events", "Every declared final replay event must be observed")
     has_orders = any(node["type"] in ORDER_NODES for node in graph["nodes"])

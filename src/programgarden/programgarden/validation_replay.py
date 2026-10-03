@@ -349,7 +349,8 @@ class ReplayExecutor(WorkflowExecutor):
 
 
 async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
-                 timeout: float = 30, node_under_test: str | None = None) -> ReplayResult:
+                 timeout: float = 30, node_under_test: str | None = None,
+                 event_limit: int = 32) -> ReplayResult:
     """Run actual scheduler/mappings in disposable state; no silent soft PASS.
 
     A node check executes its actual upstream setup in the same disposable
@@ -358,6 +359,9 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
     node_under_test and always start with another fresh workspace.
     An empty branch is not an exception; required activation/output expectations
     belong to the suite and are checked explicitly by the coordinator.
+    Offline acceptance may explicitly raise event_limit (at most 4096). The
+    default worker/save path stays at 32. Every scheduled instant is still
+    required; state and the timeout span the whole timeline without resets.
     """
     outcome = ReplayResult(False, content_hash(definition), content_hash(fixture))
     outcome.node_under_test = node_under_test
@@ -391,6 +395,9 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
         context.set_workflow_job(job)
         context.start()
         async def run_all():
+            # Reject an oversized/malformed timeline before any initial action.
+            from programgarden.replay_events import checked_events
+            checked_events(fixture, event_limit=event_limit)
             if any(node.node_type in ORDER_NODES for node in resolved.nodes.values()):
                 # A no-signal branch still has account state to verify. Starting
                 # the book only on the first order loses unchanged cash/holdings
@@ -407,7 +414,7 @@ async def replay(definition: dict[str, Any], fixture: dict[str, Any], *,
                                         for node in resolved.nodes}
                 outcome.main_executed = list(outcome.executed)
                 from programgarden.replay_events import replay_events
-                await replay_events(job, runner, fixture, outcome)
+                await replay_events(job, runner, fixture, outcome, event_limit=event_limit)
 
         try:
             await asyncio.wait_for(run_all(), timeout=timeout)

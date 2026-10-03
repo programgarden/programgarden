@@ -601,8 +601,16 @@ class OverseasFuturesRealOrderEventNode(BaseNode):
 
     _inputs: List[InputPort] = []
     _outputs: List[OutputPort] = [
+        OutputPort(name="status", type="string", description="Subscription status; subscribed only after successful registration."),
+        OutputPort(name="error", type="string", description="Subscription failure when unavailable."),
         OutputPort(name="accepted", type="order_event", description="i18n:ports.accepted", fields=ORDER_EVENT_FIELDS),
-        OutputPort(name="filled", type="order_event", description="i18n:ports.filled", fields=ORDER_EVENT_FIELDS),
+        OutputPort(name="filled", type="order_event", description="i18n:ports.filled", fields=ORDER_EVENT_FIELDS + [
+            {"name": "tr_cd", "type": "string", "description": "Native stream identifier (TC3 for executions)."},
+            {"name": "svc_id", "type": "string", "description": "Native service classifier; require CH01 for a positive execution."},
+            {"name": "order_date", "type": "string", "description": "Observed broker order date, YYYYMMDD; no local date fallback."},
+            {"name": "fill_no", "type": "string", "description": "Observed TC3 execution identity; never equate with REST execution numbers."},
+            {"name": "fill_time", "type": "string", "description": "Observed TC3 execution time."},
+        ]),
         OutputPort(name="modified", type="order_event", description="i18n:ports.modified", fields=ORDER_EVENT_FIELDS),
         OutputPort(name="cancelled", type="order_event", description="i18n:ports.cancelled", fields=ORDER_EVENT_FIELDS),
         OutputPort(name="rejected", type="order_event", description="i18n:ports.rejected", fields=ORDER_EVENT_FIELDS),

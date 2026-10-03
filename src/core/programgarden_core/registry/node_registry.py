@@ -195,7 +195,7 @@ class NodeTypeRegistry:
             OverseasFuturesMarketDataNode, OverseasFuturesHistoricalDataNode,
             OverseasFuturesRealMarketDataNode,
             OverseasFuturesSymbolQueryNode,
-            FuturesContractNode,
+            FuturesContractNode, OverseasFuturesContractInfoNode,
             # Account - Stock (해외주식)
             OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)
@@ -239,7 +239,7 @@ class NodeTypeRegistry:
             OverseasFuturesMarketDataNode, OverseasFuturesHistoricalDataNode,
             OverseasFuturesRealMarketDataNode,
             OverseasFuturesSymbolQueryNode,
-            FuturesContractNode,
+            FuturesContractNode, OverseasFuturesContractInfoNode,
             # Account - Stock (해외주식)
             OverseasStockAccountNode, OverseasStockRealAccountNode, OverseasStockRealOrderEventNode,
             # Account - Futures (해외선물)

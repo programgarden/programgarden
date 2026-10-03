@@ -6312,6 +6312,49 @@ class AccountNodeExecutor(NodeExecutorBase):
         return result
 
 
+class FuturesContractInfoNodeExecutor(NodeExecutorBase):
+    """Read exact contract details independently of quote availability."""
+
+    async def execute(self, node_id, node_type, config, context, **kwargs):
+        from programgarden.futures_contract_info import (
+            FuturesContractEvidenceError, build_contract_info_request, read_contract_info,
+            synthetic_contract_info,
+        )
+        config = evaluate_all_bindings(config, context, node_id)
+        try:
+            request = build_contract_info_request(config)
+            if context.is_deep_validate:
+                from programgarden import deep_fixtures
+                return deep_fixtures.apply_override(
+                    synthetic_contract_info(config), context.get_deep_fixture(node_id, node_type),
+                )
+            connection = config.get("connection")
+            if not isinstance(connection, dict) or connection.get("product") != "overseas_futures" or not connection.get("credential_id"):
+                raise FuturesContractEvidenceError("A matching futures broker connection is required")
+            try:
+                credential = exact_futures_credential(connection, context)
+            except ValueError as exc:
+                raise FuturesContractEvidenceError(str(exc)) from exc
+            if not credential or not credential.get("appkey") or not credential.get("appsecret"):
+                raise FuturesContractEvidenceError("The selected futures credential is unavailable")
+            ls, success, _ = ensure_ls_login(
+                credential["appkey"], credential["appsecret"], connection.get("paper_trading", False),
+                context, node_id, product="overseas_futures", caller_name="FuturesContractInfoNode",
+            )
+            if not success:
+                raise FuturesContractEvidenceError("The selected futures broker login failed")
+            response = await asyncio.wait_for(
+                ls.overseas_futureoption().market().o3105(body=request).req_async(), timeout=20,
+            )
+            return read_contract_info(response, config)
+        except (FuturesContractEvidenceError, asyncio.TimeoutError) as exc:
+            reason = str(exc) or "Futures contract detail query timed out"
+        except Exception as exc:
+            reason = f"Futures contract detail query failed ({type(exc).__name__})"
+        context.log("warning", reason, node_id)
+        return {"value": None, "verified": False, "missing_fields": [], "error": reason}
+
+
 class FuturesOrderableQuantityNodeExecutor(NodeExecutorBase):
     """Read per-contract capacity; never place an order or replace failed evidence."""
 
@@ -8479,7 +8522,19 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
         """LS증권 실시간 주문 이벤트 구독"""
 
         # secrets에서 인증 정보 가져오기
-        credential = context.get_credential()
+        if product == "overseas_futures":
+            try:
+                credential = exact_futures_credential(config.get("connection") or {}, context)
+            except ValueError:
+                return {"error": "The selected futures credential is unavailable"}
+            connection = config.get("connection") or {}
+            owner = tuple(connection.get(key) for key in ("broker_node_id", "credential_id", "paper_trading"))
+            prior_owner = getattr(context, "_futures_order_event_owner", None)
+            if prior_owner is not None and prior_owner != owner:
+                return {"error": "A futures event stream cannot be shared across broker connections"}
+            context._futures_order_event_owner = owner
+        else:
+            credential = context.get_credential()
 
         if not credential:
             context.log("error", "Credential not found in secrets", node_id)
@@ -8487,7 +8542,8 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
 
         appkey = credential.get("appkey")
         appsecret = credential.get("appsecret")
-        paper_trading = credential.get("paper_trading", False)
+        paper_trading = (config.get("connection", {}).get("paper_trading", False)
+                         if product == "overseas_futures" else credential.get("paper_trading", False))
 
         if not appkey or not appsecret:
             context.log("error", "appkey/appsecret not found in credential", node_id)
@@ -19886,7 +19942,8 @@ class SQLiteNodeExecutor(NodeExecutorBase):
         import os
         from programgarden.database.query_builder import SQLQueryBuilder
         
-        db_name = config.get("db_name", "default.db")
+        from programgarden.database.sqlite_scope import scoped_sqlite_filename
+        db_name = scoped_sqlite_filename(config, context)
         operation = config.get("operation", "simple")
 
         # dry_run 모드에서는 SELECT만 허용. INSERT/UPDATE/DELETE/UPSERT는
@@ -20334,6 +20391,7 @@ class WorkflowExecutor:
             "OverseasStockSymbolQueryNode": SymbolQueryNodeExecutor(),
             "OverseasFuturesSymbolQueryNode": SymbolQueryNodeExecutor(),
             "FuturesContractNode": FuturesContractNodeExecutor(),
+            "OverseasFuturesContractInfoNode": FuturesContractInfoNodeExecutor(),
             "SymbolFilterNode": SymbolFilterNodeExecutor(),
             "ExclusionListNode": ExclusionListNodeExecutor(),
             "MarketUniverseNode": MarketUniverseNodeExecutor(),
@@ -22055,6 +22113,7 @@ class WorkflowJob:
         # 종목 마스터 조회 노드 — 배열을 **생성**하는 쪽이다. 상류에 배열이 붙었다고
         # 아이템 수만큼 마스터 조회를 반복하면 같은 전체 목록을 N 번 받아온다.
         "FuturesContractNode",
+        "OverseasFuturesContractInfoNode",  # One exact identity; explicit SplitNode for a batch.
         "OverseasFuturesSymbolQueryNode", "OverseasStockSymbolQueryNode", "KoreaStockSymbolQueryNode",
         "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
         # LogicNode 도 집합 연산 노드다 — 상류 조건 결과 **배열 전체**를 AND/OR 해야 한다.

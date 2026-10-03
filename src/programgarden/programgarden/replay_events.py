@@ -12,9 +12,20 @@ from programgarden.context import WorkflowEvent
 from programgarden.replay_contracts import ContractViolation, check_contract
 
 
-def checked_events(fixture):
+DEFAULT_EVENT_LIMIT = 32
+MAX_OFFLINE_EVENT_LIMIT = 4096
+
+
+def checked_events(fixture, *, event_limit=DEFAULT_EVENT_LIMIT):
+    """Allow a trusted offline caller to raise the bound, never a fixture field.
+
+    Interactive worker callers retain 32 events. Longer acceptance runs keep all
+    cron instants and one disposable state store, bounded by replay's timeout.
+    """
+    if type(event_limit) is not int or not 0 <= event_limit <= MAX_OFFLINE_EVENT_LIMIT:
+        raise ContractViolation("events", "Event limit must be an integer from 0 to 4096")
     events = fixture.get("events", [])
-    check_contract(events, {"type": "array", "maxItems": 32, "items": {
+    check_contract(events, {"type": "array", "maxItems": event_limit, "items": {
         "type": "object", "required": ["as_of", "type", "source_node_id"],
         "additionalProperties": False, "properties": {
             "as_of": {"type": "string", "format": "date-time"},
@@ -79,8 +90,8 @@ def event_fixture(fixture, event):
     return frame
 
 
-async def replay_events(job, runner, fixture, outcome):
-    events = checked_events(fixture)
+async def replay_events(job, runner, fixture, outcome, *, event_limit=DEFAULT_EVENT_LIMIT):
+    events = checked_events(fixture, event_limit=event_limit)
     # Ancestor-only node checks may not yet contain a later event source. Final
     # verification checks all declared events against the complete graph.
     pending = iter((index, event) for index, event in enumerate(events)

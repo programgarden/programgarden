@@ -296,7 +296,6 @@
   "fields.PerformanceReportNode.risk_free_rate": "Annual risk-free rate as a fraction (e.g. 0.02 for 2%) for Sharpe/Sortino. Default 0.",
   "fields.HTTPRequestNode.auth_required": "Does the API require authentication? Leave unset to let the chatbot decide from context; set true for private APIs (a credential is then required), false for public APIs.",
   "fields.HTTPRequestNode.body": "Request body for POST/PUT/PATCH. Automatically serialized to JSON.",
-
   "fields.HTTPRequestNode.credential_id": "Credential ID for authentication. Supports: http_bearer, http_header, http_basic, http_query",
   "fields.HTTPRequestNode.headers": "HTTP headers. Click + to add custom headers (e.g., Content-Type, X-API-Key).",
   "fields.HTTPRequestNode.method": "HTTP method for the request",
@@ -602,7 +601,6 @@
   "fieldNames.PerformanceReportNode.risk_free_rate": "Risk-Free Rate",
   "fieldNames.HTTPRequestNode.auth_required": "Requires Auth",
   "fieldNames.HTTPRequestNode.body": "Request Body",
-
   "fieldNames.HTTPRequestNode.credential_id": "Credential",
   "fieldNames.HTTPRequestNode.headers": "Headers",
   "fieldNames.HTTPRequestNode.method": "HTTP Method",
@@ -877,7 +875,6 @@
   "ports.http_request_data": "Request data",
   "ports.http_response": "API response data",
   "ports.http_results": "Per-item results (one {item, response, status_code, success, error} entry per iterated item)",
-
   "ports.http_status_code": "HTTP status code",
   "ports.http_success": "Request success flag",
   "ports.items": "Item list",
@@ -1207,7 +1204,6 @@
   "connection.OverseasStockBrokerNode.label": "LS Securities overseas stock account",
   "connection.TelegramNode.label": "Telegram bot",
   "connection_rules.realtime_to_http.reason": "Direct connection from realtime node to HTTPRequestNode is not recommended. Each tick would trigger an HTTP request, potentially hitting external API rate limits.",
-
   "connection_rules.realtime_to_http.suggestion": "Place a ThrottleNode between the realtime node and HTTP request node to control request frequency.",
   "fields.BaseOrderNode.rate_limit_interval": "Minimum order interval (seconds). Default 5 seconds. The next order will only execute after this time has elapsed since the last order.",
   "fields.BaseOrderNode.rate_limit_action": "Action when order interval is not met. skip: silently skip, error: raise error",
@@ -1251,6 +1247,9 @@
   "enums.contract_selection.front": "Front month (nearest expiry)",
   "enums.contract_selection.next": "Next month (roll target)",
   "enums.contract_selection.quarterly": "Quarterly (Mar/Jun/Sep/Dec)",
+  "nodes.OverseasFuturesContractInfoNode.name": "Futures Contract Details",
+  "nodes.OverseasFuturesContractInfoNode.description": "Reads observed contract dates, margins and reported session times from the connected broker. Missing values remain unknown; no order is placed.",
+  "fieldNames.OverseasFuturesContractInfoNode.symbol": "Futures contract",
   "nodes.OverseasFuturesOrderableQuantityNode.name": "Futures Orderable Quantity",
   "nodes.OverseasFuturesOrderableQuantityNode.description": "Reads contract-specific orderable quantity from the connected futures account. No order is submitted. Require verified=true and sufficient quantity before entry.",
   "fieldNames.OverseasFuturesOrderableQuantityNode.symbol": "Contract",
@@ -1278,5 +1277,6 @@
   "nodes.SessionGateNode.session_date": "Opening date of the matched window, or an empty string when blocked.",
   "nodes.SessionGateNode.timezone": "IANA timezone; daylight-saving transitions use the installed timezone database.",
   "nodes.SessionGateNode.trigger": "Evaluate the current local time when triggered.",
-  "nodes.SessionGateNode.windows": "Local HH:MM start/end windows; start inclusive, end exclusive. Overnight windows are supported."
+  "nodes.SessionGateNode.windows": "Local HH:MM start/end windows; start inclusive, end exclusive. Overnight windows are supported.",
+  "fields.SQLiteNode.storage_scope": "Storage scope: shared filename or a durable namespace per execution."
 }
