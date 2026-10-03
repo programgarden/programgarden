@@ -2,6 +2,10 @@ US regular-session requests can opt into SessionGateNode.exchange_calendar (XNYS
 
 # ProgramGarden Core
 
+Unreleased schema additions: OverseasFuturesContractInfoNode, SQLiteNode's opt-in
+storage_scope=execution, and SessionGateNode's XHKG calendar. See the
+[runtime contract](../../docs/futures-contract-details-and-rollover-state.md).
+
 The REST overseas-stock position catalog declares `sellable_qty`, matching the
 broker-reported capacity preserved by the engine. Missing evidence remains null;
 see [the contract](../../docs/overseas-stock-sellable-quantity.md).

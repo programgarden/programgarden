@@ -177,6 +177,9 @@ class SQLiteNode(BaseNode):
     _img_url: ClassVar[str] = ""
 
     # === 기본 설정 ===
+    storage_scope: Literal['shared', 'execution'] = Field(
+        default='shared', description='i18n:fields.SQLiteNode.storage_scope',
+    )
     db_name: str = Field(
         default="default.db",
         description="데이터베이스 파일명 (/app/data/ 폴더 내)",
@@ -248,7 +251,7 @@ class SQLiteNode(BaseNode):
         "Upsert support via 'on_conflict' column in simple mode — ideal for idempotent state updates",
         "Outputs rows (list), affected_count (int), and last_insert_id (int) to cover all read/write patterns",
         "is_tool_enabled=True — AI Agent can use SQLiteNode as a tool to read or write local state",
-        "Databases are scoped to /app/data/ directory; db_name selects the file",
+        "The host injects storage_dir (default /app/data); db_name selects the file. storage_scope=execution prefixes a stable host execution identity (or workflow ID for standalone use), survives process restarts, and separates managed account executions. Default shared preserves existing filenames. Keep the host directory on durable storage and do not reset reservations on startup.",
         "Has a dedicated replay adapter (execute_sqlite) and takes no external recording; it runs against a file-backed database rooted at the run's storage directory",
         "State written on one tick or event frame persists to that database and stays visible on later frames within the run, so a durable duplicate guard can be built on it",
         "Each execution runs exactly ONE SQL statement (execute_query and every simple-mode action call db.execute once); 'CREATE TABLE …; INSERT …' in one query fails with 'You can only execute one statement at a time'",
@@ -426,6 +429,12 @@ class SQLiteNode(BaseNode):
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
         from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
         return {
+            "storage_scope": FieldSchema(
+                name="storage_scope", type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.storage_scope", default="shared",
+                enum_values=["shared", "execution"], category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
             # === PARAMETERS: 기본 설정 ===
             "db_name": FieldSchema(
                 name="db_name",

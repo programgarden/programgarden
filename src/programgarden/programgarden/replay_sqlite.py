@@ -20,7 +20,8 @@ async def execute_sqlite(node_id, config, context):
     if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}\.db", name):
         raise ContractViolation(node_id, "Replay SQLite requires a plain .db filename")
     root = Path(context._storage_dir).resolve()
-    path = root / name
+    from programgarden.database.sqlite_scope import scoped_sqlite_filename
+    path = root / scoped_sqlite_filename(config, context)
     if path.is_symlink() or path.resolve().parent != root:
         raise ContractViolation(node_id, "SQLite path leaves the replay workspace")
     operation = config.get("operation", "simple")

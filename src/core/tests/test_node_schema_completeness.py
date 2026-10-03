@@ -30,7 +30,8 @@ except ImportError:
 # (community) 제거. 이전 상수(core 72 / community 5)는 서로 상쇄되는 드리프트로
 # 합계만 맞았다(실측 core 73 + community 4 = 77). 실측 기준으로 바로잡는다:
 # core 73→71, community 4→2, 합계 73.
-CORE_NODE_COUNT = 71
+# 2.6.0 adds OverseasFuturesContractInfoNode: 72 core + 2 community.
+CORE_NODE_COUNT = 72
 COMMUNITY_NODE_COUNT = 2
 EXPECTED_TOTAL = CORE_NODE_COUNT + (COMMUNITY_NODE_COUNT if _COMMUNITY_AVAILABLE else 0)
 

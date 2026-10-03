@@ -101,4 +101,4 @@ def test_calendar_contract_rejects_unimplemented_markets_and_is_discoverable():
         gate(exchange_calendar='KRX')
     field = SessionGateNode.get_field_schema()['exchange_calendar']
     assert field.required is False
-    assert field.enum_values == ['XNYS', 'XNAS']
+    assert field.enum_values == ['XNYS', 'XNAS', 'XHKG']

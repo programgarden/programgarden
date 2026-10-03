@@ -1,3 +1,13 @@
+## [2.6.0] - 2026-10-04
+
+### Added
+- Define OverseasFuturesContractInfoNode for observed expiry, margin and session metadata.
+- Add opt-in execution-scoped SQLite state while preserving legacy shared filenames.
+- Accept the XHKG cash calendar for scheduled holidays, lunch breaks and half days.
+
+### Fixed
+- Expose futures order-event identities needed to correlate confirmed TC3 fills.
+
 ## [2.5.3] - 2026-09-29
 
 ### Fixed

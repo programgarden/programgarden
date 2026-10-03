@@ -1,3 +1,18 @@
+## [2.6.0] - 2026-10-04
+
+### Added
+- Read exact futures contract details through o3105 independently of current quote availability; preserve unknown optional fields.
+- Keep opt-in SQLite strategy state across restarts while separating managed executions under the host-provided storage directory.
+- Support explicitly bounded offline replay timelines up to 4096 events; interactive defaults remain 32.
+
+### Fixed
+- Bind futures order-event streams to the exact selected broker credential and reject conflicting reuse.
+- Share native detail projection, calendar and SQLite naming semantics with isolated replay.
+
+### Dependencies
+- Require programgarden-core ^2.6.0; finance remains ^2.0.1 and community remains ^2.3.1.
+- Shared SQLite files are not automatically migrated. XHKG is a cash-market calendar, not complete futures-session evidence.
+
 ## [2.5.6] - 2026-10-01
 
 ### Fixed

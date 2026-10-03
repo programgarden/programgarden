@@ -1,5 +1,14 @@
 # ProgramGarden
 
+An unreleased [futures detail and durable state candidate](../../docs/futures-contract-details-and-rollover-state.md)
+adds exact o3105 metadata, opt-in execution-scoped SQLite and XHKG calendar
+intersection. Missing evidence remains explicit; this does not authorize orders.
+
+An unreleased [offline temporal replay extension](../../docs/offline-temporal-replay.md)
+supports explicit bounded multi-day acceptance without changing the default
+32-event worker/save path. Public package release remains pending; the server
+team has validated a private DEV candidate with the same runtime changes.
+
 The REST overseas-stock account output preserves broker-reported `sellable_qty`
 separately from holdings; absent capacity remains null. See
 [the sell-capacity contract](../../docs/overseas-stock-sellable-quantity.md).
