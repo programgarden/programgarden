@@ -1,6 +1,6 @@
 # Native futures details and durable strategy state
 
-This unreleased candidate adds OverseasFuturesContractInfoNode. It reads one
+Version 2.6.0 adds OverseasFuturesContractInfoNode. It reads one
 explicit `{symbol, exchange}` with o3105 through the selected futures broker
 connection. It does not require a positive quote or submit an order. Live,
 identity-only deep validation, and recorded raw-response replay share the same

@@ -90,6 +90,19 @@ class OverseasFuturesContractInfoNode(BaseNode):
             "edges": [{"from": a, "to": b} for a, b in [("start", "broker"), ("broker", "contract"), ("contract", "detail")]],
             "credentials": [{"credential_id": "broker_cred", "type": "broker_ls_overseas_futures", "data": [{"key": "appkey", "value": ""}, {"key": "appsecret", "value": ""}]}],
         },
+    }, {
+        "title": "Inspect the proposed next contract",
+        "description": "Resolve and inspect the successor before a separate rollover decision; no order is submitted.",
+        "expected_output": "The selected next contract's observed dates and margins, with unknown fields remaining null.",
+        "workflow_snippet": {
+            "id": "futures-next-contract-details", "name": "Inspect next futures contract",
+            "nodes": [{"id": "start", "type": "StartNode"},
+                      {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": True},
+                      {"id": "contract", "type": "FuturesContractNode", "base_products": ["HMH"], "contract_selection": "next"},
+                      {"id": "detail", "type": "OverseasFuturesContractInfoNode", "symbol": "{{ nodes.contract.symbols[0] }}"}],
+            "edges": [{"from": a, "to": b} for a, b in [("start", "broker"), ("broker", "contract"), ("contract", "detail")]],
+            "credentials": [{"credential_id": "broker_cred", "type": "broker_ls_overseas_futures", "data": [{"key": "appkey", "value": ""}, {"key": "appsecret", "value": ""}]}],
+        },
     }]
 
     @classmethod
