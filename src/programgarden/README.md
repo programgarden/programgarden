@@ -1,3 +1,5 @@
+The 2.6.2 release candidate [futures minute alias correction](../../docs/futures-minute-alias-contract.md) aligns canonical minute periods with the existing one-page o3103 path and rejects unsupported hourly/adjustment claims. Complete-range coverage and consumer adoption are not implied.
+
 # ProgramGarden
 
 An unreleased [stock history interval correction](../../docs/stock-history-interval-contract.md)

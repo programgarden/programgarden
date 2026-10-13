@@ -35,6 +35,12 @@ from programgarden_core import (
     OVERSEAS_STOCK_ORDER_MARKET_CODES,
 )
 from programgarden.context import ExecutionContext, WorkflowEvent
+from programgarden.futures_history import (
+    DAILY_INTERVALS as FUTURES_DAILY_INTERVALS,
+    MINUTE_INTERVALS as FUTURES_MINUTE_INTERVALS,
+    normalize_interval as normalize_futures_history_interval,
+    validate_adjust as validate_futures_history_adjust,
+)
 from programgarden.order_lifecycle import (
     FUTURES_PRODUCTS, OrderLifecycleMetadata, exact_futures_credential,
     inject_futures_connection, operation_key,
@@ -12216,6 +12222,11 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
             node_type == "HistoricalDataNode" and product in (None, "overseas_stock")
         ):
             self._stock_history_gubun(config.get("interval", "1d"))
+        if node_type == "OverseasFuturesHistoricalDataNode" or (
+            node_type == "HistoricalDataNode" and product in FUTURES_PRODUCTS
+        ):
+            normalize_futures_history_interval(config.get("interval", "1d"))
+            validate_futures_history_adjust(config.get("adjust", False))
 
         # deep_validate: HistoricalDataNode hits the real LS API. Inject a fixture
         # time series so the flow completes without a network call.
@@ -12638,6 +12649,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
         """
+        interval = normalize_futures_history_interval(interval)
         credential = context.get_credential()
         if not credential:
             context.log("error", "Credential not set for HistoricalDataNode(futures)", node_id)
@@ -12669,7 +12681,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                         symbol_to_exchange[sym] = exch
             
             # interval별 분기
-            is_minute_data = interval in ["1min", "5min", "15min", "30min", "30s"]
+            is_minute_data = interval in FUTURES_MINUTE_INTERVALS
             
             for symbol in symbols:
                 try:
@@ -12720,8 +12732,10 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         from programgarden_finance.ls.overseas_futureoption.chart.o3108.blocks import O3108InBlock
         
         # interval → gubun 변환 (0=일, 1=주, 2=월)
-        gubun_map = {"1d": "0", "1w": "1", "1M": "2"}
-        gubun = gubun_map.get(interval, "0")
+        interval = normalize_futures_history_interval(interval)
+        if interval not in FUTURES_DAILY_INTERVALS:
+            raise ValueError("FUTURES_HISTORY_DAILY_INTERVAL_REQUIRED")
+        gubun = FUTURES_DAILY_INTERVALS[interval]
         
         body = O3108InBlock(
             shcode=symbol,
@@ -12763,17 +12777,21 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> List[Dict[str, Any]]:
-        """해외선물 분봉 조회 (o3103)"""
+        """Read the initial o3103 page; dates and complete-range coverage are not supplied."""
         from programgarden_finance.ls.overseas_futureoption.chart.o3103.blocks import O3103InBlock
         
         # interval → ncnt 변환 (0=30초, 1=1분, 5=5분, 30=30분)
-        ncnt_map = {"30s": 0, "1min": 1, "5min": 5, "15min": 15, "30min": 30}
-        ncnt = ncnt_map.get(interval, 1)
+        interval = normalize_futures_history_interval(interval)
+        if interval not in FUTURES_MINUTE_INTERVALS:
+            raise ValueError("FUTURES_HISTORY_MINUTE_INTERVAL_REQUIRED")
+        ncnt = FUTURES_MINUTE_INTERVALS[interval]
         
         body = O3103InBlock(
             shcode=symbol,
             ncnt=ncnt,
-            readcnt=200,    # 최대 조회 건수
+            readcnt=200,    # Existing application request size, not a documented LS maximum.
+            cts_date="",
+            cts_time="",
         )
         
         result = await api.chart().o3103(body=body).req_async()

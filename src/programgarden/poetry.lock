@@ -2644,14 +2644,14 @@ quant-all = ["packaging (>=23)", "pyportfolioopt (>=1.6,<2) ; python_version < \
 
 [[package]]
 name = "programgarden-core"
-version = "2.6.1"
+version = "2.6.2"
 description = "ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "programgarden_core-2.6.1-py3-none-any.whl", hash = "sha256:b886cabe7493dd8eaad0da5e217b0583b9e92eae05bae42d4f8a6c7c57b7cc22"},
-    {file = "programgarden_core-2.6.1.tar.gz", hash = "sha256:e0aec2eab93b561f2ba3bee80cbed6e89c02ec5da5456fea7df918747c60b253"},
+    {file = "programgarden_core-2.6.2-py3-none-any.whl", hash = "sha256:9539c169ed5379afe92d177734912619e884ddfe2560adc6ec066fa70dcc14fe"},
+    {file = "programgarden_core-2.6.2.tar.gz", hash = "sha256:01bba4fb4e482c20414d5f4e7d83ea9fb8e173bb56bec5b1c1abf08d03a9ad5d"},
 ]
 
 [package.dependencies]
@@ -4245,4 +4245,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "f050654d637859c7f6c73c164b43dff970bcea1e6c1b90f24b4ebcee36e625fe"
+content-hash = "4f3da67f69cb70f22d4ce5c24491d39c1cf5dfacc3784b379042a62783c68789"

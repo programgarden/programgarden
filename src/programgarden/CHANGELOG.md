@@ -1,3 +1,13 @@
+## [2.6.2] - 2026-10-14
+
+### Fixed
+- Route canonical futures minute periods to the existing one-page o3103 request instead of silently returning daily o3108 data. Preserve legacy minute aliases, request size, output sorting and daily/weekly/monthly requests.
+- Reject unsupported hourly/unknown periods and adjust=true before credentials or deep-validation fixtures; preserve explicit static validation errors.
+- Keep minute date-range labels separate from observed coverage. No pagination, complete-range, finality, retention or rollover-adjustment guarantee is added.
+
+### Dependencies
+- Require programgarden-core ^2.6.2; finance ^2.0.1 and community ^2.3.1 are unchanged.
+
 ## [2.6.1] - 2026-10-14
 
 ### Fixed

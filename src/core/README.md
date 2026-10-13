@@ -1,3 +1,5 @@
+The 2.6.2 release candidate [futures minute alias correction](../../docs/futures-minute-alias-contract.md) aligns canonical minute periods with the existing one-page o3103 path and rejects unsupported hourly/adjustment claims. Complete-range coverage and consumer adoption are not implied.
+
 US regular-session requests can opt into SessionGateNode.exchange_calendar (XNYS/XNAS) for scheduled holidays and early closes. See [session gates](../../docs/session-gates-and-guarded-split.md).
 
 # ProgramGarden Core

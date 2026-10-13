@@ -1,3 +1,10 @@
+## [2.6.2] - 2026-10-14
+
+### Fixed
+- Align futures historical node periods with implemented 30-second, minute, daily, weekly and monthly requests; normalize known legacy minute aliases and reject unsupported hourly values.
+- Reject unsupported rollover adjustment instead of advertising adjusted prices. Omitted/false adjustment remains valid; saved true values are not rewritten.
+- Explain that minute history is one available page and requested dates are not a coverage guarantee. Complete range, finality and rollover stitching remain unsupported.
+
 ## [2.6.1] - 2026-10-14
 
 ### Fixed

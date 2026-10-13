@@ -10,7 +10,7 @@ Item-based execution:
 """
 
 from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
-from pydantic import Field
+from pydantic import Field, field_validator
 
 if TYPE_CHECKING:
     from programgarden_core.models.field_binding import FieldSchema
@@ -59,20 +59,26 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     )
     start_date: str = Field(
         default="{{ date.months_ago(3, format='yyyymmdd') }}",
-        description="Start date (YYYY-MM-DD or {{ date.months_ago(N, format='yyyymmdd') }})",
+        description="Requested start date (YYYYMMDD or expression); not sent for minute periods.",
     )
     end_date: str = Field(
         default="{{ date.today(format='yyyymmdd') }}",
-        description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
+        description="Requested end date (YYYYMMDD or expression); not sent for minute periods.",
     )
-    interval: str = Field(
+    interval: Literal["30s", "1m", "5m", "15m", "30m", "1d", "1w", "1M"] = Field(
         default="1d",
-        description="Data interval (1m, 5m, 15m, 1h, 1d)",
+        description="Implemented chart periods: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M; hourly and unknown periods are rejected.",
     )
-    adjust: bool = Field(
+    adjust: Literal[False] = Field(
         default=False,
-        description="Apply adjusted prices",
+        description="Must remain false; only exact-contract prices are implemented, without rollover adjustment.",
     )
+
+    @field_validator("interval", mode="before")
+    @classmethod
+    def normalize_legacy_interval(cls, value):
+        aliases = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m"}
+        return aliases.get(value, value) if isinstance(value, str) else value
 
     @classmethod
     def is_tool_enabled(cls) -> bool:
@@ -82,7 +88,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         "when_to_use": [
             "Retrieve daily (or intraday) OHLCV history for an overseas futures contract (CME, EUREX, SGX, HKEX) for technical analysis or backtesting",
             "Feed historical candles into ConditionNode plugins (MACD, Bollinger, etc.) that operate on futures price series",
-            "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to maintain a rolling lookback window",
+            "Use date expressions for daily/weekly/monthly request dates; minute requests do not send dates or guarantee a lookback window",
         ],
         "when_not_to_use": [
             "For overseas stock historical data — use OverseasStockHistoricalDataNode",
@@ -97,9 +103,11 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Returns time_series list of OHLCV candles: [{date, open, high, low, close, volume}, ...] ordered oldest-first",
-        "Supports intervals: 1m, 5m, 15m, 1h, 1d, 1w, 1M — daily is the default for swing/position strategies",
+        "Supports implemented periods: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M; legacy minute aliases are accepted; 1h and unknown periods are rejected",
         "start_date / end_date accept YYYYMMDD strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions",
-        "adjust=True applies roll-adjusted prices for continuous contract backtesting",
+        "adjust must remain false: exact-contract prices only, without rollover adjustment or month stitching",
+        "Minute history returns the available initial o3103 page (200 rows requested), not a complete requested range or a guaranteed latest-N set",
+        "Minute start/end dates are not sent to o3103; period echoes requested dates, not actual coverage. Bar finality, time zone, retention and sufficient lookback require separate evidence",
         "is_tool_enabled=True — AI Agent can fetch futures history for technical analysis autonomously",
         "Item-based execution: pair with SplitNode to fetch OHLCV for multiple contracts",
         "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
@@ -117,9 +125,9 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
             "alternative": "Bind `{{ nodes.historical.value.time_series }}` to the ConditionNode data field.",
         },
         {
-            "pattern": "Using adjust=False for a continuous contract strategy that spans roll periods",
-            "reason": "Unadjusted prices have discontinuities at contract roll dates, which distort momentum and mean-reversion signals.",
-            "alternative": "Set adjust=True for strategies that look back across multiple roll periods.",
+            "pattern": "Treating exact-contract observations as continuous or rollover-adjusted data",
+            "reason": "Rollover adjustment and cross-contract stitching are not implemented.",
+            "alternative": "Keep adjust=False and verify this contract has the needed data; do not substitute internal history.",
         },
     ]
     _examples: ClassVar[List[Dict[str, Any]]] = [
@@ -158,7 +166,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         },
         {
             "title": "HKEX mini-futures intraday scan",
-            "description": "Fetch 1-hour bars for the past 10 days for HKEX mini-futures and apply MACD.",
+            "description": "Request the available initial 30-minute page for HKEX mini-futures; verify completed bars and lookback before MACD.",
             "workflow_snippet": {
                 "id": "overseas_futures_historical_hkex_macd",
                 "name": "HKEX Intraday MACD",
@@ -166,7 +174,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                     {"id": "start", "type": "StartNode"},
                     {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
                     {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MHIH26', 'exchange': 'HKEX'}]},
-                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(10, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1h", "adjust": False},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(10, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "30m", "adjust": False},
                     {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
                 {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
                 "edges": [
@@ -187,7 +195,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                     }
                 ],
             },
-            "expected_output": "MACD crossover signal computed from 1-hour HKEX mini-futures bars; result port emits buy/sell signal.",
+            "expected_output": "Available 30-minute observations only; complete range, finality and sufficient lookback are not certified.",
         },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
@@ -195,7 +203,7 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
             "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` for multi-contract iteration. "
             "Exchange values: CME, EUREX, SGX, HKEX. Symbol includes contract month code (e.g., ESH26). "
             "start_date / end_date: use `{{ date.ago(N, format='yyyymmdd') }}` for rolling lookback. "
-            "interval options: 1m, 5m, 15m, 1h, 1d, 1w, 1M."
+            "interval options: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M. Minute queries return one available page, not a complete requested date range."
         ),
         "output_consumption": (
             "The `value` port emits {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
@@ -221,9 +229,9 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
         OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_VALUE_FIELDS),
     ]
 
-    _version: ClassVar[str] = "1.0.0"
-    _updated_at: ClassVar[str] = "2026-05-19"
-    _change_note: ClassVar[Optional[str]] = None
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-10-14"
+    _change_note: ClassVar[Optional[str]] = "Align minute aliases with one-page chart routing; reject unsupported periods and rollover adjustment."
 
     @classmethod
     def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
@@ -296,12 +304,13 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 description="i18n:fields.OverseasFuturesHistoricalDataNode.interval",
                 default="1d",
                 required=True,
-                enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
+                enum_values=["30s", "1m", "5m", "15m", "30m", "1d", "1w", "1M"],
                 enum_labels={
+                    "30s": "i18n:enums.interval.30s",
                     "1m": "i18n:enums.interval.1m",
                     "5m": "i18n:enums.interval.5m",
                     "15m": "i18n:enums.interval.15m",
-                    "1h": "i18n:enums.interval.1h",
+                    "30m": "i18n:enums.interval.30m",
                     "1d": "i18n:enums.interval.1d",
                     "1w": "i18n:enums.interval.1w",
                     "1M": "i18n:enums.interval.1M"
@@ -319,8 +328,9 @@ class OverseasFuturesHistoricalDataNode(BaseNode):
                 help_text="i18n:fields.OverseasFuturesHistoricalDataNode.adjust.detail",
                 default=False,
                 category=FieldCategory.PARAMETERS,
-                expression_mode=ExpressionMode.BOTH,
+                expression_mode=ExpressionMode.FIXED_ONLY,
                 ui_component=UIComponent.CHECKBOX,
-                example=True,
+                example=False,
+                expected_type="bool",
             ),
         }
