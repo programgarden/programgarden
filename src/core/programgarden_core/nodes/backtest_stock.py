@@ -65,9 +65,9 @@ class OverseasStockHistoricalDataNode(BaseNode):
         default="{{ date.today(format='yyyymmdd') }}",
         description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
     )
-    interval: str = Field(
+    interval: Literal["1d", "1w", "1M", "1Y"] = Field(
         default="1d",
-        description="Data interval (1m, 5m, 15m, 1h, 1d)",
+        description="LS g3204 interval: daily, weekly, monthly or yearly. Intraday is unsupported.",
     )
     adjust: bool = Field(
         default=False,
@@ -80,7 +80,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
 
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
-            "Retrieve daily (or intraday) OHLCV history for a US-listed stock to compute technical indicators or run backtests",
+            "Retrieve daily, weekly, monthly or yearly OHLCV history for a US-listed stock to compute technical indicators or run backtests",
             "Feed time-series data into ConditionNode plugins (RSI, MACD, Bollinger, etc.) that require a `data` list of candles",
             "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to get a rolling lookback window without hardcoding dates",
         ],
@@ -97,7 +97,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Returns a list of OHLCV candles in `value.time_series`: [{date, open, high, low, close, volume}, ...]",
-        "Supports intervals: 1m, 5m, 15m, 1h, 1d, 1w, 1M — daily (1d) is the default for swing trading strategies",
+        "Supports intervals: 1d, 1w, 1M, 1Y through LS g3204; intraday history is unsupported",
         "start_date / end_date accept YYYYMMDD strings or expression namespace calls: `{{ date.ago(30, format='yyyymmdd') }}`",
         "adjust=True applies split/dividend-adjusted prices for accurate long-term backtesting",
         "is_tool_enabled=True — AI Agent can fetch historical data autonomously for technical analysis",
@@ -156,45 +156,12 @@ class OverseasStockHistoricalDataNode(BaseNode):
             },
             "expected_output": "value port: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. RSI is computed from time_series.",
         },
-        {
-            "title": "Intraday 5-minute data for MACD",
-            "description": "Fetch 5-minute bars over the past 5 days for MSFT and compute MACD crossover signal.",
-            "workflow_snippet": {
-                "id": "overseas_stock_historical_macd_5m",
-                "name": "Intraday MACD",
-                "nodes": [
-                    {"id": "start", "type": "StartNode"},
-                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
-                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MSFT', 'exchange': 'NASDAQ'}]},
-                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(5, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "5m", "adjust": False},
-                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
-                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
-                "edges": [
-                    {"from": "start", "to": "broker"},
-                    {"from": "broker", "to": "split"},
-                    {"from": "split", "to": "historical"},
-                    {"from": "broker", "to": "historical"},
-                    {"from": "historical", "to": "condition"},
-                {'from': 'condition', 'to': 'split_results'}],
-                "credentials": [
-                    {
-                        "credential_id": "broker_cred",
-                        "type": "broker_ls_overseas_stock",
-                        "data": [
-                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
-                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
-                        ],
-                    }
-                ],
-            },
-            "expected_output": "value.time_series contains 5-minute OHLCV bars; MACD ConditionNode emits signal/histogram on the result port.",
-        },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
             "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` in a per-symbol loop. "
             "start_date / end_date accept 'YYYYMMDD' strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions. "
-            "interval options: 1m, 5m, 15m, 1h, 1d, 1w, 1M. Use adjust=True for long-term backtesting to remove split/dividend distortions."
+            "Supported intervals: 1d, 1w, 1M, 1Y through LS g3204. Intraday g3203 is not connected to this node."
         ),
         "output_consumption": (
             "The `value` port emits a dict: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
@@ -210,9 +177,9 @@ class OverseasStockHistoricalDataNode(BaseNode):
         "pitfalls": [
             "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
             "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port is a dict, not a plain list",
-            "Intraday intervals (1m/5m/15m/1h) may have limited history depth depending on LS Securities API availability",
+            "Intraday intervals (1m/5m/15m/1h) are unsupported; never substitute daily bars or invent a g3203 node connection",
             "adjust=False (default) returns unadjusted prices; set True when comparing long-term price levels across splits",
-            "Large date ranges with 1m interval can return thousands of rows — set reasonable start_date to avoid memory pressure",
+            "The current executor requests one g3204 page; it does not expose response-time, continuation-completion or candle-finality evidence",
         ],
     }
 
@@ -333,15 +300,12 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 description="i18n:fields.OverseasStockHistoricalDataNode.interval",
                 default="1d",
                 required=True,
-                enum_values=["1m", "5m", "15m", "1h", "1d", "1w", "1M"],
+                enum_values=["1d", "1w", "1M", "1Y"],
                 enum_labels={
-                    "1m": "i18n:enums.interval.1m",
-                    "5m": "i18n:enums.interval.5m",
-                    "15m": "i18n:enums.interval.15m",
-                    "1h": "i18n:enums.interval.1h",
                     "1d": "i18n:enums.interval.1d",
                     "1w": "i18n:enums.interval.1w",
-                    "1M": "i18n:enums.interval.1M"
+                    "1M": "i18n:enums.interval.1M",
+                    "1Y": "i18n:enums.interval.1Y"
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

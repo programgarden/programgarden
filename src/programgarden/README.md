@@ -1,5 +1,9 @@
 # ProgramGarden
 
+An unreleased [stock history interval correction](../../docs/stock-history-interval-contract.md)
+rejects unsupported intraday periods instead of silently querying daily bars.
+Supported g3204 periods retain their existing requests and output contract.
+
 An unreleased [futures detail and durable state candidate](../../docs/futures-contract-details-and-rollover-state.md)
 adds exact o3105 metadata, opt-in execution-scoped SQLite and XHKG calendar
 intersection. Missing evidence remains explicit; this does not authorize orders.

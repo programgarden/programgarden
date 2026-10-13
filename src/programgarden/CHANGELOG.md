@@ -1,3 +1,13 @@
+## [2.6.1] - 2026-10-14
+
+### Fixed
+- Reject unsupported overseas-stock intraday intervals instead of treating daily LS g3204 data as minute bars. Daily, weekly, monthly and yearly periods remain supported.
+- Align stock node catalog, examples and localized descriptions with the implemented broker contract; futures labels are unchanged.
+- Reject unsupported intervals before credential access and deep-validation fixtures. Legacy futures dispatch is unchanged.
+
+### Dependencies
+- Require programgarden-core ^2.6.1; finance and community requirements are unchanged.
+
 ## [2.6.0] - 2026-10-04
 
 ### Added

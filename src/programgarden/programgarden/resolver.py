@@ -345,6 +345,7 @@ class WorkflowResolver:
 
         # Order routing choices are literals, never prices or item bindings.
         self._validate_order_enums(workflow, registry, result)
+        self._validate_stock_history_interval(workflow, registry, result)
 
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
@@ -361,6 +362,29 @@ class WorkflowResolver:
         finalize_result(result, limits=limits, expand_cascade=expand_cascade)
 
         return result
+
+    def _validate_stock_history_interval(self, workflow, registry, result) -> None:
+        """Keep static/deep validation aligned with the stock chart executor."""
+        node_type = "OverseasStockHistoricalDataNode"
+        node_class = registry.get(node_type)
+        if node_class is None:
+            return
+        field = node_class.get_field_schema()["interval"]
+        for node in workflow.nodes:
+            if node.get("type") != node_type:
+                continue
+            if node.get("interval", field.default) in field.enum_values:
+                continue
+            result.add(build_error(
+                ErrorCode.INVALID_FIELD_ENUM,
+                "Stock historical intervals require a supported LS g3204 period; "
+                "intraday g3203 is not supported.",
+                location=ErrorLocation(
+                    node_id=node.get("id"), node_type=node_type, field_path="interval",
+                ),
+                available_values=field.enum_values,
+                suggestion="Choose 1d, 1w, 1M or 1Y explicitly; do not substitute daily bars for an intraday strategy.",
+            ))
 
     def _validate_order_enums(self, workflow, registry, result) -> None:
         """Enforce fixed price/order types without changing dynamic close sides."""
