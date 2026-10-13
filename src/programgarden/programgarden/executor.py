@@ -12186,7 +12186,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
     HistoricalDataNode executor - 과거 OHLCV 데이터 조회
     
     LS Finance Chart API를 사용하여 과거 차트 데이터를 조회합니다.
-    - 해외주식: g3103 (일/주/월봉)
+    - Overseas stock: g3204 (daily/weekly/monthly/yearly; no intraday)
     - 해외선물: o3108 (일봉), o3103 (분봉)
     """
 
@@ -12207,6 +12207,15 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         **kwargs,
     ) -> Dict[str, Any]:
         """과거 데이터 조회"""
+
+        # Reject unsupported stock periods before fixtures can manufacture success.
+        # The broker-specific fetch repeats this guard for direct/legacy callers.
+        connection = config.get("connection")
+        product = connection.get("product") if isinstance(connection, dict) else None
+        if node_type == "OverseasStockHistoricalDataNode" or (
+            node_type == "HistoricalDataNode" and product in (None, "overseas_stock")
+        ):
+            self._stock_history_gubun(config.get("interval", "1d"))
 
         # deep_validate: HistoricalDataNode hits the real LS API. Inject a fixture
         # time series so the flow completes without a network call.
@@ -12451,6 +12460,18 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         # 파싱 실패 시 오늘 날짜 반환
         return datetime.now().strftime("%Y%m%d")
 
+    @staticmethod
+    def _stock_history_gubun(interval: str) -> str:
+        """Reject unsupported periods instead of relabeling daily bars."""
+        periods = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
+        if not isinstance(interval, str) or interval not in periods:
+            raise ValueError(
+                "UNSUPPORTED_STOCK_HISTORY_INTERVAL: OverseasStockHistoricalDataNode "
+                "supports 1d, 1w, 1M and 1Y through LS g3204. "
+                "Intraday g3203 is not supported; select a supported period explicitly."
+            )
+        return periods[interval]
+
     async def _fetch_overseas_stock(
         self,
         symbols: List[str],
@@ -12472,6 +12493,9 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         반환: [{symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}, ...]
         """
         
+        # Validate before credential access or login, outside the soft-failure handler.
+        gubun = self._stock_history_gubun(interval)
+
         credential = context.get_credential()
         if not credential:
             context.log("error", "Credential not set for HistoricalDataNode", node_id)
@@ -12493,10 +12517,6 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 return self._empty_historical_result(symbols, f"i18n:errors.LS_LOGIN_FAILED|error={error}")
             
             api = ls.overseas_stock()
-
-            # interval → gubun 변환 (g3204: 2=일, 3=주, 4=월, 5=년)
-            gubun_map = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
-            gubun = gubun_map.get(interval, "2")
 
             # 거래소 코드 매핑 (역변환용)
             exchcd_to_exchange = {"82": "NASDAQ", "81": "NYSE", "83": "AMEX"}

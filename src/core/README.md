@@ -2,6 +2,10 @@ US regular-session requests can opt into SessionGateNode.exchange_calendar (XNYS
 
 # ProgramGarden Core
 
+An unreleased [stock history interval correction](../../docs/stock-history-interval-contract.md)
+limits the overseas-stock catalog to its implemented g3204 periods and rejects
+unsupported intraday requests before execution. Package adoption is pending.
+
 Unreleased schema additions: OverseasFuturesContractInfoNode, SQLiteNode's opt-in
 storage_scope=execution, and SessionGateNode's XHKG calendar. See the
 [runtime contract](../../docs/futures-contract-details-and-rollover-state.md).
