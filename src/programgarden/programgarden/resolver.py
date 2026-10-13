@@ -346,6 +346,7 @@ class WorkflowResolver:
         # Order routing choices are literals, never prices or item bindings.
         self._validate_order_enums(workflow, registry, result)
         self._validate_stock_history_interval(workflow, registry, result)
+        self._validate_futures_history_contract(workflow, registry, result)
 
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
@@ -385,6 +386,32 @@ class WorkflowResolver:
                 available_values=field.enum_values,
                 suggestion="Choose 1d, 1w, 1M or 1Y explicitly; do not substitute daily bars for an intraday strategy.",
             ))
+
+    def _validate_futures_history_contract(self, workflow, registry, result) -> None:
+        """Keep native validation aligned with period and adjustment routing."""
+        from programgarden.futures_history import normalize_interval, validate_adjust
+
+        node_type = "OverseasFuturesHistoricalDataNode"
+        node_class = registry.get(node_type)
+        if node_class is None:
+            return
+        field = node_class.get_field_schema()["interval"]
+        for node in workflow.nodes:
+            if node.get("type") != node_type:
+                continue
+            for name, check, default, available in (
+                ("interval", normalize_interval, field.default, field.enum_values),
+                ("adjust", validate_adjust, False, ["false"]),
+            ):
+                try:
+                    check(node.get(name, default))
+                except ValueError as exc:
+                    result.add(build_error(
+                        ErrorCode.INVALID_FIELD_ENUM, str(exc),
+                        location=ErrorLocation(node_id=node.get("id"), node_type=node_type, field_path=name),
+                        available_values=available,
+                        suggestion="Choose a supported period and keep adjust=false; only exact-contract prices are implemented.",
+                    ))
 
     def _validate_order_enums(self, workflow, registry, result) -> None:
         """Enforce fixed price/order types without changing dynamic close sides."""
