@@ -80,7 +80,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
 
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
-            "Retrieve daily (or intraday) OHLCV history for a US-listed stock to compute technical indicators or run backtests",
+            "Retrieve daily, weekly, monthly or yearly OHLCV history for a US-listed stock to compute technical indicators or run backtests",
             "Feed time-series data into ConditionNode plugins (RSI, MACD, Bollinger, etc.) that require a `data` list of candles",
             "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to get a rolling lookback window without hardcoding dates",
         ],
@@ -97,7 +97,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Returns a list of OHLCV candles in `value.time_series`: [{date, open, high, low, close, volume}, ...]",
-        "Supports intervals: 1m, 5m, 15m, 1h, 1d, 1w, 1M — daily (1d) is the default for swing trading strategies",
+        "Supports intervals: 1d, 1w, 1M, 1Y through LS g3204; intraday history is unsupported",
         "start_date / end_date accept YYYYMMDD strings or expression namespace calls: `{{ date.ago(30, format='yyyymmdd') }}`",
         "adjust=True applies split/dividend-adjusted prices for accurate long-term backtesting",
         "is_tool_enabled=True — AI Agent can fetch historical data autonomously for technical analysis",

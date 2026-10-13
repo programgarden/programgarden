@@ -139,3 +139,15 @@ def test_authoring_catalog_and_examples_match_supported_periods():
         locale = json.loads((root / f"core/programgarden_core/i18n/locales/{lang}.json").read_text())
         for label in schema.enum_labels.values():
             assert label.removeprefix("i18n:") in locale
+
+
+def test_localized_stock_interval_does_not_change_futures_contract():
+    root = Path(__file__).resolve().parents[2]
+    stock_key = "fields.OverseasStockHistoricalDataNode.interval"
+    futures_key = "fields.OverseasFuturesHistoricalDataNode.interval"
+    for lang in ("en", "ko"):
+        locale = json.loads((root / f"core/programgarden_core/i18n/locales/{lang}.json").read_text())
+        assert "g3204" in locale[stock_key]
+        assert "g3204" not in locale[futures_key]
+        assert "1m" in locale[futures_key]
+    assert not any("daily (or intraday)" in text for text in OverseasStockHistoricalDataNode._usage["when_to_use"])

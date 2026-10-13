@@ -28,8 +28,12 @@ Validation covers rejected periods before any credential/login access, exact
 unchanged supported g3204 requests and outputs, public static-validation errors,
 deep-validation bypass prevention, enum/localization consistency and existing
 per-symbol iteration. Explicit legacy futures connections retain intraday support
-in both normal and deep-validation paths. The 130 unique offline cases passed
-(44 interval-contract cases and 86 existing regressions). All broker responses
-are synthetic. Package publication,
-worker/tray packaging and adoption remain owner-operated release steps. Existing
-customer workflows and runtime images are unchanged by this local candidate.
+in both normal and deep-validation paths. The 131 unique offline cases passed
+(45 interval-contract cases and 86 existing regressions). All broker responses
+are synthetic. The 2.6.1 release updates core and engine together. Finance and community are unchanged.
+The engine dependency lock is refreshed after the new core distribution becomes
+available, before final engine publication. Futures pagination changes remain a
+separate candidate. No proprietary strategy examples are included.
+
+Package publication and consumer adoption are separate release gates; source
+validation does not establish that a deployed worker or tray has adopted this fix.
