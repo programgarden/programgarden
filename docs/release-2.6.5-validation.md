@@ -31,9 +31,9 @@ candidate source packages installed in editable mode:
   comprehension; the declared fields are unchanged.
 - 723 focused cases in 34 modules covering futures and stock account, pending
   order, broker evidence, paper business date, replay snapshot and output-schema
-  tests passed (23 skipped).
+  tests passed (23 skipped); 727 with the review follow-up cases below.
 - The complete engine suite reported 3410 passed, 25 skipped, 3 xfailed and
-  5 failed. The same 5 cases (three cancel-order port assertions and two replay
+  5 failed (3414 passed with the review follow-up, same 5 failures). The same 5 cases (three cancel-order port assertions and two replay
   cases) fail identically on the unchanged 2.6.4 source (3388 passed) in the same
   environment and do not involve the changed modules.
 
