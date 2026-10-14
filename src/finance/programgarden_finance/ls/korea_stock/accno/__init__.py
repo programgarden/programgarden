@@ -172,7 +172,7 @@ class Accno:
             options (Optional[SetupOptions]): 추가 설정 옵션입니다.
 
         Returns:
-            TrCSPAQ13700: 주문체결내역 조회 인스턴스 (.req() 호출로 실행)
+            TrCSPAQ13700: 주문체결내역 조회 인스턴스 (.req() 단건, .occurs_req() 전체 페이지)
         """
         if body is None:
             body = CSPAQ13700InBlock1()

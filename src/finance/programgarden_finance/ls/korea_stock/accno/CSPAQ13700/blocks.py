@@ -94,12 +94,13 @@ class CSPAQ13700InBlock1(BaseModel):
         default=999999999,
         title="시작주문번호2 (Starting order number)",
         description=(
-            "Starting order number for paging. Pass ``999999999`` (default) "
-            "on the first call to start from the highest order number; on "
-            "subsequent calls pass the smallest order number returned in the "
-            "previous page minus 1 to fetch older rows. Length 9."
+            "Starting order number. Guide: ``000000000`` when "
+            "``BkseqTpCode`` is forward (정순) and ``999999999`` when it is "
+            "reverse (역순, the default). Number, length 10. The guide defines "
+            "no body cursor; later pages are requested with the header "
+            "``tr_cont``/``tr_cont_key`` fields (``TrCSPAQ13700.occurs_req``)."
         ),
-        examples=[999_999_999, 12_345],
+        examples=[999_999_999, 0],
     )
     BkseqTpCode: str = Field(
         default="0",
@@ -182,7 +183,7 @@ class CSPAQ13700OutBlock1(BaseModel):
         default=999999999,
         title="시작주문번호2 (Starting order number)",
         description="Echo of the input ``SrtOrdNo2``.",
-        examples=[999_999_999, 12_345],
+        examples=[999_999_999, 0],
     )
     BkseqTpCode: str = Field(
         default="0",

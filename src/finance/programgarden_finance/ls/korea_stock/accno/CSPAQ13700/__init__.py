@@ -16,13 +16,13 @@ from .blocks import (
     CSPAQ13700Response,
     CSPAQ13700ResponseHeader,
 )
-from ....tr_base import TRAccnoAbstract
-from ....tr_helpers import GenericTR
+from ....tr_base import OccursReqAbstract, TRAccnoAbstract
+from ....tr_helpers import DEFAULT_OCCURS_MAX_PAGES, GenericTR
 from programgarden_finance.ls.config import URLS
 from programgarden_finance.ls.status import RequestStatus
 
 
-class TrCSPAQ13700(TRAccnoAbstract):
+class TrCSPAQ13700(TRAccnoAbstract, OccursReqAbstract):
     """
     LS증권 OpenAPI CSPAQ13700 현물계좌 주문체결내역 조회 API용 클래스입니다.
 
@@ -129,6 +129,38 @@ class TrCSPAQ13700(TRAccnoAbstract):
         delay: int = 2,
     ) -> CSPAQ13700Response:
         return self._generic.retry_req(callback, max_retries=max_retries, delay=delay)
+
+    def occurs_req(
+        self,
+        callback: Optional[Callable[[Optional[CSPAQ13700Response], RequestStatus], None]] = None,
+        delay: int = 1,
+        *,
+        max_pages: int = DEFAULT_OCCURS_MAX_PAGES,
+    ) -> List[CSPAQ13700Response]:
+        """현물계좌 주문체결내역 전체 페이지를 동기 방식으로 연속조회합니다.
+
+        다음 페이지는 같은 본문에 요청 헤더 ``tr_cont="Y"`` 와 직전 응답의
+        ``tr_cont_key`` 를 실어 다시 보냅니다(가이드 공통 헤더). ``SrtOrdNo2`` 는 가이드에
+        시작값(역순 999999999 / 정순 000000000)만 정의돼 있어 페이지 사이에 바꾸지 않습니다. 페이지마다 이 TR 의
+        rate limit 을 지키고, 페이지 사이에 ``delay`` 초를 쉽니다.
+
+        Returns:
+            List[CSPAQ13700Response]: 페이지별 응답(행을 합치지 않음). 실패한 페이지는 마지막
+            원소로 남고, 키가 비었거나 반복되거나 ``max_pages`` 에 닿으면 마지막
+            성공 페이지(여전히 ``tr_cont="Y"``)에서 멈춥니다. 전부 받았는지는
+            ``programgarden_finance.ls.tr_helpers.occurs_complete(pages)`` 로 확인하세요.
+        """
+        return self._generic.header_occurs_req(callback=callback, delay=delay, max_pages=max_pages)
+
+    async def occurs_req_async(
+        self,
+        callback: Optional[Callable[[Optional[CSPAQ13700Response], RequestStatus], None]] = None,
+        delay: int = 1,
+        *,
+        max_pages: int = DEFAULT_OCCURS_MAX_PAGES,
+    ) -> List[CSPAQ13700Response]:
+        """현물계좌 주문체결내역 전체 페이지를 비동기 방식으로 연속조회합니다 (``occurs_req`` 와 같은 규칙)."""
+        return await self._generic.header_occurs_req_async(callback=callback, delay=delay, max_pages=max_pages)
 
 
 __all__ = [

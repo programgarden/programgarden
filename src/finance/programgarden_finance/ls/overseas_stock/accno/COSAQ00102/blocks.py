@@ -7,9 +7,11 @@ COSAQ00102 returns the order history for an overseas stock account, including:
       info, communication channel, currency, broker info, and loan flags
       (OutBlock3).
 
-The TR supports server-side pagination via ``SrtOrdNo`` (start order number).
-Use ``999999999`` to walk back from the most recent order (역순 / reverse) and
-``0`` to walk forward from the earliest (정순 / forward).
+``SrtOrdNo`` (start order number) selects the starting point: the guide lists
+``999999999`` for reverse order (역순) and ``0`` for forward order (정순).
+Further pages are requested with the common header continuation fields
+(``tr_cont="Y"`` + the previous ``tr_cont_key``); ``TrCOSAQ00102.occurs_req``
+does this and leaves the body unchanged. The guide defines no body cursor.
 
 Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
 2026-05-06 finance TR field metadata plan):
@@ -47,9 +49,8 @@ class COSAQ00102InBlock1(BaseModel):
     """COSAQ00102InBlock1 — input block for overseas stock account order history.
 
     Use ``SrtOrdNo=999999999`` for the most recent orders (reverse order) and
-    ``SrtOrdNo=0`` to start from the earliest (forward order). To paginate,
-    take the smallest ``OrdNo`` returned in OutBlock3 and pass it back as
-    ``SrtOrdNo`` on the next call (reverse mode).
+    ``SrtOrdNo=0`` to start from the earliest (forward order). Later pages use
+    the header continuation key (``occurs_req``), not a body cursor.
     """
 
     RecCnt: int = Field(
@@ -105,10 +106,10 @@ class COSAQ00102InBlock1(BaseModel):
         default=999999999,
         title="시작주문번호 (Start order number)",
         description=(
-            "Pagination cursor. Use 999999999 with ``BkseqTpCode='1'`` (reverse) "
-            "to start from the most recent order; use 0 with ``BkseqTpCode='2'`` "
-            "(forward) to start from the earliest. To paginate further, feed back "
-            "an ``OrdNo`` returned in OutBlock3."
+            "Starting order number. Guide: 999999999 for reverse order "
+            "(``BkseqTpCode='1'``), 0 for forward order (``BkseqTpCode='2'``). "
+            "The guide defines no body cursor; later pages are requested with "
+            "the header ``tr_cont``/``tr_cont_key`` fields (``occurs_req``)."
         ),
         examples=[0, 999999999],
     )
@@ -254,7 +255,7 @@ class COSAQ00102OutBlock1(BaseModel):
     SrtOrdNo: int = Field(
         default=0,
         title="시작주문번호 (Start order number)",
-        description="Echoed pagination cursor.",
+        description="Echoed starting order number.",
         examples=[0, 999999999],
     )
     OrdDt: str = Field(

@@ -56,7 +56,7 @@ class Accno(BaseAccno):
             options (Optional[SetupOptions]): 설정 옵션
 
         Returns:
-            TrCOSAQ00102: 계좌 주문 내역 조회를 위한 TrCOSAQ00102 인스턴스
+            TrCOSAQ00102: 계좌 주문 내역 조회 인스턴스 (.req() 단건, .occurs_req() 전체 페이지)
         """
         request_data = COSAQ00102Request(
             body={
@@ -126,7 +126,7 @@ class Accno(BaseAccno):
             options (Optional[SetupOptions]): 설정 옵션
 
         Returns:
-            TrCOSOQ00201: 해외주식 종합잔고평가 조회를 위한 인스턴스
+            TrCOSOQ00201: 해외주식 종합잔고평가 조회 인스턴스 (.req() 단건, .occurs_req() 전체 페이지)
         """
 
         request_data = COSOQ00201Request(
