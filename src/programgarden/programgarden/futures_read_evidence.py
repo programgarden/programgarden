@@ -2,19 +2,40 @@
 
 import math
 
+from programgarden.database.broker_evidence import (
+    PAPER_FUTURES_NO_RESULT_MESSAGES,
+    unverified_response_code,
+)
 
-def require_complete_rows(response, request, tr):
+_NO_DATA_TRS = {"CIDBQ01500", "CIDBQ02400"}
+
+
+def require_complete_rows(response, request, tr, *, paper_trading=False):
     """Validate the observed terminal envelope and return its detail rows.
 
     00707 is accepted only for an explicitly empty, matching terminal response
     for the two position/pending TRs observed on the paper server. It is not a
     generic success code. Continuation pages remain unavailable in this reader.
+
+    For a paper client only, 02679 with one of the exact paper empty-result
+    messages (the startup gate's set for these two TRs) and explicitly empty
+    rows is the same complete empty result on those two TRs. Live clients and
+    other TRs still reject it.
     """
+    if response.status_code != 200 or response.error_msg:
+        raise ValueError(f"{tr} did not return a complete terminal response")
+    code = response.rsp_cd
+    accepted = code in {"00000", "00136", "00707"} or (
+        paper_trading is True
+        and tr in _NO_DATA_TRS
+        and code == "02679"
+        and not response.block2
+        and response.rsp_msg in PAPER_FUTURES_NO_RESULT_MESSAGES
+    )
+    if not accepted:
+        raise ValueError(unverified_response_code(tr, code, response.rsp_msg))
     if (
-        response.status_code != 200
-        or response.error_msg
-        or response.rsp_cd not in {"00000", "00136", "00707"}
-        or response.header is None
+        response.header is None
         or response.header.tr_cd not in {tr, "CIDBQ"}
         or response.header.tr_cont != "N"
         or response.header.tr_cont_key
@@ -29,9 +50,7 @@ def require_complete_rows(response, request, tr):
         or any(getattr(echo, field) != value for field, value in expected.items())
     ):
         raise ValueError(f"{tr} query echo is missing or mismatched")
-    if response.rsp_cd == "00707" and (
-        tr not in {"CIDBQ01500", "CIDBQ02400"} or response.block2
-    ):
+    if code == "00707" and (tr not in _NO_DATA_TRS or response.block2):
         raise ValueError(f"{tr} no-data response is inconsistent")
     return response.block2
 

@@ -2,6 +2,10 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.4 release candidate [paper futures account correction](../../docs/paper-futures-business-date.md#account-node-and-rejection-messages-264-candidate)
+returns an empty futures account for the paper empty-account answer and names
+the broker message in unaccepted response errors. Live behavior is unchanged.
+
 The 2.6.3 release candidate [paper futures business-date correction](../../docs/paper-futures-business-date.md)
 uses a fresh account-scoped broker date for startup pending orders, OpenOrdersNode
 and legacy fill observation. Missing or mismatched evidence remains unavailable.

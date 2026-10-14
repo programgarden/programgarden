@@ -201,7 +201,7 @@ async def test_failed_broker_startup_remains_held(tmp_path, monkeypatch):
     context.notify_risk_event.assert_not_awaited()
 
 
-@pytest.mark.parametrize("failure", [None, "unknown_message", "rows_present", "missing_details",
+@pytest.mark.parametrize("failure", [None, "unknown_message", "paper_wording", "rows_present", "missing_details",
                                      "continuation", "cursor", "wrong_date", "wrong_currency",
                                      "missing_echo_field", "rejection"])
 async def test_observed_empty_stock_startup_preserves_evidence_guards(tmp_path, monkeypatch, failure):
@@ -212,6 +212,8 @@ async def test_observed_empty_stock_startup_preserves_evidence_guards(tmp_path, 
         response.rsp_cd = "02679"
         response.rsp_msg = "조회내역이 없습니다."
         if failure == "unknown_message": response.rsp_msg = "unverified response"
+        # The futures paper wording is not accepted on the stock branch (server gate parity).
+        elif failure == "paper_wording": response.rsp_msg = "모의투자 조회할 내역(자료)이 없습니다."
         elif failure == "missing_details": del body["COSOQ00201OutBlock4"]
         elif failure == "continuation": response.header.tr_cont = "Y"
         elif failure == "cursor": response.header.tr_cont_key = "next"

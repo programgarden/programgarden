@@ -46,3 +46,47 @@ missing/partial responses. The incident's live verification covered pending
 orders with `OrdStatCode="2"` and `QryTpCode="1"`. Startup/OpenOrdersNode preserve
 their existing `QryTpCode="2"`; fill observation preserves `OrdStatCode="0"`.
 Those filter variants are tested offline, not claimed as newly live-verified.
+
+## Account node and rejection messages (2.6.4 candidate)
+
+OverseasFuturesAccountNode reads CIDBQ01500 with the existing explicit
+`QryDt` request. Before this candidate it rejected the paper empty-account
+answer (`02679` with the exact empty-result message), so a paper account with
+no positions returned an error and an empty output. For a paper client only
+(`token_manager.paper_trading is True`), that answer is now a complete empty
+result when explicit empty rows, terminal continuation and the full query echo
+are present. Live clients, other messages, nonempty rows, partial pages, echo
+mismatches and other TRs (including CIDBQ05300) remain errors. The request is
+unchanged. The explicit-date form of this answer was not separately observed;
+only the exact envelope is accepted, so a different paper answer stays an error.
+
+OpenOrdersNode and legacy fill observation already use the paper path above for
+both CIDBQ01500 and CIDBQ02400 and needed no change.
+
+On those two TRs, the paper `02679` empty answer accepts either of two exact
+messages, both in the startup/pending/fill path above and in the account node:
+`조회내역이 없습니다.` (observed with `02679` on 2026-10-14) and the paper
+server's own no-data wording `모의투자 조회할 내역(자료)이 없습니다.` (already
+accepted with `00707`). This is the set the server preparation gate uses for
+these two TRs (dsl-api `startup_broker._NO_DATA_MESSAGES`), so a start the
+server admits is not rejected by the engine. The second wording has not been
+observed together with `02679`; it is accepted for parity under the same
+envelope checks, not as a generic success. Stock reads keep the single message,
+as the gate does. The remaining differences are stricter on the engine side:
+`02679` requires paper mode, and `00707` in the startup reader requires the
+paper wording.
+
+An unaccepted response code now names the broker's own message, using the same
+text as the server preparation gate:
+
+```
+<TR>: unverified_response_code=<code> rsp_msg=<message>
+```
+
+The prefix up to the code is unchanged, so readers matching the previous text
+still match. The message is bounded to 80 characters; control and format
+characters become spaces and outer whitespace is removed. The futures account
+and live pending-order reader reports an unaccepted code the same way instead
+of the generic "did not return a complete terminal response". Missing blocks,
+partial pages and echo mismatches keep their existing reasons, and a missing
+block can still hide the broker's code in the startup reader.

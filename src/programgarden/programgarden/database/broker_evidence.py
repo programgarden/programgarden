@@ -5,6 +5,7 @@ not turn a missing detail block, partial page or rejection into an empty account
 """
 
 import inspect
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
@@ -30,8 +31,41 @@ _OBSERVED_RESPONSE_CODES = {
 }
 
 
+_BROKER_MESSAGE_LIMIT = 80
+
+# Exact empty-result wording observed with rsp_cd 02679 on the stock reads below
+# and on paper CIDBQ01500/CIDBQ02400 reads (2026-10-14). Not a generic success.
+NO_RESULT_MESSAGE = "조회내역이 없습니다."
+# The paper server's own empty-result wording, observed with rsp_cd 00707 on
+# the two futures TRs below.
+PAPER_NO_RESULT_MESSAGE = "모의투자 조회할 내역(자료)이 없습니다."
+# The paper CIDBQ01500/CIDBQ02400 02679 branch accepts either exact wording:
+# the same set the dsl-api startup gate uses for these two TRs
+# (cloudrun/dsl-api/app/services/startup_broker.py, _NO_DATA_MESSAGES), so a
+# start the server admits is not rejected by the engine. Stock branches keep
+# the single NO_RESULT_MESSAGE, as the server gate does.
+PAPER_FUTURES_NO_RESULT_MESSAGES = frozenset({NO_RESULT_MESSAGE, PAPER_NO_RESULT_MESSAGE})
+
+
 class StartupEvidenceUnavailable(RuntimeError):
     """An incomplete response must never authorize execution."""
+
+
+def broker_message(value):
+    """Return the broker's diagnostic text as one bounded log-safe line.
+
+    Matches the server startup gate's ``str(rsp_msg or '')[:80]`` for ordinary
+    messages; control/format characters become spaces and outer whitespace is
+    stripped so a broker message cannot inject extra log lines.
+    """
+    text = "".join(" " if unicodedata.category(char).startswith("C") else char
+                   for char in str(value or ""))
+    return text.strip()[:_BROKER_MESSAGE_LIMIT]
+
+
+def unverified_response_code(tr, code, message):
+    """Keep the stable ``<TR>: unverified_response_code=<code>`` prefix."""
+    return f"{tr}: unverified_response_code={code} rsp_msg={broker_message(message)}"
 
 
 class StartupQueryDateMismatch(StartupEvidenceUnavailable):
@@ -95,22 +129,25 @@ async def checked_body(response, tr, request=None, *, paper_trading=False):
     if tr == "COSOQ00201" and code == "02679":
         # Observed authenticated empty stock balance, 2026-09-21. Explicit
         # blocks, terminal pagination and matching query scope remain required.
-        accepted = not rows and response.rsp_msg == "조회내역이 없습니다."
+        accepted = not rows and response.rsp_msg == NO_RESULT_MESSAGE
     if tr == "COSAQ00102" and code == "02679":
         echo = body["COSAQ00102OutBlock1"]
         accepted = (not rows and isinstance(echo, dict)
-                    and response.rsp_msg == "조회내역이 없습니다."
+                    and response.rsp_msg == NO_RESULT_MESSAGE
                     and echo.get("OrdMktCode") == "%"
                     and echo.get("ThdayBnsAppYn") == "1"
                     and echo.get("BnsTpCode") == "0" and echo.get("CrcyCode") == "000")
     elif tr in {"CIDBQ01500", "CIDBQ02400"} and code == "00707":
-        accepted = (not rows and response.rsp_msg == "모의투자 조회할 내역(자료)이 없습니다.")
+        accepted = (not rows and response.rsp_msg == PAPER_NO_RESULT_MESSAGE)
     elif paper_trading is True and tr in {"CIDBQ01500", "CIDBQ02400"} and code == "02679":
         # Observed paper response with complete raw blocks, explicit empty rows
         # and terminal continuation. The caller still binds date/account scope.
-        accepted = not rows and response.rsp_msg == "조회내역이 없습니다."
+        # The wording set matches the server startup gate for these two TRs.
+        accepted = not rows and response.rsp_msg in PAPER_FUTURES_NO_RESULT_MESSAGES
     if not accepted:
-        raise StartupEvidenceUnavailable(f"{tr}: unverified_response_code={code}")
+        # The broker message distinguishes, for example, an unrecognized empty
+        # wording from a rejected query; the stable reason prefix is unchanged.
+        raise StartupEvidenceUnavailable(unverified_response_code(tr, code, response.rsp_msg))
     if tr in {"t0424", "t0425"}:
         cursor = "cts_expcode" if tr == "t0424" else "cts_ordno"
         summary = body[_BLOCKS[tr][0]]

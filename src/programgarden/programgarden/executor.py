@@ -6142,6 +6142,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         from datetime import datetime
         from zoneinfo import ZoneInfo
         from programgarden.futures_read_evidence import require_complete_rows, require_position_identity
+        from programgarden.paper_futures_business_date import is_paper_client
 
         try:
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01500.blocks import CIDBQ01500InBlock1
@@ -6157,7 +6158,11 @@ class AccountNodeExecutor(NodeExecutorBase):
             response = await ls.overseas_futureoption().accno().CIDBQ01500(
                 body=position_request,
             ).req_async()
-            position_rows = require_complete_rows(response, position_request, "CIDBQ01500")
+            # A paper server answers an empty account with 02679; only that
+            # exact empty envelope is accepted, and only for a paper client.
+            position_rows = require_complete_rows(
+                response, position_request, "CIDBQ01500", paper_trading=is_paper_client(ls),
+            )
 
             # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
             positions = []
