@@ -87,6 +87,7 @@ class Real(RealRequestAbstract, BaseReal):
         ping_timeout=5.0,
         max_backoff=60.0,
         max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
+        reregister_account_events_on_reconnect: bool = True,
     ):
         super().__init__(
             reconnect=reconnect,
@@ -96,16 +97,22 @@ class Real(RealRequestAbstract, BaseReal):
             max_backoff=max_backoff,
             token_manager=token_manager,
             max_subscribe_symbols=max_subscribe_symbols,
+            reregister_account_events_on_reconnect=reregister_account_events_on_reconnect,
         )
         if not token_manager:
             raise ValueError("token_manager is required")
         self.token_manager = token_manager
         self._tc123_connect = False  # 해외선물 주문 구독 상태
 
+    def _account_event_registrations(self):
+        """해외선물 계좌 실시간(TC1/TC2/TC3) 한 가족만 재연결 재등록 대상으로 둡니다."""
+        return [("_tc123_connect", self._add_real_order)]
+
     def _add_real_order(self):
         """해외선물 주문 실시간 구독 (TC1/TC2/TC3)
         
-        TC1: 주문접수, TC2: 주문응답(체결), TC3: 주문체결
+        TC1: 주문접수(HO01 ACK / HO04 Pending), TC2: 주문응답(HO02 확인 / HO03 거부),
+        TC3: 주문체결(CH01). 가이드 apis[30] svc_id 정의 기준이며, TC2 는 체결이 아닙니다.
         어떤 것으로 요청해도 증권사에서 전부 자동 등록되므로 한 번만 요청합니다.
         """
         import asyncio
@@ -136,6 +143,45 @@ class Real(RealRequestAbstract, BaseReal):
                 req.body.tr_cd, req.header.tr_type, req.body.tr_key,
             )
             asyncio.create_task(self._ws.send(json.dumps(req_dict)))
+
+    def _remove_real_order(self):
+        """해외선물 주문 실시간 해제 (TC1/TC2/TC3 계좌해제, ``tr_type="2"``)
+
+        마지막 리스너가 빠질 때(`_on_remove_message`) 호출됩니다. 등록돼 있을 때만
+        한 번 보내고 플래그를 내립니다. 본문은 등록과 같은 ``tr_cd="TC1"``,
+        ``tr_key=""`` 입니다 — 가이드 apis[30] 은 ``tr_cd`` 를 필수 필드로, ``tr_key``
+        만 "계좌등록/해제 일 경우 필수값 아님"으로 둡니다.
+
+        ⚠️ 같은 키의 다른 세션(다른 프로세스·브라우저)의 등록에 영향을 주는지는
+        아직 관측되지 않았습니다(phase-0 F2).
+        """
+        import asyncio
+        import json
+
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._tc123_connect is True:
+            req = TC1RealRequest(
+                header=TC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="2"  # 2: 계좌해제
+                ),
+                body=TC1RealRequestBody(
+                    tr_cd="TC1",
+                    tr_key="",
+                )
+            )
+            req_dict = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            logger.debug(
+                "[해외선물 Real] TC1/TC2/TC3 주문 실시간 해제 요청: tr_cd=%s tr_type=%s",
+                req.body.tr_cd, req.header.tr_type,
+            )
+            asyncio.create_task(self._ws.send(json.dumps(req_dict)))
+            self._tc123_connect = False
 
     @require_korean_alias
     def OVC(self) -> RealOVC:

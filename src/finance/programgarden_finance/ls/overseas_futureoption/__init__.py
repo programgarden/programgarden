@@ -54,8 +54,15 @@ class OverseasFutureoption(BaseOverseasFutureoption):
         recv_timeout=5.0,
         ping_interval=30.0,
         ping_timeout=5.0,
-        max_backoff=60.0
+        max_backoff=60.0,
+        reregister_account_events_on_reconnect: bool = True,
     ):
+        """Return the shared real-time client for this token manager.
+
+        The instance is cached per token manager; options apply only when the
+        first call creates it. ``reregister_account_events_on_reconnect``
+        re-sends active account (order event) registrations after a reconnect.
+        """
         key = id(self.token_manager)
         cached = OverseasFutureoption._real_instances.get(key)
         if cached is not None:
@@ -66,7 +73,8 @@ class OverseasFutureoption(BaseOverseasFutureoption):
             recv_timeout=recv_timeout,
             ping_interval=ping_interval,
             ping_timeout=ping_timeout,
-            max_backoff=max_backoff
+            max_backoff=max_backoff,
+            reregister_account_events_on_reconnect=reregister_account_events_on_reconnect,
         )
         OverseasFutureoption._real_instances[key] = instance
         return instance
