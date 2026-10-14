@@ -4,10 +4,10 @@ The candidate is based on merged upstream 2.6.5 (`28fa1f41`), which already
 contains the [futures position exchange correction](futures-position-exchange.md)
 ([2.6.5 validation](release-2.6.5-validation.md)). It prepares engine 2.6.6,
 core 2.6.3 and finance 2.0.3; community 2.3.1 is unchanged. The engine now
-requires core ^2.6.3 (ranking node classes) and finance ^2.0.3 (g3112). The
-engine lock file still pins the published core 2.6.2 and finance 2.0.2; it is
-refreshed after those two packages are published, as in earlier releases. This
-document does not establish package publication or hosted installation.
+requires core ^2.6.3 (ranking node classes) and finance ^2.0.3 (g3112).
+Finance 2.0.3 and core 2.6.3 are published (see "Publication" below) and the
+engine lock pins their published files. This document does not establish
+engine publication or hosted installation.
 
 The changes were first prepared on 2.6.4 (`45ff52a6`) and then rebased onto
 2.6.5. The 2.6.5 futures exchange module is changed in one respect only: an
@@ -95,6 +95,27 @@ symbol (`82AEHL`, `81AMTD`). The domestic ranking TRs were not called; their
 request values come from the SDK examples and their responses were exercised
 with the SDK models offline. No order, account change or LLM call was made.
 
-No wheel or sdist was built. The release owner builds the reviewed merged main
-commit and publishes finance and core before the engine, then refreshes the
-engine lock.
+## Publication
+
+Finance 2.0.3 and core 2.6.3 were built twice from `41670a0e` with
+`SOURCE_DATE_EPOCH` set to its commit time; both builds were byte-identical and
+the archive members equal the package sources. Their dependency metadata equals
+the published 2.0.2 and 2.6.2. They were uploaded to TestPyPI, installed in a
+fresh environment from the verified TestPyPI wheels (other dependencies from
+PyPI) together with the unchanged published engine 2.6.5, and passed 1551
+offline cases with the network blocked (536 engine 2.6.5, 78 finance, 937
+core), then uploaded to PyPI (finance first) and validated the same way from a
+plain PyPI install. Published files:
+
+| File | SHA-256 |
+|---|---|
+| `programgarden_finance-2.0.3-py3-none-any.whl` | `e964199a1b62f342739dd2f611dcdc25de7f1bdb98365b06cc817beab6aeddb3` |
+| `programgarden_finance-2.0.3.tar.gz` | `d41bee9df0064c43d549747fca08bb29de496b6299deb84a19d00041138d9f17` |
+| `programgarden_core-2.6.3-py3-none-any.whl` | `6c47fa605a82de97f9a083a7e690c94692a1acf58560a7590b985e8046cfed3c` |
+| `programgarden_core-2.6.3.tar.gz` | `588fe84a7c1071a431193db921a417aa474b19c4e6df4b0f459fe478cbaa657f` |
+
+The engine lock was then refreshed with Poetry 2.4.1 (`poetry lock`, no
+upgrade): only the core and finance entries and the content hash change, and the
+locked hashes are the published files above. The `src/core` and `src/finance`
+trees of the merge commit equal those of `41670a0e`. The engine is built from
+the merge commit and published after these packages.
