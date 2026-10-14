@@ -2,6 +2,11 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.6 release candidate [ranking nodes and runtime-values-as-data correction](../../docs/release-2.6.6-validation.md)
+adds KoreaStockRankingNode and OverseasStockRankingNode, evaluates only
+expression templates authored in the workflow, and routes Gemini and DeepSeek
+credentials to their own APIs.
+
 The 2.6.5 release candidate [futures position exchange correction](../../docs/futures-position-exchange.md)
 reads each futures position's and pending order's exchange from o3105 instead
 of a fixed `HKEX`; an unconfirmed exchange stays empty.

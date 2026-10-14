@@ -1,3 +1,10 @@
+## [2.6.3] - 2026-10-15
+
+### Added
+- KoreaStockRankingNode: domestic top gainers, losers, volume, trading value and market cap (LS t1441, t1452, t1463, t1444). Fields `ranking_type`, `market` (all, KOSPI, KOSDAQ; market cap needs one market) and `limit` (1-100); outputs `rankings`, `symbols` and `count`.
+- OverseasStockRankingNode: US stock rankings by change, volume, trading value, turnover, market cap and 52-week high/low (LS g3112). Fields `ranking_type`, `market` (all, NYSE, NASDAQ, ETF) and `limit`; same outputs.
+- Output field constants, catalog guidance and ko/en labels for both nodes.
+
 ## [2.6.2] - 2026-10-14
 
 ### Fixed
