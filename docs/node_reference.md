@@ -746,6 +746,49 @@ WebSocket으로 **실시간 시세**를 수신합니다. 체결이 발생할 때
 
 ---
 
+### RankingNode (순위 조회)
+
+오늘의 **상승률·하락률·거래량·거래대금·시가총액 상위 종목**을 가져옵니다. "오늘 많이 오른 종목 30개" 같은 후보 목록을 만들 때 씁니다. 읽기 전용이며 주문을 내지 않습니다.
+
+| 상품 | 노드 타입 | LS TR |
+|------|----------|-------|
+| 국내주식 | `KoreaStockRankingNode` | t1441(등락률), t1452(거래량), t1463(거래대금), t1444(시가총액) |
+| 해외주식(미국) | `OverseasStockRankingNode` | g3112(시세순위) |
+| 해외선물 | 없음 — LS 에 순위 TR 이 없습니다. 주요 계약을 직접 고르거나 `FuturesContractNode` 를 쓰세요. | — |
+
+```json
+{
+  "id": "ranking",
+  "type": "KoreaStockRankingNode",
+  "ranking_type": "change_rate_up",
+  "market": "all",
+  "limit": 30
+}
+```
+
+| 필드 | 국내 | 해외 |
+|------|------|------|
+| `ranking_type` | `change_rate_up`, `change_rate_down`, `volume`, `trading_value`, `market_cap` | 국내 값 + `turnover`, `high_52w`, `low_52w` |
+| `market` | `all`, `KOSPI`, `KOSDAQ` (`market_cap` 은 KOSPI/KOSDAQ 하나만) | `all`, `NYSE`, `NASDAQ`, `ETF` |
+| `limit` | 1~100 (기본 20) | 1~100 (기본 20) |
+
+**출력**:
+- `rankings` — 순위 행. 공통: `rank`, `symbol`, `exchange`, `name`, `price`, `sign`(LS 원래 코드), `change`·`change_pct`(sign 코드로 부호를 붙인 값), `volume`, `trading_value`+`trading_value_unit`, `market_cap`+`market_cap_unit`, `product`, `source_tr`. 국내는 `market`, `open`/`high`/`low`(t1441 만), 해외는 `exchange_source`, `exchange_name`, `keysymbol`, `turnover`, `high_52w`, `low_52w` 가 더 있습니다.
+- `symbols` — 하류 노드에 바로 넣을 수 있는 종목 리스트 (국내 `{exchange:"KRX", market, symbol, name, product}`, 해외 `{exchange, symbol, name, product}`).
+- `count` — 행 수. 성공했는데 0건이면 `rankings=[]`, `count=0` 입니다.
+
+> **단위**: 값은 LS 가 준 그대로이며 변환하지 않습니다. 국내 거래대금은 t1441 `as_returned`, t1463 `KRW_million`(백만원), 시가총액은 t1441 `as_returned`, t1463 `KRW_million`, t1444 `KRW_100million`(억원)입니다. 서로 다른 순위 종류의 값을 섞어 비교하지 마세요.
+>
+> **해외 거래소**: LS 키 종목코드(`82TSLA`)의 앞 두 자리로 정합니다(81 → NYSE, 82 → NASDAQ). 알 수 없으면 `exchange=null` 이고 `symbols` 에서 빠집니다.
+>
+> **요청 제한**: 한 번 실행에 최대 5번 요청하며 TR 별 초당 한도(t1441·t1463·g3112 1건, t1452·t1444 2건)를 지킵니다. 실패하면 `t1441: <코드> <메시지>` 처럼 TR 코드로 시작하는 오류로 멈춥니다.
+>
+> **모의 실행·심층 검증**: 브로커를 부르지 않고 같은 모양의 가짜 행 3개를 냅니다.
+>
+> **주의**: 순위를 주문 노드에 바로 연결하지 마세요. CodeNode 등으로 가격·보유·예산을 확인한 뒤 고른 종목만 주문합니다.
+
+---
+
 ### WatchlistNode (관심종목)
 
 사용자가 직접 지정하는 **관심종목 목록**입니다. 워크플로우에서 처리할 종목을 정의하는 가장 기본적인 방법입니다.

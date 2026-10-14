@@ -3868,6 +3868,126 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
         return [s for s in symbols if s.get("contract_month", "") == month_filter]
 
 
+class RankingNodeExecutor(NodeExecutorBase):
+    """KoreaStockRankingNode (t1441/t1452/t1463/t1444) and OverseasStockRankingNode (g3112).
+
+    Read-only. Request values, paging and row shapes live in ``programgarden.ranking_nodes``.
+    Deep validation and dry runs return synthetic rows with the same shape and make no
+    broker call. Every failure raises with the LS TR code first; an empty successful
+    ranking is a valid result.
+    """
+
+    PRODUCTS = {
+        "KoreaStockRankingNode": "korea_stock",
+        "OverseasStockRankingNode": "overseas_stock",
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden import ranking_nodes as rn
+
+        config = evaluate_all_bindings(config, context, node_id)
+        product = self.PRODUCTS.get(node_type)
+        if product is None:
+            raise rn.RankingNodeError(f"{node_type}: not a ranking node")
+        korea = product == "korea_stock"
+        request = rn.korea_ranking_request(config) if korea else rn.overseas_ranking_request(config)
+
+        if context.is_deep_validate or context.is_dry_run:
+            from programgarden import deep_fixtures as _df
+            outputs = rn.synthetic_korea_outputs(request) if korea else rn.synthetic_overseas_outputs(request)
+            if context.is_dry_run and not context.is_deep_validate:
+                context.log(
+                    "info",
+                    f"[dry_run] {node_type} simulated (no {request.tr_code} ranking query)",
+                    node_id,
+                )
+            return _df.apply_override(outputs, context.get_deep_fixture(node_id, node_type))
+
+        connection = config.get("connection")
+        if not isinstance(connection, dict) or connection.get("product") != product:
+            raise rn.RankingNodeError(
+                f"{request.tr_code}: a matching {product} broker connection is required — "
+                f"connect a {'KoreaStockBrokerNode' if korea else 'OverseasStockBrokerNode'} upstream"
+            )
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(connection, context)
+        if not appkey or not appsecret:
+            raise rn.RankingNodeError(f"{request.tr_code}: broker credentials are not set (check the broker node credential)")
+        if korea:
+            paper_trading = False  # KoreaStock is real-account only (LS)
+        elif paper_trading:
+            raise rn.RankingNodeError(
+                "g3112: overseas_stock does not support paper_trading (LS-Sec limitation); "
+                "use a real overseas-stock broker connection"
+            )
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, False, context, node_id, product,
+            caller_name=node_type,
+        )
+        if not success:
+            raise rn.RankingNodeError(f"{request.tr_code}: LS login failed ({error or 'unknown reason'})")
+
+        if korea:
+            result = await self._read_korea(ls, request)
+            outputs = rn.korea_outputs(request, result.rows)
+        else:
+            result = await self._read_overseas(ls, request)
+            outputs = rn.overseas_outputs(result.rows)
+        context.log(
+            "info",
+            f"{node_type}: {request.tr_code} {request.ranking_type}/{request.market} → "
+            f"{outputs['count']} rows in {result.requests} request(s)",
+            node_id,
+        )
+        return outputs
+
+    @staticmethod
+    async def _read_korea(ls: Any, request: Any) -> Any:
+        """Single transport boundary for t1441/t1452/t1463/t1444 pages."""
+        from programgarden import ranking_nodes as rn
+
+        ranking_api = ls.korea_stock().ranking()
+        method = getattr(ranking_api, request.tr_code)
+
+        async def fetch(cursor, cont_key):
+            tr = method(body=rn.korea_in_block(request, idx=cursor or 0))
+            if cursor:
+                tr.request_data.header.tr_cont = "Y"
+                tr.request_data.header.tr_cont_key = cont_key or ""
+            return rn.korea_page(request.tr_code, await tr.req_async())
+
+        return await rn.collect_pages(
+            fetch, limit=request.limit,
+            row_key=lambda row: str(getattr(row, "shcode", "") or "").strip(),
+        )
+
+    @staticmethod
+    async def _read_overseas(ls: Any, request: Any) -> Any:
+        """Single transport boundary for g3112 pages."""
+        from programgarden import ranking_nodes as rn
+
+        market_api = ls.overseas_stock().market()
+
+        async def fetch(cursor, cont_key):
+            tr = market_api.g3112(body=rn.overseas_in_block(request, cts_value=cursor or ""))
+            if cursor:
+                tr.request_data.header.tr_cont = "Y"
+                tr.request_data.header.tr_cont_key = cont_key or ""
+            return rn.overseas_page(await tr.req_async())
+
+        return await rn.collect_pages(
+            fetch, limit=request.limit,
+            row_key=lambda row: (str(getattr(row, "keysymbol", "") or "").strip()
+                                 or str(getattr(row, "symbol", "") or "").strip()),
+        )
+
+
 # 선물 월물 코드 (거래소 공통) — LS o3101 의 LstngM 이 이 문자를 그대로 준다.
 FUTURES_MONTH_CODES: Dict[str, int] = {
     "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
@@ -20544,6 +20664,8 @@ class WorkflowExecutor:
             "KoreaStockFundamentalNode": FundamentalNodeExecutor(),
             "KoreaStockHistoricalDataNode": HistoricalDataNodeExecutor(),
             "KoreaStockSymbolQueryNode": SymbolQueryNodeExecutor(),
+            "KoreaStockRankingNode": RankingNodeExecutor(),
+            "OverseasStockRankingNode": RankingNodeExecutor(),
             "KoreaStockNewOrderNode": NewOrderNodeExecutor(),
             "KoreaStockModifyOrderNode": ModifyOrderNodeExecutor(),
             "KoreaStockCancelOrderNode": CancelOrderNodeExecutor(),
@@ -22205,6 +22327,8 @@ class WorkflowJob:
         "FuturesContractNode",
         "OverseasFuturesContractInfoNode",  # One exact identity; explicit SplitNode for a batch.
         "OverseasFuturesSymbolQueryNode", "OverseasStockSymbolQueryNode", "KoreaStockSymbolQueryNode",
+        # Ranking nodes produce arrays too: an upstream array must not repeat the LS query N times.
+        "KoreaStockRankingNode", "OverseasStockRankingNode",
         "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
         # LogicNode 도 집합 연산 노드다 — 상류 조건 결과 **배열 전체**를 AND/OR 해야 한다.
         # 종목별로 쪼개 N회 돌면 매 회가 전체 passed_symbols 를 다시 내보내 병합 시 N² 가 된다

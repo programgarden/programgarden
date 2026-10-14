@@ -39,7 +39,9 @@ FIXTURE_NODES = frozenset({
     for kind in ("Broker", "Account", "RealAccount", "MarketData", "HistoricalData",
                  "Fundamental", "SymbolQuery", "OpenOrders", "RealMarketData", "RealOrderEvent")
     if not (product == "OverseasFutures" and kind == "Fundamental")
-}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "TelegramNode"}
+}) | {"HTTPRequestNode", "LLMModelNode", "AIAgentNode", "TelegramNode",
+      # LS ranking reads replay from recorded node outputs, like the symbol queries.
+      "KoreaStockRankingNode", "OverseasStockRankingNode"}
 
 
 def content_hash(value: Any) -> str:
