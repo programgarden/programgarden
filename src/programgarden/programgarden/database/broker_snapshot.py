@@ -110,12 +110,18 @@ async def read_broker_snapshot(ls, *, execution_key, product, provider, trading_
         source = "COSOQ00201+COSAQ00102"
     elif product == "overseas_futures":
         from programgarden_finance import CIDBQ01500, CIDBQ02400
+        from programgarden.paper_futures_business_date import PaperFuturesScope, from_current_positions
 
         accno = ls.overseas_futureoption().accno()
+        paper_scope = PaperFuturesScope.capture(ls) if trading_mode == "paper" else None
         query = accno.CIDBQ01500(body=CIDBQ01500.CIDBQ01500InBlock1(
             RecCnt=1, AcntTpCode="1", FcmAcntNo="", QryDt="", BalTpCode="2"))
         response = await query.req_async()
-        await checked_body(response, "CIDBQ01500", query)
+        paper_day = None
+        if paper_scope is not None:
+            paper_day = await from_current_positions(ls, response, query, paper_scope)
+        else:
+            await checked_body(response, "CIDBQ01500", query)
         for row in response.block2:
             symbol = normalized_symbol(str(required(row, "IsuCodeVal")), product)
             side = str(required(row, "BnsTpCode"))
@@ -127,11 +133,17 @@ async def read_broker_snapshot(ls, *, execution_key, product, provider, trading_
             if side == "2":
                 positions[symbol] = positions.get(symbol, Decimal(0)) + amount
         await asyncio.sleep(2)
+        if paper_day is not None:
+            paper_day.scope.check(ls)
+        query_day = paper_day.day if paper_day is not None else ""
         query = accno.CIDBQ02400(body=CIDBQ02400.CIDBQ02400InBlock1(
-            RecCnt=1, IsuCodeVal="", QrySrtDt="", QryEndDt="", ThdayTpCode="1",
+            RecCnt=1, IsuCodeVal="", QrySrtDt=query_day, QryEndDt=query_day, ThdayTpCode="1",
             OrdStatCode="2", BnsTpCode="0", QryTpCode="2", OrdPtnCode="00", OvrsDrvtFnoTpCode="A"))
         response = await query.req_async()
-        await checked_body(response, "CIDBQ02400", query)
+        if paper_day is not None:
+            await paper_day.check_orders(ls, response, query)
+        else:
+            await checked_body(response, "CIDBQ02400", query)
         pending = [value for row in response.block2 if (value := pending_row(row, product)) is not None]
         source = "CIDBQ01500+CIDBQ02400"
     else:

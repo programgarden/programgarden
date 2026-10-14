@@ -1,3 +1,5 @@
+The 2.6.3 release candidate [paper futures query correction](docs/paper-futures-business-date.md) uses a fresh broker-provided account date for paper order inquiries while retaining strict response checks. Publication and consumer deployment are separate steps.
+
 The 2.6.2 release candidate [futures minute alias correction](docs/futures-minute-alias-contract.md) aligns canonical minute periods with the existing one-page o3103 path and rejects unsupported hourly/adjustment claims. Complete-range coverage and consumer adoption are not implied.
 
 # 소개

@@ -6659,21 +6659,33 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         from datetime import datetime
         from zoneinfo import ZoneInfo
         from programgarden.futures_read_evidence import require_complete_rows, require_pending_identity
+        from programgarden.paper_futures_business_date import is_paper_client, read_current_business_date
+        from programgarden.database.broker_evidence import StartupEvidenceUnavailable
         from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import CIDBQ02400InBlock1
 
 
-        today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+        paper_day = None
+        try:
+            if is_paper_client(ls):
+                paper_day = await read_current_business_date(ls)
+        except StartupEvidenceUnavailable as exc:
+            return self._empty_result(str(exc))
+        today = paper_day.day if paper_day else datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
         request = CIDBQ02400InBlock1(
             RecCnt=1, IsuCodeVal="", QrySrtDt=today, QryEndDt=today,
             ThdayTpCode="1", OrdStatCode="2", BnsTpCode="0", QryTpCode="2",
             OrdPtnCode="00", OvrsDrvtFnoTpCode="A",
         )
-        response = await ls.overseas_futureoption().accno().CIDBQ02400(body=request).req_async()
         try:
-            rows = require_complete_rows(response, request, "CIDBQ02400")
+            if paper_day:
+                paper_day.scope.check(ls)
+            query = ls.overseas_futureoption().accno().CIDBQ02400(body=request)
+            response = await query.req_async()
+            rows = (await paper_day.check_orders(ls, response, query) if paper_day else
+                    require_complete_rows(response, request, "CIDBQ02400"))
             for row in rows:
                 require_pending_identity(row)
-        except ValueError as exc:
+        except (ValueError, StartupEvidenceUnavailable) as exc:
             return self._empty_result(str(exc))
 
         open_orders = []
@@ -16849,17 +16861,21 @@ class NewOrderNodeExecutor(NodeExecutorBase):
             from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ02400.blocks import (
                 CIDBQ02400InBlock1,
             )
-            # 당일조회(ThdayTpCode="1")에는 날짜를 싣지 않는다 — 브로커의 "당일"은
-            # 그쪽 영업일이고, 실행 머신의 달력 날짜와 다를 수 있다. 야간 세션에서
-            # 로컬이 자정을 넘기면 브로커는 아직 전 영업일이라(2026-09-10 00:39 KST
-            # 접수 주문이 OrdDt/ExecDt=20260909 로 조회됨) 로컬 날짜를 창으로 주면
-            # 방금 낸 주문의 체결을 스스로 잘라낸다. 아래 매칭은 주문번호로만 하므로
-            # 날짜 창은 필요 없다.
-            response = await ls.overseas_futureoption().accno().CIDBQ02400(
+            from programgarden.paper_futures_business_date import is_paper_client, read_current_business_date
+
+            # A paper server can reject the documented blank same-day dates.
+            # Use its fresh account-scoped date, including overnight sessions;
+            # never replace missing evidence with the machine's calendar date.
+            paper_day = await read_current_business_date(ls) if is_paper_client(ls) else None
+            query_day = paper_day.day if paper_day else ""
+            if paper_day:
+                paper_day.scope.check(ls)
+            query = ls.overseas_futureoption().accno().CIDBQ02400(
                 body=CIDBQ02400InBlock1(
+                    RecCnt=1,
                     IsuCodeVal="",          # 전체 종목
-                    QrySrtDt="",
-                    QryEndDt="",
+                    QrySrtDt=query_day,
+                    QryEndDt=query_day,
                     ThdayTpCode="1",        # 1: 당일조회
                     OrdStatCode="0",        # 0: 전체(체결+미체결) — 상태 판정에 필요
                     BnsTpCode="0",          # 0: 전체
@@ -16867,7 +16883,11 @@ class NewOrderNodeExecutor(NodeExecutorBase):
                     OrdPtnCode="00",        # 00: 전체
                     OvrsDrvtFnoTpCode="A",  # A: 전체(선물+옵션)
                 )
-            ).req_async()
+            )
+            response = await query.req_async()
+
+            if paper_day:
+                await paper_day.check_orders(ls, response, query)
 
             if getattr(response, "error_msg", None):
                 context.log("debug", f"CIDBQ02400 fill query error: {response.error_msg}", node_id)

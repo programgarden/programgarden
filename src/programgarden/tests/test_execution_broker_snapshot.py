@@ -110,25 +110,34 @@ async def test_duplicate_custody_rows_hold_instead_of_overwriting_quantity():
 
 async def test_futures_short_does_not_inflate_long_fifo_and_order_keeps_business_day():
     calls = []
+    def account_echo(response, body):
+        response.block1.AcntNo = "offline-account"
+        if "CIDBQ01500OutBlock1" in body:
+            response.block1.QryDt = "20260915"
+            body["CIDBQ01500OutBlock1"] = response.block1.model_dump(exclude_unset=True)
+        else:
+            body["CIDBQ02400OutBlock1"] = response.block1.model_dump(exclude_unset=True)
     def positions(*, body):
         calls.append(body)
         return query(CIDBQ01500, "CIDBQ01500", body, [
             {"IsuCodeVal": "CONTRACT", "BnsTpCode": "2", "BalQty": 3},
             {"IsuCodeVal": "CONTRACT", "BnsTpCode": "1", "BalQty": 5},
-        ])
+        ], mutate=account_echo)
     def pending(*, body):
         calls.append(body)
         return query(CIDBQ02400, "CIDBQ02400", body, [{
             "IsuCodeVal": "CONTRACT", "BnsTpCode": "1", "UnercQty": 1,
             "OrdDt": "20260915", "OvrsFutsOrdNo": "00042",
-        }])
+        }], mutate=account_echo)
     accno = NS(CIDBQ01500=positions, CIDBQ02400=pending)
-    ls = NS(overseas_futureoption=lambda: NS(accno=lambda: accno))
+    ls = NS(token_manager=NS(appkey="offline-key", paper_trading=True),
+            overseas_futureoption=lambda: NS(accno=lambda: accno))
     result = await read(ls, "overseas_futures", "paper")
     assert result.positions.quantities == {"CONTRACT": 3}
     assert result.pending_orders[0]["order_date"] == "20260915"
     assert result.positions.trading_mode == "paper"
     assert calls[0].BalTpCode == "2"
+    assert calls[1].QrySrtDt == calls[1].QryEndDt == "20260915"
 
 
 def test_all_consumed_detail_fields_exist_in_the_published_models():

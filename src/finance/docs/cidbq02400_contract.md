@@ -1,4 +1,4 @@
-# CIDBQ02400 supplied LS field contract
+# CIDBQ02400 LS field contract
 
 Source: LS overseas futures order execution detail table and request/response
 example supplied by the repository owner on 2026-09-09. This reference retains
@@ -6,13 +6,31 @@ published field metadata without copying account numbers, credentials, user IDs
 or full account payloads from the example. Length/scale describes the published
 wire format; this documentation does not add restrictive Pydantic validators.
 
+The [official LS API guide JSON](https://openapi.ls-sec.co.kr/api/apis/public/tr-guides.json),
+linked by the [API service page](https://openapi.ls-sec.co.kr/apiservice), was checked
+on 2026-10-12 at guide version `20261012053652748`. Its request field table includes
+`CIDBQ02400InBlock1.RecCnt` (Number, length 5). The exact request metadata and full
+guide SHA-256 are retained in the [offline contract fixture](../tests/fixtures/cidbq02400_official_request_fields.json).
+This current source is distinct from the owner's September table below.
+
 ## Request and continuation
 
 Send `ThdayTpCode="0"` with `QrySrtDt`/`QryEndDt` in YYYYMMDD for historical
-queries. Send `ThdayTpCode="1"` with **both date fields empty** for same-day
-queries. The published field descriptions require this even though the example
-combines same-day mode with nonempty dates. Logical collection time windows
-remain separate from these transport fields.
+queries. The published guide specifies `ThdayTpCode="1"` with **both date fields
+empty** for same-day queries, although the SDK example combines same-day mode
+with nonempty dates. Logical collection time windows remain separate from these
+transport fields.
+
+An October 2026 paper observation returned `03139` for blank dates and required
+a start date. A fresh CIDBQ01500 current inquiry returned an explicit `QryDt`;
+using it for both CIDBQ02400 date fields retained the same-day/pending filters
+and produced a complete terminal `02679` empty response. Adding `RecCnt=1`
+without changing the dates still failed, so record-count serialization and
+current-date compatibility are separate corrections. Do not infer a machine
+calendar date or universal paper-server behavior from this observation. The
+engine's [bounded paper adapter](../../../docs/paper-futures-business-date.md)
+requires original account/mode, fresh query scope and complete evidence. Low-level
+TR date arguments and existing live behavior are not rewritten by the SDK.
 
 For continuation, send `tr_cont="Y"` and the preceding response's
 `tr_cont_key` while continuation is indicated. `tr_cont="N"` indicates no
@@ -29,10 +47,12 @@ continuation. Keep the request scope fixed across a cursor chain.
 
 Response headers publish content-type, tr_cd, tr_cont and tr_cont_key with the
 same types/lengths. All listed body fields are marked required in the supplied
-table; response models retain their existing tolerant defaults.
+September table; that historical statement does not establish the newly listed
+`RecCnt` field's requiredness. Response models retain their existing tolerant defaults.
 
 | Input field | Type | Length | Published meaning |
 | --- | --- | --- | --- |
+| RecCnt | Number | 5 | Record count; present in the current official JSON request table |
 | IsuCodeVal | String | 30 | Instrument code |
 | QrySrtDt | String | 8 | Historical start YYYYMMDD; empty for same-day |
 | QryEndDt | String | 8 | Historical end YYYYMMDD; empty for same-day |
@@ -43,10 +63,22 @@ table; response models retain their existing tolerant defaults.
 | OrdPtnCode | String | 2 | 00: all; 01: regular; 02: Average; 03: Spread |
 | OvrsDrvtFnoTpCode | String | 1 | A: all; F: futures; O: options |
 
-`RecCnt` appears in the supplied request example but is absent from the input
-field table. This discrepancy does not establish a new required request field.
-OutBlock1 echoes the input fields and adds RecCnt (Number, 5), AcntNo (String,
-20), and Pwd (String, 8). Account/password echoes must not be logged.
+Historically, `RecCnt` appeared in the supplied request example but was absent
+from the September input table. The current official JSON resolves field presence:
+it lists `RecCnt` in the **request** as well as separately in response OutBlock1.
+The SDK's own [example](../example/overseas_futureoption/run_CIDBQ02400.py) explicitly
+passes `RecCnt=1`; the previous input model silently discarded it as an unknown
+field. The model now preserves explicit values and uses the example's `1` as its
+SDK default so existing callers can still omit the constructor argument. Normal
+request serialization now includes `RecCnt: 1` for those callers too. This is an
+SDK default, not a claim about the broker's default, mandatory status or accepted
+range. No upper bound or new broker-required validator is added.
+
+OutBlock1 echoes `RecCnt` (Number, 5) and the other query fields, plus AcntNo
+(String, 20) and Pwd (String, 8). Its tolerant defaults and observed-field presence
+remain unchanged. Account/password echoes must not be logged. The correction is
+verified with offline serialization and mocked HTTP only; it does not prove that
+earlier live responses were incomplete or settle any commission accounting rule.
 
 ## Execution evidence and published inconsistencies
 
