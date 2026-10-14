@@ -22,7 +22,7 @@ from programgarden_core.nodes.base import (
     OutputPort,
     ProductScope,
 )
-from programgarden_core.nodes.ranking_korea_stock import RANKING_LIMIT_MAX, RANKING_LIMIT_MIN
+from programgarden_core.nodes.ranking_korea_stock import RANKING_LIMIT_MAX, RANKING_LIMIT_MIN, ranking_engine_required
 
 
 # Node enum → g3112 rankgubun (LS guide: 0 상승률, 1 하락률, 2 거래량, 3 거래대금, 4 회전율,
@@ -238,3 +238,11 @@ class OverseasStockRankingNode(BaseNode):
                 expected_type="int",
             ),
         }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """Fail closed on an engine without the ranking executor.
+
+        programgarden 2.6.6+ executes this node with its ranking executor and
+        never calls this method (see ``ranking_korea_stock.RANKING_MIN_ENGINE``).
+        """
+        raise ranking_engine_required(self.type)

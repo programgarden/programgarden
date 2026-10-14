@@ -552,6 +552,28 @@ def test_wiring(node_type):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("node_type,config", [
+    ("KoreaStockRankingNode", {"ranking_type": "change_rate_up", "market": "all", "limit": 5}),
+    ("OverseasStockRankingNode", {"ranking_type": "volume", "market": "NASDAQ", "limit": 5}),
+])
+async def test_engine_without_ranking_executor_fails_closed(node_type, config):
+    """Engines before 2.6.6 run an unknown-to-them node through GenericNodeExecutor.
+
+    With core 2.6.3 such an engine (e.g. an unpinned install of programgarden 2.6.5)
+    sees the node class; the class's execute() makes it report an engine-version error
+    instead of {"executed": True} with no rankings. This engine never takes that path.
+    """
+    from programgarden.executor import GenericNodeExecutor
+
+    context = ExecutionContext(job_id="job-old-engine", workflow_id="wf-old-engine")
+    out = await GenericNodeExecutor().execute(node_id="ranking", node_type=node_type, config=dict(config), context=context)
+    assert set(out) == {"error"}
+    assert out["error"].startswith(f"{node_type} requires the programgarden engine 2.6.6 or later")
+    assert "rankings" not in out and "executed" not in out
+    assert not isinstance(WorkflowExecutor()._executors[node_type], GenericNodeExecutor)
+
+
+@pytest.mark.asyncio
 async def test_workflow_deep_validate_with_ranking_and_codenode():
     wf = {
         "id": "w", "name": "w",

@@ -29,6 +29,21 @@ KOREA_RANKING_MARKETS = ["all", "KOSPI", "KOSDAQ"]
 RANKING_LIMIT_MIN = 1
 RANKING_LIMIT_MAX = 100
 
+# The programgarden engine runs both ranking nodes with its own executor from this
+# version. An older engine paired with this core falls back to its generic executor,
+# which calls the node's ``execute``; without the method below it would report the
+# node as executed with no rankings and no error.
+RANKING_MIN_ENGINE = "2.6.6"
+
+
+def ranking_engine_required(node_type: str) -> RuntimeError:
+    """Error raised when an engine without the ranking executor runs a ranking node."""
+    return RuntimeError(
+        f"{node_type} requires the programgarden engine {RANKING_MIN_ENGINE} or later; "
+        "this engine has no ranking executor, so no ranking was read. "
+        "Update the programgarden package (updating programgarden-core alone is not enough)."
+    )
+
 
 _BROKER_CREDENTIAL = {
     "credential_id": "broker_cred",
@@ -252,3 +267,11 @@ class KoreaStockRankingNode(BaseNode):
                 expected_type="int",
             ),
         }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """Fail closed on an engine without the ranking executor.
+
+        programgarden 2.6.6+ executes this node with its ranking
+        executor and never calls this method (see ``RANKING_MIN_ENGINE``).
+        """
+        raise ranking_engine_required(self.type)
