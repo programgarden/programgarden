@@ -331,7 +331,33 @@ class ExecutionContext:
         # warn-and-continue behaviour untouched).
         self._deep_unresolved_bindings: List[Dict[str, str]] = []
 
+        # Authored node configs (deep copies of the workflow definition). Only a
+        # template still at its authored position is evaluated; everything a node
+        # run produces is data. See programgarden.binding_provenance.
+        self._authored_node_configs: Dict[str, Dict[str, Any]] = {}
+
         self._build_dag_index(workflow_edges, workflow_nodes)
+
+    # === Authored config (expression provenance) ===
+
+    def register_authored_node_configs(self, workflow: Any) -> None:
+        """Snapshot every node's authored config from a resolved workflow."""
+        from programgarden.binding_provenance import authored_snapshot
+
+        nodes = getattr(workflow, "nodes", None)
+        if not isinstance(nodes, dict):
+            return
+        for node_id, node in nodes.items():
+            config = getattr(node, "config", None)
+            if not isinstance(config, dict):
+                continue
+            self._authored_node_configs[node_id] = authored_snapshot(
+                getattr(node, "node_type", ""), config, getattr(node, "fields", None),
+            )
+
+    def authored_node_config(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """Authored config snapshot of ``node_id``; None when the node has none."""
+        return self._authored_node_configs.get(node_id)
 
     # === Storage Directory ===
 

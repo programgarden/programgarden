@@ -785,12 +785,15 @@ def resolve_port_bindings(
     Returns:
         평가된 config (표현식이 실제 데이터로 교체됨)
     """
+    from programgarden import binding_provenance as _bp
+
     config = config.copy()  # 원본 보호
     
     for port_name in port_names:
         binding_expr = config.get(port_name)
         
-        if binding_expr and isinstance(binding_expr, str) and "{{" in binding_expr:
+        if (binding_expr and isinstance(binding_expr, str) and "{{" in binding_expr
+                and _bp.may_evaluate(binding_expr, _bp.authored_at(context, node_id, port_name))):
             # {{ nodes.xxx.yyy }} 표현식 평가
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
@@ -1025,21 +1028,30 @@ def evaluate_all_bindings(
 
     - dict, list 내부도 재귀 탐색
     - 평가 실패 시 원본 유지 + 경고 로그
+    - 2.6.6: 워크플로우 정의에 **작성된 템플릿이 그 자리에 그대로 남아 있을 때만** 평가한다.
+      앞 단계가 이미 푼 값(LLM 응답, HTTP 본문, 입력값, 자격증명 등 런타임 값)은 `{{` 를
+      담고 있어도 데이터로 그대로 통과한다(programgarden.binding_provenance).
+      작성본 스냅샷이 없는 노드(NodeRunner 단독 실행)는 종전대로 모두 평가한다.
 
     Args:
-        config: 노드 config
+        config: 노드 config (top-level 키가 작성본 config 의 키와 같은 위치여야 한다)
         context: 실행 컨텍스트
         node_id: 노드 ID
 
     Returns:
         표현식이 평가된 config
     """
+    from programgarden import binding_provenance as _bp
+
     config = config.copy()
     expr_context = context.get_expression_context()
     evaluator = ExpressionEvaluator(expr_context)
+    authored_root = _bp.authored_root(context, node_id)
 
-    def evaluate_value(value: Any) -> Any:
+    def evaluate_value(value: Any, authored: Any) -> Any:
         if isinstance(value, str) and "{{" in value:
+            if not _bp.may_evaluate(value, authored):
+                return value  # runtime data — never evaluated
             try:
                 result = evaluator.evaluate(value)
                 context.log("debug", f"Expression evaluated: {value} -> {type(result).__name__}", node_id)
@@ -1056,12 +1068,16 @@ def evaluate_all_bindings(
                     pass
                 return value
         elif isinstance(value, dict):
-            return {k: evaluate_value(v) for k, v in value.items()}
+            if authored is not _bp.LEGACY and not isinstance(authored, dict):
+                return _bp.copy_containers(value)
+            return {k: evaluate_value(v, _bp.child(authored, k)) for k, v in value.items()}
         elif isinstance(value, list):
-            return [evaluate_value(v) for v in value]
+            if authored is not _bp.LEGACY and not (isinstance(authored, list) and len(authored) == len(value)):
+                return _bp.copy_containers(value)
+            return [evaluate_value(v, _bp.element(authored, i, len(value))) for i, v in enumerate(value)]
         return value
 
-    return {k: evaluate_value(v) for k, v in config.items()}
+    return {k: evaluate_value(v, _bp.child(authored_root, k)) for k, v in config.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -1384,9 +1400,12 @@ class GenericNodeExecutor(NodeExecutorBase):
         # MarketDataNode 등은 fields가 List[str]이므로 건드리지 않음
         fields = config.get("fields")
         if fields and isinstance(fields, dict):
+            from programgarden import binding_provenance as _bp
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
-            config["fields"] = evaluator.evaluate_fields(fields)
+            config["fields"] = _bp.evaluate_fields_authored(
+                evaluator, fields, _bp.authored_at(context, node_id, "fields"),
+            )
         
         # 노드 인스턴스 생성 (config의 값들이 Pydantic 필드에 매핑됨)
         try:
@@ -2047,7 +2066,10 @@ class SplitNodeExecutor(NodeExecutorBase):
         # 1순위: 명시적 array 바인딩 (있으면 상류보다 우선).
         array_cfg = config.get("array")
         if array_cfg is not None:
-            if isinstance(array_cfg, str) and "{{" in array_cfg:
+            from programgarden import binding_provenance as _bp
+            if isinstance(array_cfg, str) and "{{" in array_cfg and _bp.may_evaluate(
+                array_cfg, _bp.authored_at(context, node_id, "array"),
+            ):
                 expr_context = context.get_expression_context()
                 evaluator = ExpressionEvaluator(expr_context)
                 try:
@@ -10517,7 +10539,16 @@ class ConditionNodeExecutor(NodeExecutorBase):
             context.log("error", f"items.from is required", node_id)
             return []
 
-        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+        # 2.6.6: evaluate only the authored items templates (never values a tool call
+        # or another runtime path placed here).
+        from programgarden import binding_provenance as _bp
+        authored_items = _bp.authored_at(context, node_id, "items")
+        authored_extract = _bp.child(authored_items, "extract")
+        from_data = (
+            evaluator.evaluate(from_expr)
+            if isinstance(from_expr, str) and _bp.may_evaluate(from_expr, _bp.child(authored_items, "from"))
+            else from_expr
+        )
 
         if not isinstance(from_data, list):
             from_data = [from_data] if from_data else []
@@ -10536,7 +10567,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
         # 외부 바인딩 값 미리 평가 (row 미포함 표현식)
         external_values = {}
         for target_field, source_expr in extract.items():
-            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+            if (isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr
+                    and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                 try:
                     external_values[target_field] = evaluator.evaluate(source_expr)
                 except Exception as e:
@@ -10559,7 +10591,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 if target_field in external_values:
                     # 외부 바인딩 (캐시된 값 사용)
                     record[target_field] = external_values[target_field]
-                elif isinstance(source_expr, str) and "{{" in source_expr:
+                elif (isinstance(source_expr, str) and "{{" in source_expr
+                        and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                     # row 포함 표현식 평가
                     try:
                         record[target_field] = row_evaluator.evaluate(source_expr)
@@ -10596,9 +10629,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
         Returns:
             평가된 데이터 또는 기본값
         """
+        from programgarden import binding_provenance as _bp
+
         binding_expr = config.get(port_name)
 
-        if binding_expr and isinstance(binding_expr, str):
+        if (binding_expr and isinstance(binding_expr, str)
+                and _bp.may_evaluate(binding_expr, _bp.authored_at(context, node_id, port_name))):
             # {{ nodes.xxx.yyy }} 표현식 평가
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
@@ -10719,8 +10755,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                             try:
                                 sweep_fields = fields or config.get("fields", {}) or config.get("params", {})
                                 if sweep_fields:
+                                    from programgarden import binding_provenance as _bp
                                     _expr_ctx = context.get_expression_context()
-                                    sweep_fields = ExpressionEvaluator(_expr_ctx).evaluate_fields(sweep_fields)
+                                    sweep_fields = _bp.evaluate_fields_authored(
+                                        ExpressionEvaluator(_expr_ctx), sweep_fields,
+                                        _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                                    )
                                 await sandbox.execute(
                                     plugin_id=plugin_id,
                                     plugin_callable=plugin,
@@ -10747,9 +10787,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 # fields 표현식 평가
                 evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
                 if evaluated_fields:
+                    from programgarden import binding_provenance as _bp
                     expr_context = context.get_expression_context()
                     evaluator = ExpressionEvaluator(expr_context)
-                    evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+                    evaluated_fields = _bp.evaluate_fields_authored(
+                        evaluator, evaluated_fields,
+                        _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                    )
                 
                 # positions 기반 플러그인 직접 실행
                 context.log("info", f"Condition (positions-based) running with {len(positions)} positions", node_id)
@@ -10936,9 +10980,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
             # fields 표현식 평가
             evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
             if evaluated_fields:
+                from programgarden import binding_provenance as _bp
                 expr_context = context.get_expression_context()
                 evaluator = ExpressionEvaluator(expr_context)
-                evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+                evaluated_fields = _bp.evaluate_fields_authored(
+                    evaluator, evaluated_fields,
+                    _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                )
 
             # symbols 정규화 (거래소 정보 포함)
             from programgarden_core.models import symbols_to_dict_list, extract_symbol_codes
@@ -13153,7 +13201,16 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             context.log("error", f"items.from is required", node_id)
             return []
 
-        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+        # 2.6.6: evaluate only the authored items templates (never values a tool call
+        # or another runtime path placed here).
+        from programgarden import binding_provenance as _bp
+        authored_items = _bp.authored_at(context, node_id, "items")
+        authored_extract = _bp.child(authored_items, "extract")
+        from_data = (
+            evaluator.evaluate(from_expr)
+            if isinstance(from_expr, str) and _bp.may_evaluate(from_expr, _bp.child(authored_items, "from"))
+            else from_expr
+        )
 
         if not isinstance(from_data, list):
             from_data = [from_data] if from_data else []
@@ -13172,7 +13229,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         # 외부 바인딩 값 미리 평가
         external_values = {}
         for target_field, source_expr in extract.items():
-            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+            if (isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr
+                    and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                 try:
                     external_values[target_field] = evaluator.evaluate(source_expr)
                 except Exception as e:
@@ -13195,7 +13253,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             for target_field, source_expr in extract.items():
                 if target_field in external_values:
                     record[target_field] = external_values[target_field]
-                elif isinstance(source_expr, str) and "{{" in source_expr:
+                elif (isinstance(source_expr, str) and "{{" in source_expr
+                        and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                     try:
                         record[target_field] = row_evaluator.evaluate(source_expr)
                     except Exception:
@@ -15138,12 +15197,16 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
             return result
         
         # 표현식 평가기 준비
+        from programgarden import binding_provenance as _bp
         expr_context = context.get_expression_context()
         evaluator = ExpressionEvaluator(expr_context)
+        authored = _bp.authored_at(context, node_id, "strategies")
         
-        def evaluate_recursive(value: Any) -> Any:
-            """딕셔너리/리스트 내부 표현식을 재귀적으로 평가"""
+        def evaluate_recursive(value: Any, authored_value: Any) -> Any:
+            """딕셔너리/리스트 내부 표현식을 재귀적으로 평가 (작성된 템플릿만 — 2.6.6)"""
             if isinstance(value, str) and "{{" in value:
+                if not _bp.may_evaluate(value, authored_value):
+                    return value  # resolved runtime data
                 try:
                     return evaluator.evaluate(value)
                 except Exception as e:
@@ -15154,14 +15217,25 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
                         pass
                     return value
             elif isinstance(value, dict):
-                return {k: evaluate_recursive(v) for k, v in value.items()}
+                if authored_value is not _bp.LEGACY and not isinstance(authored_value, dict):
+                    return _bp.copy_containers(value)
+                return {k: evaluate_recursive(v, _bp.child(authored_value, k)) for k, v in value.items()}
             elif isinstance(value, list):
-                return [evaluate_recursive(v) for v in value]
+                if authored_value is not _bp.LEGACY and not (
+                    isinstance(authored_value, list) and len(authored_value) == len(value)
+                ):
+                    return _bp.copy_containers(value)
+                return [
+                    evaluate_recursive(v, _bp.element(authored_value, i, len(value)))
+                    for i, v in enumerate(value)
+                ]
             return value
         
         # 단일 객체를 배열로 변환
         if not isinstance(strategies_input, list):
             strategies_input = [strategies_input]
+            if authored is not _bp.LEGACY:
+                authored = [authored]
         
         for idx, item in enumerate(strategies_input):
             if not item:
@@ -15169,7 +15243,7 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
             
             # 딕셔너리 내부의 표현식을 먼저 평가 (equity_curve: "{{ }}" 등)
             if isinstance(item, dict):
-                item = evaluate_recursive(item)
+                item = evaluate_recursive(item, _bp.element(authored, idx, len(strategies_input)))
             
             strategy_data = {}
             meta = {
@@ -19767,8 +19841,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         output_format = config.get("output_format", "text")
         output_schema = config.get("output_schema")
 
-        # 표현식 평가 (user_prompt에 {{ }} 바인딩)
-        if "{{" in user_prompt:
+        # 표현식 평가 (user_prompt에 {{ }} 바인딩). 2.6.6: only the authored template —
+        # a prompt that already carries resolved upstream text is data.
+        from programgarden import binding_provenance as _bp
+        if "{{" in user_prompt and _bp.may_evaluate(
+            user_prompt, _bp.authored_at(context, node_id, "user_prompt"),
+        ):
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
             try:
@@ -21396,6 +21474,12 @@ class WorkflowJob:
         self.workflow = workflow
         self.context = context
         self.executor = executor
+
+        # Expressions are evaluated only from authored templates; values produced
+        # at runtime (LLM text, HTTP bodies, inputs, credentials) are data (2.6.6).
+        register_authored = getattr(context, "register_authored_node_configs", None)
+        if callable(register_authored):
+            register_authored(workflow)
 
         # State
         self.status = "pending"
@@ -23239,7 +23323,10 @@ class WorkflowJob:
         # 1순위: 명시적 array 바인딩 ({{ }} 평가). 있으면 상류보다 우선.
         array_cfg = config.get("array")
         if array_cfg is not None:
-            if isinstance(array_cfg, str) and "{{" in array_cfg:
+            from programgarden import binding_provenance as _bp
+            if isinstance(array_cfg, str) and "{{" in array_cfg and _bp.may_evaluate(
+                array_cfg, _bp.authored_at(self.context, split_id, "array"),
+            ):
                 evaluator = ExpressionEvaluator(self.context.get_expression_context())
                 try:
                     array_cfg = evaluator.evaluate(array_cfg)
@@ -23758,6 +23845,7 @@ class WorkflowJob:
             전체삼킴 경로 그대로다.
         """
         from programgarden_core.expression import ExpressionEvaluator
+        from programgarden import binding_provenance as _bp
 
         # items는 별도 처리 대상이므로 항상 제외
         items_orig = config.get("items")
@@ -23770,6 +23858,12 @@ class WorkflowJob:
                 v = config_copy[k]
                 if self._references_iteration_item(v):
                     deferred[k] = config_copy.pop(k)
+
+        # 2.6.6: only templates still at their authored position are evaluated. Values a
+        # previous pass resolved (or engine-injected runtime data such as _realtime_data)
+        # are hidden from evaluate_fields and restored unchanged afterwards.
+        authored = _bp.authored_root(self.context, node_id)
+        config_copy = _bp.shield_config(config_copy, authored)
 
         deep_mode = bool(getattr(self.context, "is_deep_validate", False))
         if deep_mode and node_id is not None:
@@ -23813,6 +23907,8 @@ class WorkflowJob:
             except Exception as e:
                 self.context.log("warning", f"Expression resolve failed: {e}")
                 resolved = config_copy
+
+        resolved = _bp.unshield_config(resolved, authored)
 
         # 지연 평가 필드 복원
         resolved.update(deferred)

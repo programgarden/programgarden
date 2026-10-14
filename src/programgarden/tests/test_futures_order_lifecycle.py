@@ -353,7 +353,11 @@ async def test_actual_split_children_and_retries_keep_separate_operations(tmp_pa
 @pytest.mark.asyncio
 async def test_actual_auto_iteration_keeps_identical_items_distinct_with_legacy_registry(tmp_path, monkeypatch):
     executor = engine.WorkflowExecutor()
-    resolved, validation = executor.compile(workflow_definition())
+    # The iterated binding must be authored in the definition: since 2.6.6 the job only
+    # evaluates templates that the workflow itself wrote at that config position.
+    definition = workflow_definition()
+    definition["nodes"][2]["order"] = "{{ item }}"
+    resolved, validation = executor.compile(definition)
     assert validation.is_valid
     ctx = context(tmp_path, Journal())
     ctx.context_params["enable_order_idempotency"] = True

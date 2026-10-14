@@ -259,6 +259,7 @@ class MyListener(BaseExecutionListener):
 - Tool로 등록된 노드는 AI가 필요에 따라 호출합니다. 호출하지 않을 수도 있습니다.
 - `cooldown_sec`으로 과도한 API 비용을 방지하세요.
 - LLM API 비용은 제공자별로 다릅니다. `max_tokens`와 `temperature`를 적절히 설정하세요.
+- AI 답변과 도구 호출 인자는 **데이터**입니다. 그 안에 `{{ … }}` 글자가 있어도 엔진은 식으로 계산하지 않습니다(2.6.6). 자세한 내용은 [Expression 가이드](expression_guide.md)를 보세요.
 
 ---
 

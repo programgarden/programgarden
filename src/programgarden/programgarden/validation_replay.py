@@ -189,6 +189,7 @@ class ReplayJob(WorkflowJob):
 
     def _resolve_config_expressions(self, config, node_id=None):
         from programgarden_core.expression import ExpressionEvaluator
+        from programgarden.binding_provenance import authored_root, evaluate_fields_authored
         ordinary, deferred = {}, {}
         for key, value in config.items():
             if key in ("items", "code") or (self.context._iteration_item is None and self._references_iteration_item(value)):
@@ -198,7 +199,11 @@ class ReplayJob(WorkflowJob):
         failures = []
         def record(expr, exc):
             failures.append((expr, str(exc)))
-        result = ExpressionEvaluator(self.context.get_expression_context()).evaluate_fields(ordinary, on_error=record)
+        # Same provenance rule as the live job: runtime values are never re-evaluated.
+        result = evaluate_fields_authored(
+            ExpressionEvaluator(self.context.get_expression_context()), ordinary,
+            authored_root(self.context, node_id), on_error=record,
+        )
         if failures:
             raise ContractViolation(str(node_id), f"Unresolved mapping: {failures[0][0]}")
         result.update(deferred)
