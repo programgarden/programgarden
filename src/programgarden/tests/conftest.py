@@ -23,3 +23,16 @@ def _ensure_main_thread_event_loop():
             raise RuntimeError("closed")
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+@pytest.fixture(autouse=True)
+def _no_futures_exchange_read_spacing(monkeypatch):
+    """Skip the 2 s gap between live o3105 exchange reads.
+
+    Futures account/pending nodes space their o3105 reads for the shared app
+    key. Offline tests do not wait for it; test_futures_position_exchange.py
+    restores and records the gap where the spacing itself is under test.
+    """
+    from programgarden import futures_exchange
+
+    monkeypatch.setattr(futures_exchange, "READ_SPACING_SECONDS", 0.0)

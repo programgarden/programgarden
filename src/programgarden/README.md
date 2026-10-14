@@ -2,6 +2,10 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.5 release candidate [futures position exchange correction](../../docs/futures-position-exchange.md)
+reads each futures position's and pending order's exchange from o3105 instead
+of a fixed `HKEX`; an unconfirmed exchange stays empty.
+
 The 2.6.4 release candidate [paper futures account correction](../../docs/paper-futures-business-date.md#account-node-and-rejection-messages-264-candidate)
 returns an empty futures account for the paper empty-account answer and names
 the broker message in unaccepted response errors. Live behavior is unchanged.

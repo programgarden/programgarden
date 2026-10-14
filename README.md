@@ -1,3 +1,5 @@
+The 2.6.5 release candidate [futures position exchange correction](docs/futures-position-exchange.md) reports each futures position's, held symbol's and pending order's exchange from o3105 instead of a fixed `HKEX`, and leaves it empty when the broker does not confirm it. Publication and consumer deployment are separate steps.
+
 The 2.6.4 release candidate [paper futures account correction](docs/paper-futures-business-date.md#account-node-and-rejection-messages-264-candidate) accepts the paper empty-account answer on the futures account node and names the broker message in unaccepted response errors. Publication and consumer deployment are separate steps.
 
 The 2.6.3 release candidate [paper futures query correction](docs/paper-futures-business-date.md) uses a fresh broker-provided account date for paper order inquiries while retaining strict response checks. Publication and consumer deployment are separate steps.

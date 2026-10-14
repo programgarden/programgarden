@@ -285,6 +285,9 @@ class ExecutionContext:
         # Tracks workflow positions separately using FIFO for competition ranking
         self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
         self._personal_metrics_cache: Optional[Tuple[tuple, float, dict]] = None
+        # Per-run o3105 exchange answers for futures account/pending rows
+        # (programgarden.futures_exchange creates it on first use).
+        self._futures_exchange_cache: Optional[Any] = None
         self._workflow_risk_tracker: Optional[Any] = None  # WorkflowRiskTracker (lazy init)
         self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
         self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
