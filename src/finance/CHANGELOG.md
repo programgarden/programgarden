@@ -1,3 +1,11 @@
+## [2.0.3] - 2026-10-15
+
+### Added
+- g3112 해외주식API시세순위 (overseas stock quote ranking): `ls.overseas_stock().market().g3112(...)` / `시세순위`, request and response models from the official LS guide (`/overseas-stock/market-data`), every response field kept as text as the guide types it, `cts_value` continuation, 1 request per second. Example `example/overseas_stock/run_g3112.py`.
+
+### Fixed
+- Limit t1463 거래대금상위 to 1 request per second, the LS guide's `transactionPerSec` (was 2).
+
 ## [2.0.2] - 2026-10-14
 
 ### Fixed

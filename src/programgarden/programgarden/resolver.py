@@ -347,6 +347,7 @@ class WorkflowResolver:
         self._validate_order_enums(workflow, registry, result)
         self._validate_stock_history_interval(workflow, registry, result)
         self._validate_futures_history_contract(workflow, registry, result)
+        self._validate_ranking_nodes(workflow, result)
 
         # 11. Static recommendations (topology analysis)
         for rec in run_static_recommendation_rules(
@@ -412,6 +413,46 @@ class WorkflowResolver:
                         available_values=available,
                         suggestion="Choose a supported period and keep adjust=false; only exact-contract prices are implemented.",
                     ))
+
+    def _validate_ranking_nodes(self, workflow, result) -> None:
+        """Reject ranking settings the executor would reject (enum, limit, market_cap+all)."""
+        from programgarden.ranking_nodes import (
+            KOREA_MARKET_CODES, KOREA_RANKING_TRS, OVERSEAS_MARKET_CODES, OVERSEAS_RANK_CODES,
+            RankingNodeError, korea_ranking_request, overseas_ranking_request,
+        )
+
+        checks = {
+            "KoreaStockRankingNode": (korea_ranking_request, list(KOREA_RANKING_TRS), list(KOREA_MARKET_CODES)),
+            "OverseasStockRankingNode": (overseas_ranking_request, list(OVERSEAS_RANK_CODES), list(OVERSEAS_MARKET_CODES)),
+        }
+        for node in workflow.nodes:
+            node_type = node.get("type")
+            if node_type not in checks:
+                continue
+            build, ranking_types, markets = checks[node_type]
+            try:
+                build(node)
+            except RankingNodeError as exc:
+                message = str(exc)
+                field_path = (
+                    "limit" if "limit" in message
+                    else "ranking_type" if "ranking_type" in message
+                    else "market"
+                )
+                available = {
+                    "ranking_type": ranking_types,
+                    "market": markets,
+                    "limit": ["1-100"],
+                }[field_path]
+                result.add(build_error(
+                    ErrorCode.INVALID_FIELD_ENUM, message,
+                    location=ErrorLocation(node_id=node.get("id"), node_type=node_type, field_path=field_path),
+                    available_values=available,
+                    suggestion=(
+                        "Use a listed literal value. market_cap ranks one market at a time "
+                        "(KOSPI or KOSDAQ); limit is a whole number from 1 to 100."
+                    ),
+                ))
 
     def _validate_order_enums(self, workflow, registry, result) -> None:
         """Enforce fixed price/order types without changing dynamic close sides."""
@@ -1560,6 +1601,10 @@ class WorkflowResolver:
             ("OverseasStockSymbolQueryNode", "symbols"),
             ("KoreaStockSymbolQueryNode", "symbols"),
             ("OverseasFuturesSymbolQueryNode", "symbols"),
+            ("KoreaStockRankingNode", "rankings"),
+            ("KoreaStockRankingNode", "symbols"),
+            ("OverseasStockRankingNode", "rankings"),
+            ("OverseasStockRankingNode", "symbols"),
             # 계좌 (REST)
             ("OverseasStockAccountNode", "positions"),
             ("KoreaStockAccountNode", "positions"),

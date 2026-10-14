@@ -110,8 +110,9 @@ class T1463Request(BaseModel):
         mac_address=""
     )
     body: Dict[Literal["t1463InBlock"], T1463InBlock]
+    # LS guide: t1463 transactionPerSec = 1 (was 2 here, above the documented limit).
     options: SetupOptions = SetupOptions(
-        rate_limit_count=2,
+        rate_limit_count=1,
         rate_limit_seconds=1,
         on_rate_limit="wait",
         rate_limit_key="t1463"

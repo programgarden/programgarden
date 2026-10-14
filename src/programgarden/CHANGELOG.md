@@ -1,3 +1,18 @@
+## [2.6.6] - 2026-10-15
+
+### Added
+- Execute KoreaStockRankingNode (t1441/t1452/t1463/t1444) and OverseasStockRankingNode (g3112). Request values come from the SDK examples and the LS guide; pages follow the LS cursor up to `limit` rows and at most 5 requests at each TR's rate limit; repeated symbols across pages keep their first rank. Change and change percent are signed from the LS sign code; units are named (`trading_value_unit`, `market_cap_unit`) and never converted. Overseas rows take the exchange from the LS key symbol (81 → NYSE, 82 → NASDAQ); rows without it keep `exchange=null` and are left out of `symbols`.
+- Ranking failures raise with the TR code first (`t1441: <code> <message>`); an empty successful ranking is valid. Deep validation and dry runs return 3 synthetic rows with the live shape and make no broker call. Static validation rejects unknown values, `limit` outside 1-100 and market-cap ranking with `market=all`. Both nodes are broker-dependent in NodeRunner, never auto-iterated and replayed from recorded outputs.
+
+### Fixed
+- Behavior fix: values produced at runtime are data and are no longer evaluated as expressions. Before, the job resolved `{{ … }}` bindings and the node executor evaluated the resolved config again, so LLM/AI output, HTTP bodies, workflow inputs, credentials, broker strings and AI tool-call arguments containing `{{ … }}` were evaluated in the workflow expression context (e.g. AI text `{{ nodes.x.y }}` became that node's output). Now a template is evaluated only while it is still the authored text at its authored position, at most once per node execution (per iteration for `{{ item }}`); every other value passes byte-identical. Ordinary, nested, interpolated, `{{ item }}` and `{{ row }}` bindings resolve as before. Nodes run outside a workflow job (NodeRunner) keep evaluating the config they are given.
+- CodeNode `code` is never evaluated. A source text containing `{{ … }}` previously could be substituted by the job's first pass; it now runs unchanged. Pass values through `data`/`params` bindings.
+- Retry an unresolved futures position/pending-order exchange instead of keeping it empty for the whole run. 2.6.5 cached a failed or unconfirmed o3105 answer as `None` until the workflow restarted. Now only confirmed exchanges are remembered for the run; an unresolved contract is read again on a later account or pending-order node execution, at most once per 5 minutes per contract (measured from the start of its previous read). Reads stay serialized and keep the 2-second gap; each failed read still logs a warning naming the contract.
+- Route LLMModelNode Gemini and DeepSeek credentials to their own APIs: a model name without a provider prefix gets `gemini/` or `deepseek/` before it reaches litellm. Bare Gemini names were routed to Vertex AI instead of the Google AI Studio key, and bare DeepSeek names were rejected ("LLM Provider NOT provided"). Prefixed names, OpenAI and Anthropic names are unchanged. Offline routing check only; real-key verification of non-OpenAI providers is a separate task.
+
+### Dependencies
+- Require programgarden-core ^2.6.3 (ranking nodes) and programgarden-finance ^2.0.3 (g3112). Community ^2.3.1 is unchanged.
+
 ## [2.6.5] - 2026-10-15
 
 ### Fixed

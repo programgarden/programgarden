@@ -4,7 +4,9 @@ CIDBQ01500 and CIDBQ02400 carry no exchange field. Before 2.6.5 the engine
 labelled every futures position, held symbol and pending order "HKEX", so a
 workflow comparing a CME position's exchange with "CME" never matched. The
 exchange now comes from o3105 ``ExchCd`` under the contract-detail identity
-rules, and stays ``None`` when that evidence is unavailable.
+rules, and stays ``None`` when that evidence is unavailable. From 2.6.6 only
+confirmed answers are remembered for the run; an unresolved contract is read
+again on a later node execution, at most once per 5 minutes per contract.
 
 Broker answers are real SDK models: CIDBQ01500/CIDBQ05300/CIDBQ02400 bodies are
 parsed by their SDK TR classes (``futures_response_fixtures``) and o3105 bodies
@@ -192,28 +194,166 @@ async def test_timed_out_read_is_unresolved(monkeypatch):
     assert result["positions"][0]["exchange"] is None
 
 
+class Clock:
+    """Monotonic clock for the unresolved-retry window (seconds)."""
+
+    def __init__(self, now=1000.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    clock = Clock()
+    monkeypatch.setattr(futures_exchange, "_monotonic", clock)
+    return clock
+
+
 @pytest.mark.asyncio
-async def test_one_o3105_per_symbol_per_run_including_unresolved_answers():
-    answers = {"MNQZ26": "CME", "HMHV26": ""}
+async def test_confirmed_exchange_is_read_once_per_run(clock):
     broker = Broker(
         positions=[position_row("MNQZ26"), position_row("MNQZ26", pos_no="2"), position_row("HMHV26", pos_no="3")],
         pending=[pending_row("MNQZ26", "1001"), pending_row("HMHV26", "1002")],
-        o3105=lambda symbol: o3105_response(symbol, answers[symbol]),
     )
     context = Context()
     first = await account(broker, context)
-    answers.update({"HMHV26": "HKEX"})  # a later answer must not be requested again in this run
+    clock.now += 3600  # hours later in the same run: confirmed answers are reused
     second = await account(broker, context)
     orders = await pending(broker, context)
 
     assert broker.o3105_symbols == ["MNQZ26", "HMHV26"]
     for result in (first, second):
-        assert [p["exchange"] for p in result["positions"]] == ["CME", "CME", None]
-    assert [(o["symbol"], o["exchange"]) for o in orders["open_orders"]] == [("MNQZ26", "CME"), ("HMHV26", None)]
+        assert [p["exchange"] for p in result["positions"]] == ["CME", "CME", "HKEX"]
+    assert [(o["symbol"], o["exchange"]) for o in orders["open_orders"]] == [("MNQZ26", "CME"), ("HMHV26", "HKEX")]
 
     # A new run asks again.
     await account(broker, Context())
     assert broker.o3105_symbols == ["MNQZ26", "HMHV26", "MNQZ26", "HMHV26"]
+
+
+@pytest.mark.asyncio
+async def test_unresolved_exchange_is_retried_on_a_later_execution_after_five_minutes(clock):
+    answers = {"MNQZ26": "CME", "HMHV26": ""}
+    broker = Broker(
+        positions=[position_row("MNQZ26"), position_row("HMHV26", pos_no="2")],
+        pending=[pending_row("HMHV26", "1002")],
+        o3105=lambda symbol: o3105_response(symbol, answers[symbol]),
+    )
+    context = Context()
+    first = await account(broker, context)
+    assert [p["exchange"] for p in first["positions"]] == ["CME", None]
+    assert broker.o3105_symbols == ["MNQZ26", "HMHV26"]
+
+    # Within five minutes of the failed read: no read, the exchange stays empty
+    # (the account node and the pending-order node share the window).
+    answers["HMHV26"] = "HKEX"
+    clock.now += futures_exchange.RETRY_UNRESOLVED_SECONDS - 1
+    held = await account(broker, context)
+    orders = await pending(broker, context)
+    assert [p["exchange"] for p in held["positions"]] == ["CME", None]
+    assert orders["open_orders"][0]["exchange"] is None
+    assert broker.o3105_symbols == ["MNQZ26", "HMHV26"]
+
+    # Five minutes after the failed read: the next node execution reads it once more.
+    clock.now += 1
+    retried = await account(broker, context)
+    assert [p["exchange"] for p in retried["positions"]] == ["CME", "HKEX"]
+    assert retried["held_symbols"] == [{"exchange": "CME", "symbol": "MNQZ26"}, {"exchange": "HKEX", "symbol": "HMHV26"}]
+    assert broker.o3105_symbols == ["MNQZ26", "HMHV26", "HMHV26"]
+
+    # The confirmed answer is now remembered like any other.
+    clock.now += 3600
+    orders = await pending(broker, context)
+    await account(broker, context)
+    assert orders["open_orders"][0]["exchange"] == "HKEX"
+    assert broker.o3105_symbols == ["MNQZ26", "HMHV26", "HMHV26"]
+    assert context._futures_exchange_cache.exchanges == {"MNQZ26": "CME", "HMHV26": "HKEX"}
+    assert context._futures_exchange_cache.unresolved_at == {}
+
+
+@pytest.mark.asyncio
+async def test_repeated_failures_read_at_most_once_per_five_minutes_per_symbol(clock):
+    attempts = []
+
+    def failing(symbol):
+        attempts.append((symbol, clock.now))
+        raise ConnectionError("offline")
+
+    positions = [position_row("MNQZ26")]
+    broker = Broker(positions=positions, o3105=failing)
+    context = Context()
+    await account(broker, context)                      # t=1000: MNQZ26 read fails
+    positions.append(position_row("HMHV26", pos_no="2"))  # HMHV26 is first held at t=1200
+    for step in range(0, 901, 30):                      # the node runs every 30 s for 15 minutes
+        clock.now = 1200 + step
+        result = await account(broker, context)
+        assert [p["exchange"] for p in result["positions"]] == [None, None]
+
+    times = {}
+    for symbol, at in attempts:
+        times.setdefault(symbol, []).append(at)
+    assert times["MNQZ26"] == [1000, 1320, 1620, 1920]
+    assert times["HMHV26"] == [1200, 1500, 1800, 2100]
+    for reads in times.values():
+        assert all(b - a >= futures_exchange.RETRY_UNRESOLVED_SECONDS for a, b in zip(reads, reads[1:]))
+    # Every actual failed read is named in a warning; skipped executions only log at debug level.
+    warnings = [m for level, m in context.logs if level == "warning"]
+    assert len(warnings) == len(attempts)
+    assert all("read again on a later node execution after 5 minutes" in m for m in warnings)
+    assert any(level == "debug" and "next o3105 read is allowed in" in m for level, m in context.logs)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_the_window_is_spaced_and_shared_by_concurrent_nodes(monkeypatch, clock):
+    events = []
+
+    async def record_sleep(seconds):
+        events.append(("sleep", seconds))
+        await asyncio.sleep(0)
+
+    answers = {"MNQZ26": ""}
+
+    async def slow(symbol):
+        await asyncio.sleep(0.01)
+        return o3105_response(symbol, answers[symbol])
+
+    monkeypatch.setattr(futures_exchange, "READ_SPACING_SECONDS", 2.0)
+    monkeypatch.setattr(futures_exchange, "_sleep", record_sleep)
+    broker = Broker(positions=[position_row("MNQZ26")], pending=[pending_row("MNQZ26", "1001")],
+                    o3105=slow, events=events)
+    context = Context()
+    await account(broker, context)
+    assert events == ["CIDBQ01500", "CIDBQ05300", ("sleep", 2.0), ("o3105", "MNQZ26")]
+
+    events.clear()
+    answers["MNQZ26"] = "CME"
+    clock.now += futures_exchange.RETRY_UNRESOLVED_SECONDS
+    results = await asyncio.gather(account(broker, context), account(broker, context), pending(broker, context))
+
+    # One spaced retry for the three concurrent executions, then all see the answer.
+    assert [e for e in events if isinstance(e, tuple)] == [("sleep", 2.0), ("o3105", "MNQZ26")]
+    assert broker.o3105_symbols == ["MNQZ26", "MNQZ26"]
+    assert results[0]["positions"][0]["exchange"] == results[1]["positions"][0]["exchange"] == "CME"
+    assert results[2]["open_orders"][0]["exchange"] == "CME"
+
+
+@pytest.mark.asyncio
+async def test_timed_out_read_starts_the_retry_window(monkeypatch, clock):
+    monkeypatch.setattr(futures_exchange, "READ_TIMEOUT_SECONDS", 0.01)
+
+    async def never(symbol):
+        await asyncio.sleep(5)
+
+    broker = Broker(positions=[position_row("MNQZ26")], o3105=never)
+    context = Context()
+    await account(broker, context)
+    assert context._futures_exchange_cache.exchanges == {}
+    assert context._futures_exchange_cache.unresolved_at == {"MNQZ26": 1000.0}
+    clock.now += 60
+    await account(broker, context)
+    assert broker.o3105_symbols == ["MNQZ26"]
 
 
 @pytest.mark.asyncio

@@ -32,7 +32,7 @@ async def execute(data, params, context):
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|:---:|------|
-| `code` | string | ✅ | 파이썬 소스. `async def execute(data, params, context)` 정의 필수 |
+| `code` | string | ✅ | 파이썬 소스. `async def execute(data, params, context)` 정의 필수. `{{ … }}` 글자가 있어도 **식으로 계산하지 않고 그대로 실행**합니다(2.6.6). 값은 `data`/`params` 로 넘기세요 |
 | `language` | string | | 기본 `"python"` (향후 확장용) |
 | `outputs` | array | | 출력 포트 `[{name, type}]`. **미선언 시 단일 `result` 포트** |
 | `params` | object | | 코드에 전달되는 파라미터 (표현식 바인딩 허용) |

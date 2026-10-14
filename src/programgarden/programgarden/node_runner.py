@@ -69,6 +69,7 @@ _BROKER_DEPENDENT_NODE_TYPES = frozenset({
     "HistoricalDataNode", "OverseasStockHistoricalDataNode", "OverseasFuturesHistoricalDataNode",
     # Symbol Query
     "SymbolQueryNode", "OverseasStockSymbolQueryNode", "OverseasFuturesSymbolQueryNode",
+    "OverseasStockRankingNode",
     "SymbolFilterNode", "MarketUniverseNode", "ScreenerNode",
     # Order
     "OverseasStockNewOrderNode", "OverseasStockModifyOrderNode", "OverseasStockCancelOrderNode",
@@ -76,7 +77,7 @@ _BROKER_DEPENDENT_NODE_TYPES = frozenset({
     # Korea Stock
     "KoreaStockAccountNode", "KoreaStockOpenOrdersNode",
     "KoreaStockMarketDataNode", "KoreaStockFundamentalNode",
-    "KoreaStockHistoricalDataNode", "KoreaStockSymbolQueryNode",
+    "KoreaStockHistoricalDataNode", "KoreaStockSymbolQueryNode", "KoreaStockRankingNode",
     "KoreaStockNewOrderNode", "KoreaStockModifyOrderNode", "KoreaStockCancelOrderNode",
 })
 

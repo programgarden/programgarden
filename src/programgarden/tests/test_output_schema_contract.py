@@ -30,6 +30,8 @@ from programgarden.executor import (
     SymbolQueryNodeExecutor,
     WatchlistNodeExecutor,
 )
+from programgarden import ranking_nodes
+from programgarden.ranking_nodes import RankingRowBuilder
 
 
 def _runtime_keys(cls, method_name: str, var: str = "values") -> Set[str]:
@@ -184,6 +186,10 @@ CASES = [
     ("OverseasStockSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_stock_master", "all_symbols", "append")]),
     ("KoreaStockSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_korea_stock_master", "all_symbols", "append")]),
     ("OverseasFuturesSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_futures_master", "all_symbols", "append")]),
+    ("KoreaStockRankingNode", "rankings", [(RankingRowBuilder, "korea_row", None, "return")]),
+    ("KoreaStockRankingNode", "symbols", [(RankingRowBuilder, "korea_symbol", None, "return")]),
+    ("OverseasStockRankingNode", "rankings", [(RankingRowBuilder, "overseas_row", None, "return")]),
+    ("OverseasStockRankingNode", "symbols", [(RankingRowBuilder, "overseas_symbol", None, "return")]),
 
     # ── 계좌 (REST) ──
     ("OverseasStockAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_stock", "positions", "append")]),
@@ -371,6 +377,8 @@ RETURN_CASES = [
     (SymbolQueryNodeExecutor, "_execute_stock_master", {"symbols", "count"}),
     (SymbolQueryNodeExecutor, "_execute_korea_stock_master", {"symbols", "count"}),
     (SymbolQueryNodeExecutor, "_execute_futures_master", {"symbols", "count"}),
+    (ranking_nodes, "korea_outputs", {"rankings", "symbols", "count"}),
+    (ranking_nodes, "overseas_outputs", {"rankings", "symbols", "count"}),
     (RealMarketDataNodeExecutor, "_execute_stock", {"symbols", "ohlcv_data", "data"}),
     (RealMarketDataNodeExecutor, "_execute_futures", {"symbols", "ohlcv_data", "data"}),
     (RealMarketDataNodeExecutor, "_execute_korea_stock", {"symbols", "ohlcv_data", "data"}),

@@ -31,7 +31,8 @@ except ImportError:
 # 합계만 맞았다(실측 core 73 + community 4 = 77). 실측 기준으로 바로잡는다:
 # core 73→71, community 4→2, 합계 73.
 # 2.6.0 adds OverseasFuturesContractInfoNode: 72 core + 2 community.
-CORE_NODE_COUNT = 72
+# 2.6.3 (core) adds KoreaStockRankingNode and OverseasStockRankingNode: 74 core.
+CORE_NODE_COUNT = 74
 COMMUNITY_NODE_COUNT = 2
 EXPECTED_TOTAL = CORE_NODE_COUNT + (COMMUNITY_NODE_COUNT if _COMMUNITY_AVAILABLE else 0)
 

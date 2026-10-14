@@ -44,6 +44,7 @@ class TestKoreaStockExecutorMapping:
         "KoreaStockRealMarketDataNode",
         "KoreaStockRealAccountNode",
         "KoreaStockRealOrderEventNode",
+        "KoreaStockRankingNode",
     ]
 
     def test_all_korea_stock_nodes_in_executors(self):
@@ -54,14 +55,14 @@ class TestKoreaStockExecutorMapping:
             assert node_type in executor._executors, f"{node_type} not in _executors"
 
     def test_executor_count(self):
-        """최소 13개 KoreaStock 노드가 등록되어 있어야 함"""
+        """KoreaStock 노드 14개(2.6.6: KoreaStockRankingNode 추가)가 등록되어 있어야 함"""
         from programgarden.executor import WorkflowExecutor
 
         executor = WorkflowExecutor()
         korea_stock_keys = [
             k for k in executor._executors if k.startswith("KoreaStock")
         ]
-        assert len(korea_stock_keys) == 13
+        assert len(korea_stock_keys) == 14
 
 
 # Domestic account/open-order response contracts are exercised with actual SDK
