@@ -1,3 +1,16 @@
+## [2.6.5] - 2026-10-15
+
+### Fixed
+- Report the exchange of overseas-futures positions, `held_symbols` and pending orders from o3105 `ExchCd` instead of the hardcoded `"HKEX"` used since 2.3.0. CIDBQ01500/CIDBQ02400 rows carry no exchange. An o3105 answer is accepted only with HTTP 200, `rsp_cd` 00000, a matching echoed symbol and a non-empty code; otherwise the exchange is `None` and a warning names the contract. No default exchange is substituted. A CME contract such as MNQZ26 now reports `CME`, so workflows that compare a position's exchange with their instrument match.
+- Read o3105 at most once per contract per workflow run, unresolved answers included. Account and pending-order nodes in one run share the answers; reads are serialized, follow the account reads and keep the 2-second startup-read gap. Empty accounts and empty pending lists make no read.
+- Stop a futures new order whose exchange is `None` (for example a position whose exchange o3105 could not confirm) before the order lifecycle entry is prepared. The node returns `Futures order exchange is unavailable ...`, nothing is sent, and a retry of the same invocation is no longer blocked as already prepared.
+
+### Changed
+- Workflows that matched CME futures rows against the former `"HKEX"` label no longer match. A workflow that passes a position or pending-order row into a futures order now passes the resolved code instead of `HKEX`; a `None` exchange stops the new order as described above. RealAccountNode, deep-validation fixtures, replay recordings and market-data/history labels are unchanged.
+
+### Dependencies
+- Unchanged: programgarden-core ^2.6.2, programgarden-finance ^2.0.2 and programgarden-community ^2.3.1.
+
 ## [2.6.4] - 2026-10-15
 
 ### Fixed

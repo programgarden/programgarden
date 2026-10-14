@@ -6141,6 +6141,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         """
         from datetime import datetime
         from zoneinfo import ZoneInfo
+        from programgarden.futures_exchange import resolve_contract_exchanges
         from programgarden.futures_read_evidence import require_complete_rows, require_position_identity
         from programgarden.paper_futures_business_date import is_paper_client
 
@@ -6166,7 +6167,6 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
             positions = []
-            held_symbols = []
             for item in position_rows:
                 require_position_identity(item)
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
@@ -6187,7 +6187,9 @@ class AccountNodeExecutor(NodeExecutorBase):
 
                 positions.append({
                     "symbol": symbol,
-                    "exchange": "HKEX",  # 해외선물 기본 거래소
+                    # CIDBQ01500 carries no exchange. Filled below from o3105
+                    # ExchCd; None when that evidence is unavailable.
+                    "exchange": None,
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
                     "direction": position_side,  # long/short
                     "close_side": close_side,  # 청산 시 주문 방향: sell/buy
@@ -6213,7 +6215,6 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "pnl_rate": pnl_rate,  # 명목가 대비 수익률(%) — StopLoss/ProfitTarget 소비
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "",
                 })
-                held_symbols.append({"exchange": "HKEX", "symbol": symbol})
 
             # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환).
             # Wrapped in its own try so a balance failure no longer drops
@@ -6287,6 +6288,15 @@ class AccountNodeExecutor(NodeExecutorBase):
                 balance_info["_partial_failure"] = True
                 balance_info["_failure_codes"] = ["CIDBQ05300"]
                 balance_info["_failure_reason"] = cidbq05300_failure_reason or "CIDBQ05300 fetch failed"
+
+            # 3. o3105: the exchange of each held contract (at most one read per
+            # symbol per run; unresolved stays None, never a default exchange).
+            exchanges = await resolve_contract_exchanges(
+                ls, [row["symbol"] for row in positions], context, node_id,
+            )
+            for row in positions:
+                row["exchange"] = exchanges.get(row["symbol"])
+            held_symbols = [{"exchange": row["exchange"], "symbol": row["symbol"]} for row in positions]
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
@@ -6663,6 +6673,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
         from zoneinfo import ZoneInfo
+        from programgarden.futures_exchange import resolve_contract_exchanges
         from programgarden.futures_read_evidence import require_complete_rows, require_pending_identity
         from programgarden.paper_futures_business_date import is_paper_client, read_current_business_date
         from programgarden.database.broker_evidence import StartupEvidenceUnavailable
@@ -6709,7 +6720,9 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
 
             open_orders.append({
                 "order_id": order_id,
-                "exchange": "HKEX",  # 해외선물 기본
+                # CIDBQ02400 carries no exchange. Filled below from o3105
+                # ExchCd; None when that evidence is unavailable.
+                "exchange": None,
                 "symbol": item.IsuCodeVal.strip() if hasattr(item, 'IsuCodeVal') and item.IsuCodeVal else "",
                 "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
                 "side": side,
@@ -6720,6 +6733,12 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 "price": float(item.OvrsDrvtOrdPrc) if hasattr(item, 'OvrsDrvtOrdPrc') and item.OvrsDrvtOrdPrc else 0.0,
                 "order_time": item.OrdSndDttm if hasattr(item, 'OrdSndDttm') else "",
             })
+
+        exchanges = await resolve_contract_exchanges(
+            ls, [row["symbol"] for row in open_orders], context, node_id,
+        )
+        for row in open_orders:
+            row["exchange"] = exchanges.get(row["symbol"])
 
         context.log("info", f"OpenOrdersNode (futures): {len(open_orders)} open orders", node_id)
         return {
@@ -16927,6 +16946,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         from datetime import date
         from decimal import Decimal
 
+        if not isinstance(order.get("exchange"), str):
+            # A futures position or pending row whose exchange o3105 could not
+            # confirm carries exchange None. Stop before any lifecycle entry is
+            # recorded, so nothing is sent and a later retry is not blocked.
+            raise ValueError(
+                "Futures order exchange is unavailable (exchange=None, e.g. a position "
+                "whose exchange o3105 could not confirm); no order was sent"
+            )
         cycle = getattr(context._workflow_job, "_order_cycle", 0)
         iteration = iteration_index
         if iteration is None:

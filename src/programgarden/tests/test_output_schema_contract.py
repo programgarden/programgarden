@@ -193,7 +193,7 @@ CASES = [
     ("OverseasFuturesAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_futureoption", "positions", "append")]),
     ("OverseasStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_stock", "held_symbols", "listcomp")]),
     ("KoreaStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_korea_stock", "held_symbols", "listcomp")]),
-    ("OverseasFuturesAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_futureoption", "held_symbols", "append")]),
+    ("OverseasFuturesAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_futureoption", "held_symbols", "listcomp")]),
 
     # ── 계좌 (실시간) — REST 스냅샷 갈래와 WebSocket tracker 갈래가 같은 포트를 만든다 ──
     ("OverseasStockRealAccountNode", "positions", [
