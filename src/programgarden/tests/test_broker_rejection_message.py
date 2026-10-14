@@ -15,6 +15,7 @@ import pytest
 from requests import Response
 
 from programgarden.database.broker_evidence import (
+    NO_RESULT_MESSAGE, PAPER_FUTURES_NO_RESULT_MESSAGES, PAPER_NO_RESULT_MESSAGE,
     StartupEvidenceUnavailable, broker_message, checked_body, unverified_response_code,
 )
 from programgarden.database.broker_snapshot import read_broker_snapshot
@@ -23,6 +24,7 @@ from programgarden_finance import CIDBQ01500, CIDBQ02400
 
 
 EMPTY = "조회내역이 없습니다."
+PAPER_EMPTY = "모의투자 조회할 내역(자료)이 없습니다."
 NEEDS_START_DATE = "조회시작일자를 입력 하십시오."
 OLD_PREFIX = re.compile(r"^(?P<tr>[A-Za-z0-9]+): unverified_response_code=(?P<code>[0-9A-Za-z]*)")
 
@@ -89,11 +91,40 @@ async def test_paper_pending_rejection_names_the_broker_message():
 
 
 @pytest.mark.asyncio
-async def test_paper_empty_answers_are_still_accepted_without_an_error():
-    api, calls = client(paper=True)
+@pytest.mark.parametrize("message", [EMPTY, PAPER_EMPTY])
+async def test_paper_empty_answers_are_still_accepted_without_an_error(message):
+    api, calls = client(paper=True, position=("02679", message), orders=("02679", message))
     result = await OpenOrdersNodeExecutor()._ls_overseas_futures(api, "pending", NS(log=lambda *a, **k: None))
     assert result == {"open_orders": [], "count": 0}
     assert calls == ["CIDBQ01500", "CIDBQ02400"]
+
+
+def test_paper_futures_empty_wordings_match_the_server_gate():
+    # dsl-api startup_broker._NO_DATA_MESSAGES for the CIDBQ01500/CIDBQ02400 branch.
+    server = frozenset({"모의투자 조회할 내역(자료)이 없습니다.", "조회내역이 없습니다."})
+    assert PAPER_FUTURES_NO_RESULT_MESSAGES == server
+    assert {NO_RESULT_MESSAGE, PAPER_NO_RESULT_MESSAGE} == server
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", [EMPTY, PAPER_EMPTY])
+async def test_paper_startup_accepts_either_server_gate_empty_wording(message):
+    api, calls = client(paper=True, position=("02679", message), orders=("02679", message))
+    snapshot = await read_broker_snapshot(api, execution_key="offline-execution", product="overseas_futures",
+                                          provider="ls", trading_mode="paper")
+    assert dict(snapshot.positions.quantities) == {} and snapshot.pending_orders == ()
+    assert snapshot.positions.positions_complete and snapshot.positions.pending_orders_verified
+    assert calls == ["CIDBQ01500", "CIDBQ02400"]
+
+
+@pytest.mark.asyncio
+async def test_live_startup_keeps_rejecting_the_paper_wording():
+    api, calls = client(paper=False, position=("02679", PAPER_EMPTY))
+    with pytest.raises(StartupEvidenceUnavailable) as error:
+        await read_broker_snapshot(api, execution_key="offline-execution", product="overseas_futures",
+                                   provider="ls", trading_mode="live")
+    assert str(error.value) == f"CIDBQ01500: unverified_response_code=02679 rsp_msg={PAPER_EMPTY}"
+    assert calls == ["CIDBQ01500"]
 
 
 @pytest.mark.asyncio

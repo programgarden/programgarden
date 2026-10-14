@@ -16,6 +16,7 @@ from futures_response_fixtures import parsed_response, position_request
 
 
 EMPTY = "조회내역이 없습니다."
+PAPER_EMPTY = "모의투자 조회할 내역(자료)이 없습니다."
 
 
 @pytest.fixture(autouse=True)
@@ -36,16 +37,20 @@ def paper_empty(request, **changes):
     return parsed_response("CIDBQ01500", request, options.pop("rows", []), **options)
 
 
-def test_paper_02679_with_exact_empty_envelope_is_a_complete_empty_account():
+@pytest.mark.parametrize("message", [EMPTY, PAPER_EMPTY])
+def test_paper_02679_with_exact_empty_envelope_is_a_complete_empty_account(message):
+    # Either exact wording the server startup gate accepts on this branch.
     request = position_request()
-    assert require_complete_rows(paper_empty(request), request, "CIDBQ01500", paper_trading=True) == []
+    response = paper_empty(request, message=message)
+    assert require_complete_rows(response, request, "CIDBQ01500", paper_trading=True) == []
 
 
-def test_live_02679_remains_unverified_and_names_the_broker_message():
+@pytest.mark.parametrize("message", [EMPTY, PAPER_EMPTY])
+def test_live_02679_remains_unverified_and_names_the_broker_message(message):
     request = position_request()
     with pytest.raises(ValueError) as error:
-        require_complete_rows(paper_empty(request), request, "CIDBQ01500")
-    assert str(error.value) == f"CIDBQ01500: unverified_response_code=02679 rsp_msg={EMPTY}"
+        require_complete_rows(paper_empty(request, message=message), request, "CIDBQ01500")
+    assert str(error.value) == f"CIDBQ01500: unverified_response_code=02679 rsp_msg={message}"
 
 
 @pytest.mark.parametrize("case", [
@@ -98,8 +103,9 @@ def account_api(*, paper, position_code="02679", position_message=EMPTY, missing
 
 
 @pytest.mark.asyncio
-async def test_paper_account_node_reports_an_empty_account_instead_of_an_error():
-    api, calls = account_api(paper=True)
+@pytest.mark.parametrize("message", [EMPTY, PAPER_EMPTY])
+async def test_paper_account_node_reports_an_empty_account_instead_of_an_error(message):
+    api, calls = account_api(paper=True, position_message=message)
     result = await AccountNodeExecutor()._ls_overseas_futureoption(api, "account", MagicMock())
     assert "error" not in result
     assert result["positions"] == [] and result["held_symbols"] == []

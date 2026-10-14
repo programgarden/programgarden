@@ -2,6 +2,7 @@
 
 ### Fixed
 - Accept the paper CIDBQ01500 empty-account answer (`02679`, exact empty-result message, explicit empty rows, terminal page, matching query echo) on the OverseasFuturesAccountNode explicit-date read, as the 2.6.3 startup path already does. A paper account without positions now returns an empty output instead of an error. Live clients, other messages, nonempty rows, partial pages and other TRs remain rejected.
+- Accept the paper CIDBQ01500/CIDBQ02400 `02679` empty answer with either of the two exact empty-result messages the server preparation gate accepts for these TRs (the observed general wording and the paper server's own no-data wording) in the startup, pending, fill-observation and account-node paths, so a start the server admits is not rejected by the engine. Paper mode, explicit empty rows, terminal page and query echo remain required; stock reads keep the single message.
 - Include the broker message in unaccepted response-code errors: `<TR>: unverified_response_code=<code> rsp_msg=<message>`, matching the server preparation gate. The prefix up to the code is unchanged; the message is bounded and log-safe. The futures account/pending reader reports an unaccepted code in the same format.
 
 ### Dependencies

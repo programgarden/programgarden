@@ -63,6 +63,19 @@ only the exact envelope is accepted, so a different paper answer stays an error.
 OpenOrdersNode and legacy fill observation already use the paper path above for
 both CIDBQ01500 and CIDBQ02400 and needed no change.
 
+On those two TRs, the paper `02679` empty answer accepts either of two exact
+messages, both in the startup/pending/fill path above and in the account node:
+`조회내역이 없습니다.` (observed with `02679` on 2026-10-14) and the paper
+server's own no-data wording `모의투자 조회할 내역(자료)이 없습니다.` (already
+accepted with `00707`). This is the set the server preparation gate uses for
+these two TRs (dsl-api `startup_broker._NO_DATA_MESSAGES`), so a start the
+server admits is not rejected by the engine. The second wording has not been
+observed together with `02679`; it is accepted for parity under the same
+envelope checks, not as a generic success. Stock reads keep the single message,
+as the gate does. The remaining differences are stricter on the engine side:
+`02679` requires paper mode, and `00707` in the startup reader requires the
+paper wording.
+
 An unaccepted response code now names the broker's own message, using the same
 text as the server preparation gate:
 

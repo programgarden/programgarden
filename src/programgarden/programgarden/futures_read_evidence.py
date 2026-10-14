@@ -2,7 +2,10 @@
 
 import math
 
-from programgarden.database.broker_evidence import NO_RESULT_MESSAGE, unverified_response_code
+from programgarden.database.broker_evidence import (
+    PAPER_FUTURES_NO_RESULT_MESSAGES,
+    unverified_response_code,
+)
 
 _NO_DATA_TRS = {"CIDBQ01500", "CIDBQ02400"}
 
@@ -14,9 +17,10 @@ def require_complete_rows(response, request, tr, *, paper_trading=False):
     for the two position/pending TRs observed on the paper server. It is not a
     generic success code. Continuation pages remain unavailable in this reader.
 
-    For a paper client only, 02679 with the exact observed empty-result message
-    and explicitly empty rows is the same complete empty result on those two
-    TRs, mirroring the startup gate. Live clients and other TRs still reject it.
+    For a paper client only, 02679 with one of the exact paper empty-result
+    messages (the startup gate's set for these two TRs) and explicitly empty
+    rows is the same complete empty result on those two TRs. Live clients and
+    other TRs still reject it.
     """
     if response.status_code != 200 or response.error_msg:
         raise ValueError(f"{tr} did not return a complete terminal response")
@@ -26,7 +30,7 @@ def require_complete_rows(response, request, tr, *, paper_trading=False):
         and tr in _NO_DATA_TRS
         and code == "02679"
         and not response.block2
-        and response.rsp_msg == NO_RESULT_MESSAGE
+        and response.rsp_msg in PAPER_FUTURES_NO_RESULT_MESSAGES
     )
     if not accepted:
         raise ValueError(unverified_response_code(tr, code, response.rsp_msg))
