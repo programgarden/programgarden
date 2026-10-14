@@ -1,7 +1,8 @@
 # Futures position and pending-order exchange
 
-Status: 2.6.5 release candidate. This document does not establish package
-publication or consumer deployment.
+Status: introduced in 2.6.5; the retry of unresolved contracts described under
+"Rate and caching" is part of the 2.6.6 release candidate. This document does
+not establish package publication or consumer deployment.
 
 ## Problem
 
@@ -42,13 +43,20 @@ its quantity and the balance are still returned; only the exchange is unknown.
 
 ## Rate and caching
 
-- At most one o3105 read per contract per workflow run (execution context).
-  The answer is cached for the run, including an unresolved `None`, so a
-  transient failure is not retried within that run; a new run reads again.
-  A long-running workflow whose first read failed therefore keeps `None` for
-  that contract until it is restarted, and the node's warning names it.
-- Account and pending-order nodes in one run share the cache. Reads are
-  serialized, so concurrent nodes never request the same contract twice.
+- A confirmed exchange is read once per contract per workflow run (execution
+  context) and reused for the rest of the run; a new run reads again.
+- From 2.6.6 an unresolved answer is not remembered as an answer. A later
+  execution of the account or pending-order node in the same run reads that
+  contract again, but at most once per 5 minutes per contract, measured from
+  the start of its previous read. Until then the exchange stays `None` and no
+  request is made (a debug log gives the remaining time). Each read that fails
+  logs a warning naming the contract. In 2.6.5 the unresolved `None` was kept
+  for the whole run, so a long-running workflow whose first read failed kept
+  `None` until it was restarted.
+- Within one node execution each contract is read at most once.
+- Account and pending-order nodes in one run share the confirmed answers and
+  the 5-minute windows. Reads are serialized, so concurrent nodes never request
+  the same contract twice.
 - The account node reads CIDBQ01500 and CIDBQ05300 first, unchanged, then the
   missing contracts. Each o3105 read waits 2 seconds first, the gap the startup
   broker reads keep on a shared app key. o3105 is limited to 2 requests per

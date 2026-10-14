@@ -378,7 +378,7 @@ REST API로 현재 시점의 계좌 정보를 **한 번** 조회합니다. 스�
 
 > **주의**: 보유종목이 없으면 `positions`는 빈 배열 `[]`을 반환합니다. 잔고가 0이면 `balance`는 0을 반환합니다. 에러가 아닙니다.
 
-> **해외선물 거래소 (2.6.5)**: LS 잔고(CIDBQ01500)·미체결(CIDBQ02400) 응답에는 거래소 정보가 없습니다. `OverseasFuturesAccountNode`의 `positions[].exchange`·`held_symbols[].exchange`와 `OverseasFuturesOpenOrdersNode`의 `open_orders[].exchange`는 종목마다 o3105 거래소코드로 채웁니다(예: `MNQZ26` → `CME`). 확인하지 못하면 다른 거래소로 추측하지 않고 `null`로 둡니다. 2.6.4 이하에서는 모든 선물 행이 `"HKEX"`로 표시됐습니다. [자세히](futures-position-exchange.md)
+> **해외선물 거래소 (2.6.5)**: LS 잔고(CIDBQ01500)·미체결(CIDBQ02400) 응답에는 거래소 정보가 없습니다. `OverseasFuturesAccountNode`의 `positions[].exchange`·`held_symbols[].exchange`와 `OverseasFuturesOpenOrdersNode`의 `open_orders[].exchange`는 종목마다 o3105 거래소코드로 채웁니다(예: `MNQZ26` → `CME`). 확인하지 못하면 다른 거래소로 추측하지 않고 `null`로 둡니다. 2.6.6부터는 확인하지 못한 종목을 같은 실행 안에서 다음 노드 실행 때 다시 조회하되, 종목마다 5분에 한 번까지만 조회합니다(2.6.5는 실행이 끝날 때까지 `null`로 유지). 2.6.4 이하에서는 모든 선물 행이 `"HKEX"`로 표시됐습니다. [자세히](futures-position-exchange.md)
 
 ---
 

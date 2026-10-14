@@ -4,8 +4,10 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 The 2.6.6 release candidate [ranking nodes and runtime-values-as-data correction](../../docs/release-2.6.6-validation.md)
 adds KoreaStockRankingNode and OverseasStockRankingNode, evaluates only
-expression templates authored in the workflow, and routes Gemini and DeepSeek
-credentials to their own APIs.
+expression templates authored in the workflow, routes Gemini and DeepSeek
+credentials to their own APIs, and reads an unresolved futures position
+exchange again at most once per 5 minutes per contract instead of keeping it
+empty for the whole run.
 
 The 2.6.5 release candidate [futures position exchange correction](../../docs/futures-position-exchange.md)
 reads each futures position's and pending order's exchange from o3105 instead

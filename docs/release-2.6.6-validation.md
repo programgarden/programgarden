@@ -10,8 +10,9 @@ refreshed after those two packages are published, as in earlier releases. This
 document does not establish package publication or hosted installation.
 
 The changes were first prepared on 2.6.4 (`45ff52a6`) and then rebased onto
-2.6.5. The 2.6.5 futures exchange module, its tests and its documentation are
-part of the base and are not modified by this candidate.
+2.6.5. The 2.6.5 futures exchange module is changed in one respect only: an
+unresolved exchange is retried (see below); its identity rules, request fields,
+spacing and order guard are unchanged.
 
 ## Changes
 
@@ -24,6 +25,12 @@ part of the base and are not modified by this candidate.
   never evaluated — see the [expression guide](expression_guide.md).
 - **LLM routing.** Gemini and DeepSeek credentials reach their own APIs — see
   the [AI agent guide](ai_agent_guide.md).
+- **Futures exchange retry.** Only confirmed o3105 exchanges are remembered for
+  a run. An unresolved contract is read again on a later account or
+  pending-order node execution, at most once per 5 minutes per contract, still
+  serialized and 2 seconds apart — see
+  [futures position exchange](futures-position-exchange.md#rate-and-caching).
+  In 2.6.5 an unresolved answer stayed `None` until the workflow restarted.
 
 ## Verification
 
@@ -34,7 +41,7 @@ community are identical in 2.6.4 and 2.6.5).
 
 | Suite | Candidate | 2.6.5 source |
 |---|---|---|
-| Engine | 3496 passed, 29 skipped, 3 xfailed, 5 failed | 3414 passed, 25 skipped, 3 xfailed, 5 failed |
+| Engine | 3500 passed, 29 skipped, 3 xfailed, 5 failed | 3414 passed, 25 skipped, 3 xfailed, 5 failed |
 | Core | 1614 passed, 1 failed | 1592 passed, 1 failed |
 | Finance | 3287 passed, 10 failed | 3262 passed, 10 failed |
 | Community | 1606 passed, 9 failed | 1606 passed, 9 failed |
@@ -43,10 +50,12 @@ The failures are the same cases on both sources (engine: three cancel-order
 port assertions and two replay contract cases; core: the
 OverseasStockHistoricalDataNode examples shape; finance: ten field-metadata
 example cases; community: nine plugin cases). New cases: 49 ranking-node, 12
-runtime-value, 16 g3112 SDK and 5 LLM routing cases. Eleven of the twelve
+runtime-value, 16 g3112 SDK, 5 LLM routing and 5 futures exchange retry cases
+(one 2.6.5 case that pinned the unresolved answer for the run was replaced;
+four of the five fail on the 2.6.5 resolver). Eleven of the twelve
 runtime-value cases fail on the 2.6.5 source, as they did on 2.6.4; the
-remaining one checks the unchanged NodeRunner behaviour. The 2.6.5 futures
-exchange cases pass unchanged on the candidate. One futures order lifecycle
+remaining one checks the unchanged NodeRunner behaviour. The other 2.6.5
+futures exchange cases pass unchanged on the candidate. One futures order lifecycle
 case built an auto-iteration config that its workflow never authored; it now
 authors `order: "{{ item }}"` in the definition, and every lifecycle case
 passes, including the 2.6.5 unresolved-exchange cases.
