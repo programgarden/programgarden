@@ -7,7 +7,8 @@ from programgarden_finance import CIDBQ01500, CIDBQ02400, CIDBQ05300
 
 
 def parsed_response(
-    tr, request, rows, *, code="00136", missing_rows=False, continuation=False
+    tr, request, rows, *, code="00136", missing_rows=False, continuation=False,
+    message="Offline fixture",
 ):
     module = {
         "CIDBQ01500": CIDBQ01500,
@@ -18,7 +19,7 @@ def parsed_response(
     body = {
         tr + "OutBlock1": request.model_dump(),
         "rsp_cd": code,
-        "rsp_msg": "Offline fixture",
+        "rsp_msg": message,
     }
     if not missing_rows:
         body[tr + "OutBlock2"] = rows
