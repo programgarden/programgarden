@@ -1,3 +1,9 @@
+## [2.0.2] - 2026-10-14
+
+### Fixed
+- Distinguish the published CIDBQ02400 same-day blank-date rule from observed paper behavior requiring a broker-observed current date; preserve wire arguments and response models.
+- Preserve CIDBQ02400 input `RecCnt` during model and sync/async request serialization, using the TR example's `1` as the SDK default. Document the current official request field separately from the historical table; retain existing response defaults.
+
 ## Unreleased
 ### Fixed
 - Refresh futures account data on actual TC3 fills and TC2 confirmations using the SDK `svc_id` field.

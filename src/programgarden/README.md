@@ -2,6 +2,10 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.3 release candidate [paper futures business-date correction](../../docs/paper-futures-business-date.md)
+uses a fresh account-scoped broker date for startup pending orders, OpenOrdersNode
+and legacy fill observation. Missing or mismatched evidence remains unavailable.
+
 An unreleased [stock history interval correction](../../docs/stock-history-interval-contract.md)
 rejects unsupported intraday periods instead of silently querying daily bars.
 Supported g3204 periods retain their existing requests and output contract.

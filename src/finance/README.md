@@ -42,6 +42,11 @@ the supplied field metadata and two actual paper balance reads, including their
 date and accounting limits. Reported equity and its P&L/fee components must not
 be added twice.
 
+The [CIDBQ02400 contract](docs/cidbq02400_contract.md) distinguishes the historical
+supplied table from the current official request fields. Request serialization
+preserves `RecCnt`, with the example-derived SDK default `1`; broker requiredness
+and allowed ranges remain unverified.
+
 Futures tracking also retains a whitelisted per-currency account
 snapshot from that same query, including owner-confirmed daily net cash flows.
 Missing evidence and broker dates stay unknown; aggregate targets remain

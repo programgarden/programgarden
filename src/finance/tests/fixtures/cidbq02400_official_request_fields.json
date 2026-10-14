@@ -1,0 +1,84 @@
+{
+  "source_url": "https://openapi.ls-sec.co.kr/api/apis/public/tr-guides.json",
+  "observed_at": "2026-10-12T10:37:38.481068+00:00",
+  "guide_version": "20261012053652748",
+  "raw_document_sha256": "8d1dbe291a94e08661c5cd30d19a6267416be7bf4b8787e7c3c2224bd7bb78d8",
+  "scope": "Exact CIDBQ02400 request body field metadata; not a live broker response or a claim about requiredness, default values or allowed ranges.",
+  "request": [
+    {
+      "element": "CIDBQ02400InBlock1",
+      "name": "CIDBQ02400InBlock1",
+      "type": "Object",
+      "fields": [
+        {
+          "element": "RecCnt",
+          "name": "레코드갯수",
+          "type": "Number",
+          "length": "5"
+        },
+        {
+          "element": "IsuCodeVal",
+          "name": "종목코드값",
+          "type": "String",
+          "length": "30"
+        },
+        {
+          "element": "QrySrtDt",
+          "name": "조회시작일자",
+          "type": "String",
+          "length": "8",
+          "description": "YYYYMMDD 형식\n과거조회시는 사용\n당일조회시는 공백"
+        },
+        {
+          "element": "QryEndDt",
+          "name": "조회종료일자",
+          "type": "String",
+          "length": "8",
+          "description": "YYYYMMDD 형식\n과거조회시는 사용\n당일조회시는 공백"
+        },
+        {
+          "element": "ThdayTpCode",
+          "name": "당일구분코드",
+          "type": "String",
+          "length": "1",
+          "description": "0:과거조회\n1:당일조회"
+        },
+        {
+          "element": "OrdStatCode",
+          "name": "주문상태코드",
+          "type": "String",
+          "length": "1",
+          "description": "0:전체\n1:체결\n2:미체결"
+        },
+        {
+          "element": "BnsTpCode",
+          "name": "매매구분코드",
+          "type": "String",
+          "length": "1",
+          "description": "0:전체\n1:매도\n2:매수"
+        },
+        {
+          "element": "QryTpCode",
+          "name": "조회구분코드",
+          "type": "String",
+          "length": "1",
+          "description": "1:역순\n2:정순"
+        },
+        {
+          "element": "OrdPtnCode",
+          "name": "주문유형코드",
+          "type": "String",
+          "length": "2",
+          "description": "00:전체\n01:일반\n02:Average\n03:Spread"
+        },
+        {
+          "element": "OvrsDrvtFnoTpCode",
+          "name": "해외파생선물옵션구분코드",
+          "type": "String",
+          "length": "1",
+          "description": "A:전체\nF:선물\nO:옵션"
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,12 @@
+## [2.6.3] - 2026-10-14
+
+### Fixed
+- Use fresh CIDBQ01500 account/date evidence for paper current-day CIDBQ02400 startup, pending-order and legacy fill inquiries. Retain exact account, mode, freshness and raw response-completeness checks; never guess a local calendar date or treat missing blocks as an empty result.
+- Preserve the existing live-account paths and the previously released stock-history and futures-minute corrections.
+
+### Dependencies
+- Require programgarden-finance ^2.0.2 for CIDBQ02400 RecCnt serialization. Core ^2.6.2 and community ^2.3.1 remain unchanged.
+
 ## [2.6.2] - 2026-10-14
 
 ### Fixed

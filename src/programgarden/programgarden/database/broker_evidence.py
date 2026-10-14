@@ -40,7 +40,7 @@ class StartupQueryDateMismatch(StartupEvidenceUnavailable):
         self.business_day = business_day
 
 
-async def checked_body(response, tr, request=None):
+async def checked_body(response, tr, request=None, *, paper_trading=False):
     """Read original broker blocks so SDK defaults cannot manufacture success."""
     if response.status_code != 200 or response.error_msg:
         raise StartupEvidenceUnavailable(f"{tr}: transport_failure")
@@ -105,6 +105,10 @@ async def checked_body(response, tr, request=None):
                     and echo.get("BnsTpCode") == "0" and echo.get("CrcyCode") == "000")
     elif tr in {"CIDBQ01500", "CIDBQ02400"} and code == "00707":
         accepted = (not rows and response.rsp_msg == "모의투자 조회할 내역(자료)이 없습니다.")
+    elif paper_trading is True and tr in {"CIDBQ01500", "CIDBQ02400"} and code == "02679":
+        # Observed paper response with complete raw blocks, explicit empty rows
+        # and terminal continuation. The caller still binds date/account scope.
+        accepted = not rows and response.rsp_msg == "조회내역이 없습니다."
     if not accepted:
         raise StartupEvidenceUnavailable(f"{tr}: unverified_response_code={code}")
     if tr in {"t0424", "t0425"}:

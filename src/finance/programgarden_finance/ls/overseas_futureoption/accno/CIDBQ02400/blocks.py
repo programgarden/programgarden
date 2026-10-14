@@ -10,6 +10,7 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
     - The LS field table supplied by the user on 2026-09-09 provides field lengths,
       numeric scales and selected enums; see docs/cidbq02400_contract.md in this package.
       Currency units, fee additivity and missing enum meanings remain unspecified.
+      The official LS JSON guide checked on 2026-10-12 also lists input RecCnt.
     - The published table and example disagree on the output status code and
       same-day input dates. Preserve the conflict; do not constrain response enums
       or infer undocumented values from the example.
@@ -39,6 +40,17 @@ class CIDBQ02400ResponseHeader(BlockResponseHeader):
 class CIDBQ02400InBlock1(BaseModel):
     """CIDBQ02400InBlock1 — input block for overseas futures order execution detail query."""
 
+    RecCnt: int = Field(
+        default=1,
+        title="Record count (레코드갯수)",
+        description=(
+            "Request record count. Published type: Number; length: 5. "
+            "SDK default 1 follows this TR's example, not a verified broker default. "
+            "Broker requiredness and allowed range remain unverified."
+        ),
+        examples=[1],
+    )
+
     IsuCodeVal: str = Field(
         ...,
         title="Issue code value (종목코드값)",
@@ -54,7 +66,9 @@ class CIDBQ02400InBlock1(BaseModel):
         title="Query start date (조회시작일자)",
         description=(
             "Query start date in YYYYMMDD format for historical queries (ThdayTpCode='0'). "
-            "Send an empty string for same-day queries (ThdayTpCode='1'). Published length: 8."
+            "The published guide specifies an empty string for same-day queries (ThdayTpCode='1'). "
+            "An observed paper server instead required an explicit broker-observed current date; "
+            "see the CIDBQ02400 contract for this compatibility limitation. Published length: 8."
         ),
         examples=["20230516", "20260101", ""],
     )
@@ -64,7 +78,9 @@ class CIDBQ02400InBlock1(BaseModel):
         title="Query end date (조회종료일자)",
         description=(
             "Query end date in YYYYMMDD format for historical queries (ThdayTpCode='0'). "
-            "Send an empty string for same-day queries (ThdayTpCode='1'). Published length: 8."
+            "The published guide specifies an empty string for same-day queries (ThdayTpCode='1'). "
+            "An observed paper server instead required an explicit broker-observed current date; "
+            "see the CIDBQ02400 contract for this compatibility limitation. Published length: 8."
         ),
         examples=["20230609", "20260131", ""],
     )
