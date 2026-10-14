@@ -16946,6 +16946,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         from datetime import date
         from decimal import Decimal
 
+        if not isinstance(order.get("exchange"), str):
+            # A futures position or pending row whose exchange o3105 could not
+            # confirm carries exchange None. Stop before any lifecycle entry is
+            # recorded, so nothing is sent and a later retry is not blocked.
+            raise ValueError(
+                "Futures order exchange is unavailable (exchange=None, e.g. a position "
+                "whose exchange o3105 could not confirm); no order was sent"
+            )
         cycle = getattr(context._workflow_job, "_order_cycle", 0)
         iteration = iteration_index
         if iteration is None:

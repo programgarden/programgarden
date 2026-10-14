@@ -42,11 +42,17 @@ position reached its sell decision with the candidate, where 2.6.4 raised
 `Ambiguous instrument position`. With an unresolved exchange it still raises,
 which is the intended fail-closed result.
 
-One read-only paper o3105 request for `MNQZ26` used a token that already
-existed in the development token store for a test app key. No token was issued
-and the request was sent once without retry. It returned HTTP 200, `rsp_cd`
-`00000`, `Symbol` `MNQZ26` and `ExchCd` `CME`. No order, account change or other
-broker request was made. No HKEX contract was observed for this release.
+Two read-only paper o3105 requests, one for `MNQZ26` and one for `HMHV26`, used
+a token that already existed in the development token store for a test app key.
+No token was issued and each request was sent once without retry. Both returned
+HTTP 200 and `rsp_cd` `00000`: `MNQZ26` with `ExchCd` `CME` and `HMHV26` with
+`ExchCd` `HKEX`. No order, account change or other broker request was made.
+
+Review follow-up: a futures new order whose exchange is `None` now stops before
+its lifecycle entry is prepared, so nothing is sent and a retry of the same
+invocation is not blocked. Two lifecycle cases (with and without a journal
+handler) cover this and fail against the first candidate, and a parametrized
+case pins both observed o3105 answers to their exchange.
 
 No wheel or sdist was built for this preparation. The release owner builds the
 reviewed merged main commit, inspects the artifacts, publishes the engine only

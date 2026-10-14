@@ -313,6 +313,22 @@ def test_contract_detail_identity_rules(block, expected):
     assert futures_exchange.exchange_from_contract_detail(response, "MNQZ26") == expected
 
 
+# Field values of the two read-only paper o3105 answers observed on 2026-10-14
+# (MNQZ26 and HMHV26), so both exchanges a workflow may compare with are
+# pinned to the broker's own codes.
+@pytest.mark.parametrize("symbol,name,exchange,exchange_name,base,currency", [
+    ("MNQZ26", "Micro E-mini NASDAQ 100(2026.12)", "CME", "시카고상업거래소", "MNQ", "USD"),
+    ("HMHV26", "Mini Hang Seng(2026.10)", "HKEX", "홍콩거래소", "HMH", "HKD"),
+])
+def test_observed_paper_o3105_answers_resolve_to_their_exchange(symbol, name, exchange, exchange_name, base, currency):
+    block = {"Symbol": symbol, "SymbolNm": name, "ExchCd": exchange, "ExchNm": exchange_name,
+             "BscGdsCd": base, "CrncyCd": currency}
+    body = {"o3105OutBlock": block, "rsp_cd": "00000", "rsp_msg": "정상적으로 조회가 완료되었습니다."}
+    header = {"Content-Type": "application/json; charset=utf-8", "tr_cd": "o3105", "tr_cont": "N", "tr_cont_key": ""}
+    response = TrO3105._build_response(None, SimpleNamespace(status_code=200), body, header, None)
+    assert futures_exchange.exchange_from_contract_detail(response, symbol) == exchange
+
+
 def test_missing_response_block_is_unresolved():
     response = TrO3105._build_response(None, SimpleNamespace(status_code=200), {"rsp_cd": "00000"}, {}, None)
     assert futures_exchange.exchange_from_contract_detail(response, "MNQZ26") is None

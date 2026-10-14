@@ -45,6 +45,8 @@ its quantity and the balance are still returned; only the exchange is unknown.
 - At most one o3105 read per contract per workflow run (execution context).
   The answer is cached for the run, including an unresolved `None`, so a
   transient failure is not retried within that run; a new run reads again.
+  A long-running workflow whose first read failed therefore keeps `None` for
+  that contract until it is restarted, and the node's warning names it.
 - Account and pending-order nodes in one run share the cache. Reads are
   serialized, so concurrent nodes never request the same contract twice.
 - The account node reads CIDBQ01500 and CIDBQ05300 first, unchanged, then the
@@ -64,17 +66,26 @@ its quantity and the balance are still returned; only the exchange is unknown.
 - When the exchange is unresolved, consumers that require an exchange string
   fail closed instead of acting on a guessed exchange.
 - A workflow that binds a position or pending-order row directly into a futures
-  order now passes the resolved code (or `None`) as the order's exchange instead
-  of `HKEX`. The order nodes themselves are unchanged in this release.
+  order now passes the resolved code as the order's exchange instead of `HKEX`.
+  A new order whose exchange is `None` stops before its lifecycle entry is
+  prepared: the node returns `Futures order exchange is unavailable ...`, no
+  CIDBT00100 is sent, and a retry of the same invocation is not blocked as
+  "already prepared". Before this guard such an order failed SDK validation
+  after the entry was recorded, which blocked the retry.
 - Not changed in this release: `OverseasFuturesRealAccountNode` (its SDK tracker
   resolves exchanges separately), deep-validation fixtures, replay recordings
   and default exchange labels in futures market-data and history outputs.
 
 ## Observation
 
-One read-only paper o3105 request for `MNQZ26` on 2026-10-15 (KST), made with a
-token that already existed for a test app key (no token was issued and the
-request was not retried), returned HTTP 200, `rsp_cd` `00000`, `Symbol`
-`MNQZ26`, `ExchCd` `CME`, `ExchNm` `시카고상업거래소` and `CrncyCd` `USD`.
-No HKEX contract was observed for this release; the `HKEX` code is the value the
-LS guide and the existing contract-search node already handle.
+Two read-only paper o3105 requests on 2026-10-15 (KST), one per contract, made
+with a token that already existed for a test app key (no token was issued and
+neither request was retried), returned HTTP 200 and `rsp_cd` `00000`:
+
+| Symbol | `ExchCd` | `ExchNm` | `CrncyCd` |
+|---|---|---|---|
+| `MNQZ26` | `CME` | `시카고상업거래소` | `USD` |
+| `HMHV26` | `HKEX` | `홍콩거래소` | `HKD` |
+
+Workflows that compare a Hong Kong contract's exchange with `HKEX` therefore
+keep matching when o3105 answers, as they did with the former fixed label.
