@@ -21,10 +21,15 @@ must NOT be used as-is to submit real orders.
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, PrivateAttr, Field
+from pydantic import BaseModel, PrivateAttr, Field, model_validator
 from requests import Response
 
 from ....models import BlockRequestHeader, BlockResponseHeader, SetupOptions
+
+
+# Guide apis[36].t[0] OrdprcPtnCode: "00@지정가 / M1@LOO / M2@LOC / 매도인경우 호가유형 확대 /
+# 03@시장가 / M3@MOO / M4@MOC" — the last three apply to sell orders only.
+SELL_ONLY_PRICE_TYPE_CODES = frozenset({"03", "M3", "M4"})
 
 
 class COSAT00301RequestHeader(BlockRequestHeader):
@@ -43,6 +48,10 @@ class COSAT00301InBlock1(BaseModel):
     ``OrdPtnCode`` controls whether this is a sell ('01'), buy ('02'), or cancel
     ('08'). For cancel orders, ``OrgOrdNo`` is required. For buy/sell orders,
     ``OrgOrdNo`` should be omitted (None).
+
+    A buy ('02') accepts only ``OrdprcPtnCode`` '00', 'M1' or 'M2': the guide
+    lists '03' (market), 'M3' (MOO) and 'M4' (MOC) under "매도인경우 호가유형 확대"
+    (sell only). Building a buy with those codes raises ``ValueError``.
     """
 
     RecCnt: int = Field(
@@ -120,6 +129,16 @@ class COSAT00301InBlock1(BaseModel):
         ),
         examples=["", "01"],
     )
+
+    @model_validator(mode="after")
+    def _buy_uses_buy_price_types(self) -> "COSAT00301InBlock1":
+        if self.OrdPtnCode == "02" and self.OrdprcPtnCode in SELL_ONLY_PRICE_TYPE_CODES:
+            raise ValueError(
+                f"COSAT00301 OrdprcPtnCode={self.OrdprcPtnCode!r} is sell-only: the LS guide "
+                "lists 03/M3/M4 under '매도인경우 호가유형 확대' (sell orders only). "
+                "A buy (OrdPtnCode='02') must use 00 (limit), M1 (LOO) or M2 (LOC)."
+            )
+        return self
 
 
 class COSAT00301Request(BaseModel):

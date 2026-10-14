@@ -221,3 +221,34 @@ CSPAQ00600 describes credit/margin limits and orderable amounts, not execution
 history. The README shorthand has been corrected to match these model
 contracts. A dated order number does not supply the calendar execution date,
 individual partial-fill ledger or complete historical coverage.
+
+
+## Overseas stock order book: GSH and g3106 (2026-10-15 phase 0)
+
+Read-only market-data capture with a live key, 2026-10-15 03:16 KST
+(2026-10-14 14:16 ET, US regular session), AAPL on NASDAQ (`82AAPL`), 20 s.
+
+- `GSH` register and unregister acknowledgements returned `rsp_cd="00000"`,
+  `rsp_msg="정상처리되었습니다"`. The acknowledgement header carried `tr_cd`
+  and `tr_type` but `tr_key` was null.
+- In all 15 book messages: prices were present on levels 1–10; quantities on
+  levels 2–10 were 0; per-level and total counts were 0; `offerrem1` equalled
+  `totofferrem` and `bidrem1` equalled `totbidrem`.
+- One `g3106` snapshot at the same time returned `rsp_cd="00000"`,
+  `rsp_msg="조회완료"`, header `tr_cont="N"`, `tr_cont_key="0"`. It carried
+  ten prices per side, a quantity only at level 1 (`offerrem1` = `offer`,
+  `bidrem1` = `bid`), 0 on levels 2–10 and all counts 0.
+
+This is one symbol at one moment. It does not establish the shape for other
+symbols, NYSE or the daytime session; `g3106` must not be assumed to provide
+per-level quantities.
+
+## CIDBQ01800: paper overseas futures empty result (2026-10-15 phase 0)
+
+A read-only paper request on 2026-10-15 at 03:12 KST for one contract and the
+current order date returned HTTP 200, `rsp_cd="00707"`,
+`rsp_msg="모의투자 조회할 내역(자료)이 없습니다."`, header `tr_cd="CIDBQ"`,
+`tr_cont="N"` and an empty key. 00707 had previously been recorded for paper
+CIDBQ01500/CIDBQ02400 only. A paper CIDBQ01500 read in the same session
+returned `rsp_cd="00136"`, `rsp_msg="모의투자 조회가 완료되었습니다."`.
+No order was submitted. These are paper wordings, not generic success codes.

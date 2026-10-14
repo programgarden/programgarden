@@ -213,7 +213,8 @@ class COSAT00400Request(BaseModel):
     )
     options: SetupOptions = Field(
         SetupOptions(
-            rate_limit_count=10,
+            # Guide transactionPerSec is 1, guide v20261012053652748; was 10 per 1s.
+            rate_limit_count=1,
             rate_limit_seconds=1,
             on_rate_limit="wait",
             rate_limit_key="COSAT00400"
