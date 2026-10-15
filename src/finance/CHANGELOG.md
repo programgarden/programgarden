@@ -1,3 +1,10 @@
+## [2.0.4] - 2026-10-15
+
+### Fixed
+- `collect_domestic_open_orders` (t0425) no longer rejects an account with no orders today. A real read-only t0425 on 2026-10-15 returned HTTP 200, `rsp_cd="00000"`, `rsp_msg="조회가 완료되었습니다."`, header `tr_cd=t0425`, `tr_cont=""`, an empty `tr_cont_key` and neither `t0425OutBlock` nor `t0425OutBlock1`. The collector raised `incomplete_orders_response` on every call, so cloud and desktop start checks for such domestic accounts could not pass. That exact first-page answer is now an empty list. A single or null block, another code or message, `tr_cont="Y"`, a continuation key, or omitted blocks on a later page still fail.
+- The t0425 parser records whether both blocks were omitted from the JSON body (`_order_blocks_absent`), separately from an explicit null or empty block.
+- The collector now names transport failures `orders_transport_failure` and non-`00000` answers `orders_response_rejected`. Before, both were reported as `incomplete_orders_response`. That reason now means only a missing header or block on a successful answer.
+
 ## [2.0.3] - 2026-10-15
 
 ### Added

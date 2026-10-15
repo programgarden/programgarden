@@ -66,3 +66,9 @@ Read-only verification on 2026-09-15 observed CSPAQ family headers and terminal
 `t0425.tr_cont=0` with empty header/body cursors. New node regressions use actual
 response parsers, not permissive mocks that invent broker fields. No new order
 was submitted for this correction.
+
+A read-only t0425 on 2026-10-15, on a real account with no orders that day,
+returned `rsp_cd=00000`, `tr_cont=""` and an empty continuation key, and
+omitted both t0425 blocks. Finance 2.0.4 treats only that first-page shape as
+no pending orders. The details are in
+`src/finance/docs/observed_broker_responses.md`.

@@ -129,3 +129,86 @@ async def test_later_page_pending_buy_is_retained_and_failed_page_invalidates_fi
         with patch("programgarden_finance.ls.korea_stock.extension.account_queries.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(DomesticPositionEvidenceUnavailable):
                 await collect_domestic_open_orders(client)
+
+
+# Read-only t0425 on 2026-10-15 11:22 UTC, real account with no orders that day,
+# exact all-orders example request. Shape only; it carried no account values.
+OBSERVED_NO_ORDERS_BODY = {"rsp_cd": "00000", "rsp_msg": "조회가 완료되었습니다."}
+OBSERVED_NO_ORDERS_HEADERS = {"Content-Type": "application/json;charset=UTF-8",
+                              "tr_cd": "t0425", "tr_cont": "", "tr_cont_key": ""}
+
+
+def no_orders_response(body=None, headers=None, status=200, exc=None):
+    raw = dict(OBSERVED_NO_ORDERS_BODY) if body is None else body
+    head = {**OBSERVED_NO_ORDERS_HEADERS, **(headers or {})}
+    return TrT0425._build_response(None, SimpleNamespace(status_code=status), raw, head, exc)
+
+
+def test_parser_marks_only_omitted_order_blocks_as_absent():
+    assert no_orders_response()._order_blocks_absent is True
+    assert no_orders_response()._orders_block_present is False
+    for body in ({**OBSERVED_NO_ORDERS_BODY, "t0425OutBlock": None},
+                 {**OBSERVED_NO_ORDERS_BODY, "t0425OutBlock1": []},
+                 {**OBSERVED_NO_ORDERS_BODY, "t0425OutBlock": {"cts_ordno": ""}}):
+        assert no_orders_response(body=body)._order_blocks_absent is False
+    assert no_orders_response(status=500)._order_blocks_absent is False
+    assert no_orders_response(exc=RuntimeError("offline"))._order_blocks_absent is False
+    assert TrT0425._build_response(None, SimpleNamespace(status_code=200), None,
+                                   OBSERVED_NO_ORDERS_HEADERS, None)._order_blocks_absent is False
+    assert order_response()._order_blocks_absent is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["", "N", "0"])
+async def test_observed_no_orders_answer_is_an_empty_list(flag):
+    client, tr = client_for(no_orders_response(headers={"tr_cont": flag}))
+    assert await collect_domestic_open_orders(client) == []
+    assert tr.req_async.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case,reason", [
+    ("summary_only", "incomplete_orders_response"),
+    ("rows_only", "incomplete_orders_response"),
+    ("null_blocks", "incomplete_orders_response"),
+    ("other_message", "incomplete_orders_response"),
+    ("continuation_flag", "incomplete_orders_response"),
+    ("continuation_key", "incomplete_orders_response"),
+    ("header_key_default", "incomplete_orders_response"),
+    ("other_tr", "incomplete_orders_response"),
+    ("other_success_code", "orders_response_rejected"),
+    ("http_error", "orders_transport_failure"),
+    ("transport_exception", "orders_transport_failure"),
+])
+async def test_other_no_block_shapes_still_fail(case, reason):
+    body = dict(OBSERVED_NO_ORDERS_BODY)
+    headers, status, exc = {}, 200, None
+    if case == "summary_only": body["t0425OutBlock"] = {"cts_ordno": ""}
+    elif case == "rows_only": body["t0425OutBlock1"] = []
+    elif case == "null_blocks": body.update(t0425OutBlock=None, t0425OutBlock1=None)
+    elif case == "other_message": body["rsp_msg"] = "조회내역이 없습니다."
+    elif case == "continuation_flag": headers["tr_cont"] = "Y"
+    elif case == "continuation_key": headers["tr_cont_key"] = "NEXT"
+    elif case == "other_tr": headers["tr_cd"] = "t0424"
+    elif case == "other_success_code": body["rsp_cd"] = "00136"
+    elif case == "http_error": status = 500
+    elif case == "transport_exception": exc = RuntimeError("offline")
+    response = no_orders_response(body=body, headers=headers, status=status, exc=exc)
+    if case == "header_key_default":
+        response.header.model_fields_set.discard("tr_cont_key")
+    client, tr = client_for(response)
+    with pytest.raises(DomesticPositionEvidenceUnavailable) as raised:
+        await collect_domestic_open_orders(client)
+    assert str(raised.value) == reason
+    assert tr.req_async.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_omitted_blocks_on_a_later_page_never_end_the_list():
+    first = order_response(rows=[{**ROW, "ordno": 13}], flag="Y", cursor="NEXT")
+    client, tr = client_for(first, no_orders_response())
+    with patch("programgarden_finance.ls.korea_stock.extension.account_queries.asyncio.sleep", new=AsyncMock()):
+        with pytest.raises(DomesticPositionEvidenceUnavailable) as raised:
+            await collect_domestic_open_orders(client)
+    assert str(raised.value) == "incomplete_orders_response"
+    assert tr.req_async.await_count == 2

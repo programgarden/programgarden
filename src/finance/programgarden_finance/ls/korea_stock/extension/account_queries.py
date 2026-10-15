@@ -54,11 +54,34 @@ def _pending_order(row):
     }
 
 
+# Observed 2026-10-15 on a real account with no orders that day (read-only t0425,
+# the exact all-orders example request): HTTP 200, rsp_cd "00000" with this
+# message, header tr_cd=t0425, tr_cont="" and a present, empty tr_cont_key, and a
+# body without t0425OutBlock or t0425OutBlock1. With orders (2026-09-15) both
+# blocks were present and tr_cont was "0".
+_NO_ORDERS_MESSAGE = "조회가 완료되었습니다."
+
+
+def _observed_no_orders_answer(response):
+    """The exact observed first-page answer for an account with no orders today.
+
+    Both blocks must be omitted (a null, empty or single block is not this shape)
+    and the header must be terminal with an empty continuation key.
+    """
+    header = response.header
+    return (response._order_blocks_absent
+            and response.rsp_msg.strip() == _NO_ORDERS_MESSAGE
+            and header.tr_cont in {"", "N", "0"}
+            and not header.tr_cont_key.strip())
+
+
 async def collect_domestic_open_orders(accno_client):
     """Read all pages of the exact all-orders example, then select observed remainders.
 
     Instrument identity stays KRX across venues; order_venue is separate evidence.
     A partial list must never permit another buy. Broker rejections are not retried.
+    Only the observed no-orders answer on the first page becomes an empty list;
+    an omitted block on a later page still fails.
     """
     request = T0425InBlock(expcode="", chegb="0", medosu="0", sortgb="1", cts_ordno="")
     tr = accno_client.t0425(body=request)
@@ -66,10 +89,17 @@ async def collect_domestic_open_orders(accno_client):
     for _ in range(100):
         response = await tr.req_async()
         if (not isinstance(response, T0425Response) or response.status_code != 200
-                or response.error_msg or response.rsp_cd != "00000"
-                or not response._orders_block_present or response.header is None
+                or response.error_msg):
+            raise DomesticPositionEvidenceUnavailable("orders_transport_failure")
+        if response.rsp_cd != "00000":
+            raise DomesticPositionEvidenceUnavailable("orders_response_rejected")
+        if (response.header is None
                 or not {"tr_cd", "tr_cont", "tr_cont_key"} <= response.header.model_fields_set
-                or response.header.tr_cd != "t0425" or response.cont_block is None
+                or response.header.tr_cd != "t0425"):
+            raise DomesticPositionEvidenceUnavailable("incomplete_orders_response")
+        if not cursors and _observed_no_orders_answer(response):
+            return []
+        if (not response._orders_block_present or response.cont_block is None
                 or "cts_ordno" not in response.cont_block.model_fields_set):
             raise DomesticPositionEvidenceUnavailable("incomplete_orders_response")
         for row in response.block:
