@@ -229,7 +229,8 @@ async def test_reconnect_restores_market_and_account_registrations(reregister):
             else:
                 assert second == [("3", "OVC", "HMHU26")]
             # With the option off the flag is left as it was (pre-K2 behaviour): the SDK
-            # then assumes LS kept the registration, which phase-0 F3 has to confirm.
+            # then assumes LS kept the registration, which phase-0 F3 (paper futures,
+            # 2026-10-15) showed it does not — hence the default of True.
             assert real._tc123_connect is True
         finally:
             await real.close(force=True)

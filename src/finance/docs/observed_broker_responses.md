@@ -252,3 +252,39 @@ current order date returned HTTP 200, `rsp_cd="00707"`,
 CIDBQ01500/CIDBQ02400 only. A paper CIDBQ01500 read in the same session
 returned `rsp_cd="00136"`, `rsp_msg="모의투자 조회가 완료되었습니다."`.
 No order was submitted. These are paper wordings, not generic success codes.
+
+## Overseas futures order events and order numbers (2026-10-15 phase 0, paper)
+
+LS paper overseas futures, platform paper key, 2026-10-15 07:17–10:17 KST,
+contract HMHV26 (HKEX Mini Hang Seng), 8 paper orders. Frames with the login
+id and account number replaced are in
+`tests/fixtures/tc_frames_paper_futures_20261015.json`.
+
+- One `tr_type="1"` registration with `tr_cd="TC1"` delivered TC1, TC2 and
+  TC3. The acknowledgement header was `{"tr_type": "1", "tr_cd": null,
+  "rsp_cd": "00000"}` with `body: null`, so the SDK (which routes frames by
+  `header.tr_cd`) does not see it.
+- Sequences: new order → TC1 HO01, TC1 HO04 (and TC3 CH01 when it filled);
+  **no TC2 for a new order**. Modify → TC1 HO01/HO04 (`ordr_ccd "2"`) then TC2
+  HO02 with `cnfr_q` = the quantity moved. Cancel → TC1 HO01/HO04
+  (`ordr_ccd "3"`) then TC2 HO02 with `cnfr_q` = the quantity cancelled and
+  `ordr_typ_cd ""`.
+- Every modify and cancel got a **new** order number. In TC frames
+  `orgn_ordr_no` is the direct predecessor and `mthr_ordr_no` the first order
+  of the chain; a new order has `orgn_ordr_no "0"`. A modify that moved 1 of
+  2 lots left the other lot working under the predecessor's number.
+- `s_b_ccd`: buys (`BnsTpCode "2"`) arrived as `"2"`, the sell as `"1"`, as
+  the guide says (1 = 매도, 2 = 매수).
+- Field names differing from the guide: TC2 sends `user_id` (guide
+  `userid`); TC1 sends `xrc_rsv_tcp_code` (guide `xrc_rsv_tp_code`). TC3 adds
+  `base_xchrat`, `eval_pnl_amt`, `krw_conv_eval_pnl_amt`, `mxchg_unit_amt`.
+  Before 2.0.4 every TC2 frame failed `TC2RealResponseBody` validation
+  (`userid` required) and listeners got `body=None`.
+- Order numbers: `"27"` in CIDBT00100/00900/01000 `OvrsFutsOrdNo` and TC
+  `ordr_no`, `"0000000027"` in CIDBQ01800 `OvrsFutsOrdNo` (a new order's
+  `OvrsFutsOrgOrdNo` is `"0000000000"`); TC3 `ccls_no` is zero-padded
+  (`"0000000645"`). Compare by integer value.
+- A cancel of an order with nothing left returned HTTP 200, `rsp_cd="01433"`
+  `"모의투자 정정/취소할 수량이 없습니다."`, no OutBlock and no TC frame.
+
+Live accounts and other products were not tested.

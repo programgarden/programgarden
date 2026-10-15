@@ -49,9 +49,11 @@ right after the existing market-data resubscription:
 | Overseas futures | `_tc123_connect` | `TC1`, `tr_key=""` |
 
 A registration is a message on one socket, so the default assumes it does not
-survive a new connection. Phase-0 item F3 checks this on paper futures; if LS
-keeps the registration, the default becomes `False`. With `False` the flags
-are left as they were (previous behaviour).
+survive a new connection. Phase-0 item F3 (LS paper overseas futures,
+2026-10-15) confirmed it: a new socket that did not send `tr_type="1"` again
+received no account events while the other registered sockets did, so the
+default stays `True`. With `False` the flags are left as they were (previous
+behaviour).
 
 Reconnects are now detected by "this loop already had an open socket" rather
 than `backoff > 1.0`, which missed reconnects when `max_backoff <= 1`.
@@ -64,8 +66,10 @@ When the last listener of a futures `Real` is removed, the client sends one
 `tr_type="2"` frame with the same body it registered with (`tr_cd="TC1"`,
 `tr_key=""`) and clears `_tc123_connect`; a later listener registers again.
 The guide marks only `tr_key` as optional for account register/unregister, so
-`tr_cd` is kept. Whether an unregister on one session affects another session
-on the same key is not yet observed (phase-0 F2).
+`tr_cd` is kept. Phase-0 item F2 (LS paper overseas futures, 2026-10-15): the
+acknowledgement was `rsp_cd="00000"` with `tr_cd: null`; the socket that sent
+it received no further events, and other sockets registered with the same
+token kept receiving. Live accounts were not tested.
 
 The stock clients' unregister paths are unchanged: `_on_remove_message`
 clears `_as01234_connect`/`_sc01234_connect` before calling the unregister

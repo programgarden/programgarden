@@ -102,7 +102,8 @@ class RealRequestAbstract(ABC):
         self._max_subscribe_symbols = max_subscribe_symbols
         # 재연결 뒤 계좌(주문 이벤트) 실시간 등록을 다시 보낼지. 등록은 소켓에 보낸
         # 메시지라 새 소켓에는 남아 있지 않다고 보고 기본값은 True 다.
-        # Phase-0 F3 이 "LS 가 재연결 뒤에도 등록을 유지한다"고 확인하면 기본값을 False 로 바꾼다.
+        # Phase-0 F3(LS 모의 해외선물, 2026-10-15): 재연결한 새 소켓은 tr_type=1 을 다시
+        # 보내기 전까지 계좌 이벤트를 하나도 받지 못했다 — 기본값 True 가 필요하다.
         self._reregister_account_events_on_reconnect = bool(reregister_account_events_on_reconnect)
 
         # Event that is set when a websocket connection is successfully opened
