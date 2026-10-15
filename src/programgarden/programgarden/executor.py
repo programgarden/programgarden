@@ -785,12 +785,15 @@ def resolve_port_bindings(
     Returns:
         평가된 config (표현식이 실제 데이터로 교체됨)
     """
+    from programgarden import binding_provenance as _bp
+
     config = config.copy()  # 원본 보호
     
     for port_name in port_names:
         binding_expr = config.get(port_name)
         
-        if binding_expr and isinstance(binding_expr, str) and "{{" in binding_expr:
+        if (binding_expr and isinstance(binding_expr, str) and "{{" in binding_expr
+                and _bp.may_evaluate(binding_expr, _bp.authored_at(context, node_id, port_name))):
             # {{ nodes.xxx.yyy }} 표현식 평가
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
@@ -1025,21 +1028,30 @@ def evaluate_all_bindings(
 
     - dict, list 내부도 재귀 탐색
     - 평가 실패 시 원본 유지 + 경고 로그
+    - 2.6.6: 워크플로우 정의에 **작성된 템플릿이 그 자리에 그대로 남아 있을 때만** 평가한다.
+      앞 단계가 이미 푼 값(LLM 응답, HTTP 본문, 입력값, 자격증명 등 런타임 값)은 `{{` 를
+      담고 있어도 데이터로 그대로 통과한다(programgarden.binding_provenance).
+      작성본 스냅샷이 없는 노드(NodeRunner 단독 실행)는 종전대로 모두 평가한다.
 
     Args:
-        config: 노드 config
+        config: 노드 config (top-level 키가 작성본 config 의 키와 같은 위치여야 한다)
         context: 실행 컨텍스트
         node_id: 노드 ID
 
     Returns:
         표현식이 평가된 config
     """
+    from programgarden import binding_provenance as _bp
+
     config = config.copy()
     expr_context = context.get_expression_context()
     evaluator = ExpressionEvaluator(expr_context)
+    authored_root = _bp.authored_root(context, node_id)
 
-    def evaluate_value(value: Any) -> Any:
+    def evaluate_value(value: Any, authored: Any) -> Any:
         if isinstance(value, str) and "{{" in value:
+            if not _bp.may_evaluate(value, authored):
+                return value  # runtime data — never evaluated
             try:
                 result = evaluator.evaluate(value)
                 context.log("debug", f"Expression evaluated: {value} -> {type(result).__name__}", node_id)
@@ -1056,12 +1068,16 @@ def evaluate_all_bindings(
                     pass
                 return value
         elif isinstance(value, dict):
-            return {k: evaluate_value(v) for k, v in value.items()}
+            if authored is not _bp.LEGACY and not isinstance(authored, dict):
+                return _bp.copy_containers(value)
+            return {k: evaluate_value(v, _bp.child(authored, k)) for k, v in value.items()}
         elif isinstance(value, list):
-            return [evaluate_value(v) for v in value]
+            if authored is not _bp.LEGACY and not (isinstance(authored, list) and len(authored) == len(value)):
+                return _bp.copy_containers(value)
+            return [evaluate_value(v, _bp.element(authored, i, len(value))) for i, v in enumerate(value)]
         return value
 
-    return {k: evaluate_value(v) for k, v in config.items()}
+    return {k: evaluate_value(v, _bp.child(authored_root, k)) for k, v in config.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -1384,9 +1400,12 @@ class GenericNodeExecutor(NodeExecutorBase):
         # MarketDataNode 등은 fields가 List[str]이므로 건드리지 않음
         fields = config.get("fields")
         if fields and isinstance(fields, dict):
+            from programgarden import binding_provenance as _bp
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
-            config["fields"] = evaluator.evaluate_fields(fields)
+            config["fields"] = _bp.evaluate_fields_authored(
+                evaluator, fields, _bp.authored_at(context, node_id, "fields"),
+            )
         
         # 노드 인스턴스 생성 (config의 값들이 Pydantic 필드에 매핑됨)
         try:
@@ -2047,7 +2066,10 @@ class SplitNodeExecutor(NodeExecutorBase):
         # 1순위: 명시적 array 바인딩 (있으면 상류보다 우선).
         array_cfg = config.get("array")
         if array_cfg is not None:
-            if isinstance(array_cfg, str) and "{{" in array_cfg:
+            from programgarden import binding_provenance as _bp
+            if isinstance(array_cfg, str) and "{{" in array_cfg and _bp.may_evaluate(
+                array_cfg, _bp.authored_at(context, node_id, "array"),
+            ):
                 expr_context = context.get_expression_context()
                 evaluator = ExpressionEvaluator(expr_context)
                 try:
@@ -3866,6 +3888,126 @@ class SymbolQueryNodeExecutor(NodeExecutorBase):
 
         # 연도+월 코드 (예: "2026F")
         return [s for s in symbols if s.get("contract_month", "") == month_filter]
+
+
+class RankingNodeExecutor(NodeExecutorBase):
+    """KoreaStockRankingNode (t1441/t1452/t1463/t1444) and OverseasStockRankingNode (g3112).
+
+    Read-only. Request values, paging and row shapes live in ``programgarden.ranking_nodes``.
+    Deep validation and dry runs return synthetic rows with the same shape and make no
+    broker call. Every failure raises with the LS TR code first; an empty successful
+    ranking is a valid result.
+    """
+
+    PRODUCTS = {
+        "KoreaStockRankingNode": "korea_stock",
+        "OverseasStockRankingNode": "overseas_stock",
+    }
+
+    async def execute(
+        self,
+        node_id: str,
+        node_type: str,
+        config: Dict[str, Any],
+        context: ExecutionContext,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        from programgarden import ranking_nodes as rn
+
+        config = evaluate_all_bindings(config, context, node_id)
+        product = self.PRODUCTS.get(node_type)
+        if product is None:
+            raise rn.RankingNodeError(f"{node_type}: not a ranking node")
+        korea = product == "korea_stock"
+        request = rn.korea_ranking_request(config) if korea else rn.overseas_ranking_request(config)
+
+        if context.is_deep_validate or context.is_dry_run:
+            from programgarden import deep_fixtures as _df
+            outputs = rn.synthetic_korea_outputs(request) if korea else rn.synthetic_overseas_outputs(request)
+            if context.is_dry_run and not context.is_deep_validate:
+                context.log(
+                    "info",
+                    f"[dry_run] {node_type} simulated (no {request.tr_code} ranking query)",
+                    node_id,
+                )
+            return _df.apply_override(outputs, context.get_deep_fixture(node_id, node_type))
+
+        connection = config.get("connection")
+        if not isinstance(connection, dict) or connection.get("product") != product:
+            raise rn.RankingNodeError(
+                f"{request.tr_code}: a matching {product} broker connection is required — "
+                f"connect a {'KoreaStockBrokerNode' if korea else 'OverseasStockBrokerNode'} upstream"
+            )
+        appkey, appsecret, paper_trading = _resolve_broker_credentials(connection, context)
+        if not appkey or not appsecret:
+            raise rn.RankingNodeError(f"{request.tr_code}: broker credentials are not set (check the broker node credential)")
+        if korea:
+            paper_trading = False  # KoreaStock is real-account only (LS)
+        elif paper_trading:
+            raise rn.RankingNodeError(
+                "g3112: overseas_stock does not support paper_trading (LS-Sec limitation); "
+                "use a real overseas-stock broker connection"
+            )
+        ls, success, error = ensure_ls_login(
+            appkey, appsecret, False, context, node_id, product,
+            caller_name=node_type,
+        )
+        if not success:
+            raise rn.RankingNodeError(f"{request.tr_code}: LS login failed ({error or 'unknown reason'})")
+
+        if korea:
+            result = await self._read_korea(ls, request)
+            outputs = rn.korea_outputs(request, result.rows)
+        else:
+            result = await self._read_overseas(ls, request)
+            outputs = rn.overseas_outputs(result.rows)
+        context.log(
+            "info",
+            f"{node_type}: {request.tr_code} {request.ranking_type}/{request.market} → "
+            f"{outputs['count']} rows in {result.requests} request(s)",
+            node_id,
+        )
+        return outputs
+
+    @staticmethod
+    async def _read_korea(ls: Any, request: Any) -> Any:
+        """Single transport boundary for t1441/t1452/t1463/t1444 pages."""
+        from programgarden import ranking_nodes as rn
+
+        ranking_api = ls.korea_stock().ranking()
+        method = getattr(ranking_api, request.tr_code)
+
+        async def fetch(cursor, cont_key):
+            tr = method(body=rn.korea_in_block(request, idx=cursor or 0))
+            if cursor:
+                tr.request_data.header.tr_cont = "Y"
+                tr.request_data.header.tr_cont_key = cont_key or ""
+            return rn.korea_page(request.tr_code, await tr.req_async())
+
+        return await rn.collect_pages(
+            fetch, limit=request.limit,
+            row_key=lambda row: str(getattr(row, "shcode", "") or "").strip(),
+        )
+
+    @staticmethod
+    async def _read_overseas(ls: Any, request: Any) -> Any:
+        """Single transport boundary for g3112 pages."""
+        from programgarden import ranking_nodes as rn
+
+        market_api = ls.overseas_stock().market()
+
+        async def fetch(cursor, cont_key):
+            tr = market_api.g3112(body=rn.overseas_in_block(request, cts_value=cursor or ""))
+            if cursor:
+                tr.request_data.header.tr_cont = "Y"
+                tr.request_data.header.tr_cont_key = cont_key or ""
+            return rn.overseas_page(await tr.req_async())
+
+        return await rn.collect_pages(
+            fetch, limit=request.limit,
+            row_key=lambda row: (str(getattr(row, "keysymbol", "") or "").strip()
+                                 or str(getattr(row, "symbol", "") or "").strip()),
+        )
 
 
 # 선물 월물 코드 (거래소 공통) — LS o3101 의 LstngM 이 이 문자를 그대로 준다.
@@ -6141,6 +6283,7 @@ class AccountNodeExecutor(NodeExecutorBase):
         """
         from datetime import datetime
         from zoneinfo import ZoneInfo
+        from programgarden.futures_exchange import resolve_contract_exchanges
         from programgarden.futures_read_evidence import require_complete_rows, require_position_identity
         from programgarden.paper_futures_business_date import is_paper_client
 
@@ -6166,7 +6309,6 @@ class AccountNodeExecutor(NodeExecutorBase):
 
             # block2 = 종목별 잔고 (list 형태로 변환, NewOrderNode 호환)
             positions = []
-            held_symbols = []
             for item in position_rows:
                 require_position_identity(item)
                 symbol = item.IsuCodeVal.strip() if item.IsuCodeVal else ""
@@ -6187,7 +6329,9 @@ class AccountNodeExecutor(NodeExecutorBase):
 
                 positions.append({
                     "symbol": symbol,
-                    "exchange": "HKEX",  # 해외선물 기본 거래소
+                    # CIDBQ01500 carries no exchange. Filled below from o3105
+                    # ExchCd; None when that evidence is unavailable.
+                    "exchange": None,
                     "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else symbol,
                     "direction": position_side,  # long/short
                     "close_side": close_side,  # 청산 시 주문 방향: sell/buy
@@ -6213,7 +6357,6 @@ class AccountNodeExecutor(NodeExecutorBase):
                     "pnl_rate": pnl_rate,  # 명목가 대비 수익률(%) — StopLoss/ProfitTarget 소비
                     "currency": item.CrcyCodeVal.strip() if item.CrcyCodeVal else "",
                 })
-                held_symbols.append({"exchange": "HKEX", "symbol": symbol})
 
             # 2. CIDBQ05300: 예탁자산 조회 (CIDBQ03000 상위호환).
             # Wrapped in its own try so a balance failure no longer drops
@@ -6287,6 +6430,15 @@ class AccountNodeExecutor(NodeExecutorBase):
                 balance_info["_partial_failure"] = True
                 balance_info["_failure_codes"] = ["CIDBQ05300"]
                 balance_info["_failure_reason"] = cidbq05300_failure_reason or "CIDBQ05300 fetch failed"
+
+            # 3. o3105: the exchange of each held contract (at most one read per
+            # symbol per run; unresolved stays None, never a default exchange).
+            exchanges = await resolve_contract_exchanges(
+                ls, [row["symbol"] for row in positions], context, node_id,
+            )
+            for row in positions:
+                row["exchange"] = exchanges.get(row["symbol"])
+            held_symbols = [{"exchange": row["exchange"], "symbol": row["symbol"]} for row in positions]
 
             context.log("info", f"AccountNode (futures): {len(positions)} positions, {len(balance_by_currency)} currencies", node_id)
             return {
@@ -6663,6 +6815,7 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
         """해외선물 미체결 조회 (CIDBQ02400)"""
         from datetime import datetime
         from zoneinfo import ZoneInfo
+        from programgarden.futures_exchange import resolve_contract_exchanges
         from programgarden.futures_read_evidence import require_complete_rows, require_pending_identity
         from programgarden.paper_futures_business_date import is_paper_client, read_current_business_date
         from programgarden.database.broker_evidence import StartupEvidenceUnavailable
@@ -6709,7 +6862,9 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
 
             open_orders.append({
                 "order_id": order_id,
-                "exchange": "HKEX",  # 해외선물 기본
+                # CIDBQ02400 carries no exchange. Filled below from o3105
+                # ExchCd; None when that evidence is unavailable.
+                "exchange": None,
                 "symbol": item.IsuCodeVal.strip() if hasattr(item, 'IsuCodeVal') and item.IsuCodeVal else "",
                 "name": item.IsuNm.strip() if hasattr(item, 'IsuNm') and item.IsuNm else "",
                 "side": side,
@@ -6720,6 +6875,12 @@ class OpenOrdersNodeExecutor(NodeExecutorBase):
                 "price": float(item.OvrsDrvtOrdPrc) if hasattr(item, 'OvrsDrvtOrdPrc') and item.OvrsDrvtOrdPrc else 0.0,
                 "order_time": item.OrdSndDttm if hasattr(item, 'OrdSndDttm') else "",
             })
+
+        exchanges = await resolve_contract_exchanges(
+            ls, [row["symbol"] for row in open_orders], context, node_id,
+        )
+        for row in open_orders:
+            row["exchange"] = exchanges.get(row["symbol"])
 
         context.log("info", f"OpenOrdersNode (futures): {len(open_orders)} open orders", node_id)
         return {
@@ -10378,7 +10539,16 @@ class ConditionNodeExecutor(NodeExecutorBase):
             context.log("error", f"items.from is required", node_id)
             return []
 
-        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+        # 2.6.6: evaluate only the authored items templates (never values a tool call
+        # or another runtime path placed here).
+        from programgarden import binding_provenance as _bp
+        authored_items = _bp.authored_at(context, node_id, "items")
+        authored_extract = _bp.child(authored_items, "extract")
+        from_data = (
+            evaluator.evaluate(from_expr)
+            if isinstance(from_expr, str) and _bp.may_evaluate(from_expr, _bp.child(authored_items, "from"))
+            else from_expr
+        )
 
         if not isinstance(from_data, list):
             from_data = [from_data] if from_data else []
@@ -10397,7 +10567,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
         # 외부 바인딩 값 미리 평가 (row 미포함 표현식)
         external_values = {}
         for target_field, source_expr in extract.items():
-            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+            if (isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr
+                    and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                 try:
                     external_values[target_field] = evaluator.evaluate(source_expr)
                 except Exception as e:
@@ -10420,7 +10591,8 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 if target_field in external_values:
                     # 외부 바인딩 (캐시된 값 사용)
                     record[target_field] = external_values[target_field]
-                elif isinstance(source_expr, str) and "{{" in source_expr:
+                elif (isinstance(source_expr, str) and "{{" in source_expr
+                        and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                     # row 포함 표현식 평가
                     try:
                         record[target_field] = row_evaluator.evaluate(source_expr)
@@ -10457,9 +10629,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
         Returns:
             평가된 데이터 또는 기본값
         """
+        from programgarden import binding_provenance as _bp
+
         binding_expr = config.get(port_name)
 
-        if binding_expr and isinstance(binding_expr, str):
+        if (binding_expr and isinstance(binding_expr, str)
+                and _bp.may_evaluate(binding_expr, _bp.authored_at(context, node_id, port_name))):
             # {{ nodes.xxx.yyy }} 표현식 평가
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
@@ -10580,8 +10755,12 @@ class ConditionNodeExecutor(NodeExecutorBase):
                             try:
                                 sweep_fields = fields or config.get("fields", {}) or config.get("params", {})
                                 if sweep_fields:
+                                    from programgarden import binding_provenance as _bp
                                     _expr_ctx = context.get_expression_context()
-                                    sweep_fields = ExpressionEvaluator(_expr_ctx).evaluate_fields(sweep_fields)
+                                    sweep_fields = _bp.evaluate_fields_authored(
+                                        ExpressionEvaluator(_expr_ctx), sweep_fields,
+                                        _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                                    )
                                 await sandbox.execute(
                                     plugin_id=plugin_id,
                                     plugin_callable=plugin,
@@ -10608,9 +10787,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
                 # fields 표현식 평가
                 evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
                 if evaluated_fields:
+                    from programgarden import binding_provenance as _bp
                     expr_context = context.get_expression_context()
                     evaluator = ExpressionEvaluator(expr_context)
-                    evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+                    evaluated_fields = _bp.evaluate_fields_authored(
+                        evaluator, evaluated_fields,
+                        _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                    )
                 
                 # positions 기반 플러그인 직접 실행
                 context.log("info", f"Condition (positions-based) running with {len(positions)} positions", node_id)
@@ -10797,9 +10980,13 @@ class ConditionNodeExecutor(NodeExecutorBase):
             # fields 표현식 평가
             evaluated_fields = fields or config.get("fields", {}) or config.get("params", {})
             if evaluated_fields:
+                from programgarden import binding_provenance as _bp
                 expr_context = context.get_expression_context()
                 evaluator = ExpressionEvaluator(expr_context)
-                evaluated_fields = evaluator.evaluate_fields(evaluated_fields)
+                evaluated_fields = _bp.evaluate_fields_authored(
+                    evaluator, evaluated_fields,
+                    _bp.authored_at(context, node_id, "fields" if (fields or config.get("fields")) else "params"),
+                )
 
             # symbols 정규화 (거래소 정보 포함)
             from programgarden_core.models import symbols_to_dict_list, extract_symbol_codes
@@ -13014,7 +13201,16 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             context.log("error", f"items.from is required", node_id)
             return []
 
-        from_data = evaluator.evaluate(from_expr) if isinstance(from_expr, str) else from_expr
+        # 2.6.6: evaluate only the authored items templates (never values a tool call
+        # or another runtime path placed here).
+        from programgarden import binding_provenance as _bp
+        authored_items = _bp.authored_at(context, node_id, "items")
+        authored_extract = _bp.child(authored_items, "extract")
+        from_data = (
+            evaluator.evaluate(from_expr)
+            if isinstance(from_expr, str) and _bp.may_evaluate(from_expr, _bp.child(authored_items, "from"))
+            else from_expr
+        )
 
         if not isinstance(from_data, list):
             from_data = [from_data] if from_data else []
@@ -13033,7 +13229,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
         # 외부 바인딩 값 미리 평가
         external_values = {}
         for target_field, source_expr in extract.items():
-            if isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr:
+            if (isinstance(source_expr, str) and "{{" in source_expr and "row." not in source_expr
+                    and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                 try:
                     external_values[target_field] = evaluator.evaluate(source_expr)
                 except Exception as e:
@@ -13056,7 +13253,8 @@ class BacktestEngineNodeExecutor(NodeExecutorBase):
             for target_field, source_expr in extract.items():
                 if target_field in external_values:
                     record[target_field] = external_values[target_field]
-                elif isinstance(source_expr, str) and "{{" in source_expr:
+                elif (isinstance(source_expr, str) and "{{" in source_expr
+                        and _bp.may_evaluate(source_expr, _bp.child(authored_extract, target_field))):
                     try:
                         record[target_field] = row_evaluator.evaluate(source_expr)
                     except Exception:
@@ -14999,12 +15197,16 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
             return result
         
         # 표현식 평가기 준비
+        from programgarden import binding_provenance as _bp
         expr_context = context.get_expression_context()
         evaluator = ExpressionEvaluator(expr_context)
+        authored = _bp.authored_at(context, node_id, "strategies")
         
-        def evaluate_recursive(value: Any) -> Any:
-            """딕셔너리/리스트 내부 표현식을 재귀적으로 평가"""
+        def evaluate_recursive(value: Any, authored_value: Any) -> Any:
+            """딕셔너리/리스트 내부 표현식을 재귀적으로 평가 (작성된 템플릿만 — 2.6.6)"""
             if isinstance(value, str) and "{{" in value:
+                if not _bp.may_evaluate(value, authored_value):
+                    return value  # resolved runtime data
                 try:
                     return evaluator.evaluate(value)
                 except Exception as e:
@@ -15015,14 +15217,25 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
                         pass
                     return value
             elif isinstance(value, dict):
-                return {k: evaluate_recursive(v) for k, v in value.items()}
+                if authored_value is not _bp.LEGACY and not isinstance(authored_value, dict):
+                    return _bp.copy_containers(value)
+                return {k: evaluate_recursive(v, _bp.child(authored_value, k)) for k, v in value.items()}
             elif isinstance(value, list):
-                return [evaluate_recursive(v) for v in value]
+                if authored_value is not _bp.LEGACY and not (
+                    isinstance(authored_value, list) and len(authored_value) == len(value)
+                ):
+                    return _bp.copy_containers(value)
+                return [
+                    evaluate_recursive(v, _bp.element(authored_value, i, len(value)))
+                    for i, v in enumerate(value)
+                ]
             return value
         
         # 단일 객체를 배열로 변환
         if not isinstance(strategies_input, list):
             strategies_input = [strategies_input]
+            if authored is not _bp.LEGACY:
+                authored = [authored]
         
         for idx, item in enumerate(strategies_input):
             if not item:
@@ -15030,7 +15243,7 @@ class BenchmarkCompareNodeExecutor(NodeExecutorBase):
             
             # 딕셔너리 내부의 표현식을 먼저 평가 (equity_curve: "{{ }}" 등)
             if isinstance(item, dict):
-                item = evaluate_recursive(item)
+                item = evaluate_recursive(item, _bp.element(authored, idx, len(strategies_input)))
             
             strategy_data = {}
             meta = {
@@ -16927,6 +17140,14 @@ class NewOrderNodeExecutor(NodeExecutorBase):
         from datetime import date
         from decimal import Decimal
 
+        if not isinstance(order.get("exchange"), str):
+            # A futures position or pending row whose exchange o3105 could not
+            # confirm carries exchange None. Stop before any lifecycle entry is
+            # recorded, so nothing is sent and a later retry is not blocked.
+            raise ValueError(
+                "Futures order exchange is unavailable (exchange=None, e.g. a position "
+                "whose exchange o3105 could not confirm); no order was sent"
+            )
         cycle = getattr(context._workflow_job, "_order_cycle", 0)
         iteration = iteration_index
         if iteration is None:
@@ -19620,8 +19841,12 @@ class AIAgentNodeExecutor(NodeExecutorBase):
         output_format = config.get("output_format", "text")
         output_schema = config.get("output_schema")
 
-        # 표현식 평가 (user_prompt에 {{ }} 바인딩)
-        if "{{" in user_prompt:
+        # 표현식 평가 (user_prompt에 {{ }} 바인딩). 2.6.6: only the authored template —
+        # a prompt that already carries resolved upstream text is data.
+        from programgarden import binding_provenance as _bp
+        if "{{" in user_prompt and _bp.may_evaluate(
+            user_prompt, _bp.authored_at(context, node_id, "user_prompt"),
+        ):
             expr_context = context.get_expression_context()
             evaluator = ExpressionEvaluator(expr_context)
             try:
@@ -20517,6 +20742,8 @@ class WorkflowExecutor:
             "KoreaStockFundamentalNode": FundamentalNodeExecutor(),
             "KoreaStockHistoricalDataNode": HistoricalDataNodeExecutor(),
             "KoreaStockSymbolQueryNode": SymbolQueryNodeExecutor(),
+            "KoreaStockRankingNode": RankingNodeExecutor(),
+            "OverseasStockRankingNode": RankingNodeExecutor(),
             "KoreaStockNewOrderNode": NewOrderNodeExecutor(),
             "KoreaStockModifyOrderNode": ModifyOrderNodeExecutor(),
             "KoreaStockCancelOrderNode": CancelOrderNodeExecutor(),
@@ -21247,6 +21474,12 @@ class WorkflowJob:
         self.workflow = workflow
         self.context = context
         self.executor = executor
+
+        # Expressions are evaluated only from authored templates; values produced
+        # at runtime (LLM text, HTTP bodies, inputs, credentials) are data (2.6.6).
+        register_authored = getattr(context, "register_authored_node_configs", None)
+        if callable(register_authored):
+            register_authored(workflow)
 
         # State
         self.status = "pending"
@@ -22178,6 +22411,8 @@ class WorkflowJob:
         "FuturesContractNode",
         "OverseasFuturesContractInfoNode",  # One exact identity; explicit SplitNode for a batch.
         "OverseasFuturesSymbolQueryNode", "OverseasStockSymbolQueryNode", "KoreaStockSymbolQueryNode",
+        # Ranking nodes produce arrays too: an upstream array must not repeat the LS query N times.
+        "KoreaStockRankingNode", "OverseasStockRankingNode",
         "SymbolFilterNode",  # 집합 연산 노드 (배열 입력/출력)
         # LogicNode 도 집합 연산 노드다 — 상류 조건 결과 **배열 전체**를 AND/OR 해야 한다.
         # 종목별로 쪼개 N회 돌면 매 회가 전체 passed_symbols 를 다시 내보내 병합 시 N² 가 된다
@@ -23088,7 +23323,10 @@ class WorkflowJob:
         # 1순위: 명시적 array 바인딩 ({{ }} 평가). 있으면 상류보다 우선.
         array_cfg = config.get("array")
         if array_cfg is not None:
-            if isinstance(array_cfg, str) and "{{" in array_cfg:
+            from programgarden import binding_provenance as _bp
+            if isinstance(array_cfg, str) and "{{" in array_cfg and _bp.may_evaluate(
+                array_cfg, _bp.authored_at(self.context, split_id, "array"),
+            ):
                 evaluator = ExpressionEvaluator(self.context.get_expression_context())
                 try:
                     array_cfg = evaluator.evaluate(array_cfg)
@@ -23607,6 +23845,7 @@ class WorkflowJob:
             전체삼킴 경로 그대로다.
         """
         from programgarden_core.expression import ExpressionEvaluator
+        from programgarden import binding_provenance as _bp
 
         # items는 별도 처리 대상이므로 항상 제외
         items_orig = config.get("items")
@@ -23619,6 +23858,12 @@ class WorkflowJob:
                 v = config_copy[k]
                 if self._references_iteration_item(v):
                     deferred[k] = config_copy.pop(k)
+
+        # 2.6.6: only templates still at their authored position are evaluated. Values a
+        # previous pass resolved (or engine-injected runtime data such as _realtime_data)
+        # are hidden from evaluate_fields and restored unchanged afterwards.
+        authored = _bp.authored_root(self.context, node_id)
+        config_copy = _bp.shield_config(config_copy, authored)
 
         deep_mode = bool(getattr(self.context, "is_deep_validate", False))
         if deep_mode and node_id is not None:
@@ -23662,6 +23907,8 @@ class WorkflowJob:
             except Exception as e:
                 self.context.log("warning", f"Expression resolve failed: {e}")
                 resolved = config_copy
+
+        resolved = _bp.unshield_config(resolved, authored)
 
         # 지연 평가 필드 복원
         resolved.update(deferred)

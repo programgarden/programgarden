@@ -144,6 +144,23 @@ class TestChat:
         assert params["temperature"] == 0.7
         assert params["max_tokens"] == 1000
 
+    @pytest.mark.parametrize("provider,model,expected,routed", [
+        ("gemini", "gemini-2.5-flash", "gemini/gemini-2.5-flash", "gemini"),
+        ("deepseek", "deepseek-chat", "deepseek/deepseek-chat", "deepseek"),
+        ("gemini", "gemini/gemini-2.5-flash", "gemini/gemini-2.5-flash", "gemini"),
+        ("openai", "gpt-4o-mini", "gpt-4o-mini", "openai"),
+        ("anthropic", "claude-haiku-4-5-20251001", "claude-haiku-4-5-20251001", None),
+    ])
+    def test_model_routes_to_credential_provider(self, provider, model, expected, routed):
+        """Credential-derived providers reach their own litellm API (offline routing check)."""
+        import litellm
+
+        params = LLMProvider(_make_config(provider=provider, model=model))._build_params(
+            [{"role": "user", "content": "hi"}])
+        assert params["model"] == expected
+        if routed:  # Anthropic names are left as written; litellm's own map routes them.
+            assert litellm.get_llm_provider(params["model"])[1] == routed
+
     @pytest.mark.asyncio
     async def test_chat_cost_calculation_fallback(self):
         """completion_cost 실패 시 0.0 반환."""

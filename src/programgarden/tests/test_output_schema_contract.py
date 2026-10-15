@@ -30,6 +30,8 @@ from programgarden.executor import (
     SymbolQueryNodeExecutor,
     WatchlistNodeExecutor,
 )
+from programgarden import ranking_nodes
+from programgarden.ranking_nodes import RankingRowBuilder
 
 
 def _runtime_keys(cls, method_name: str, var: str = "values") -> Set[str]:
@@ -184,6 +186,10 @@ CASES = [
     ("OverseasStockSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_stock_master", "all_symbols", "append")]),
     ("KoreaStockSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_korea_stock_master", "all_symbols", "append")]),
     ("OverseasFuturesSymbolQueryNode", "symbols", [(SymbolQueryNodeExecutor, "_execute_futures_master", "all_symbols", "append")]),
+    ("KoreaStockRankingNode", "rankings", [(RankingRowBuilder, "korea_row", None, "return")]),
+    ("KoreaStockRankingNode", "symbols", [(RankingRowBuilder, "korea_symbol", None, "return")]),
+    ("OverseasStockRankingNode", "rankings", [(RankingRowBuilder, "overseas_row", None, "return")]),
+    ("OverseasStockRankingNode", "symbols", [(RankingRowBuilder, "overseas_symbol", None, "return")]),
 
     # ── 계좌 (REST) ──
     ("OverseasStockAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_stock", "positions", "append")]),
@@ -193,7 +199,7 @@ CASES = [
     ("OverseasFuturesAccountNode", "positions", [(AccountNodeExecutor, "_ls_overseas_futureoption", "positions", "append")]),
     ("OverseasStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_stock", "held_symbols", "listcomp")]),
     ("KoreaStockAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_korea_stock", "held_symbols", "listcomp")]),
-    ("OverseasFuturesAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_futureoption", "held_symbols", "append")]),
+    ("OverseasFuturesAccountNode", "held_symbols", [(AccountNodeExecutor, "_ls_overseas_futureoption", "held_symbols", "listcomp")]),
 
     # ── 계좌 (실시간) — REST 스냅샷 갈래와 WebSocket tracker 갈래가 같은 포트를 만든다 ──
     ("OverseasStockRealAccountNode", "positions", [
@@ -371,6 +377,8 @@ RETURN_CASES = [
     (SymbolQueryNodeExecutor, "_execute_stock_master", {"symbols", "count"}),
     (SymbolQueryNodeExecutor, "_execute_korea_stock_master", {"symbols", "count"}),
     (SymbolQueryNodeExecutor, "_execute_futures_master", {"symbols", "count"}),
+    (ranking_nodes, "korea_outputs", {"rankings", "symbols", "count"}),
+    (ranking_nodes, "overseas_outputs", {"rankings", "symbols", "count"}),
     (RealMarketDataNodeExecutor, "_execute_stock", {"symbols", "ohlcv_data", "data"}),
     (RealMarketDataNodeExecutor, "_execute_futures", {"symbols", "ohlcv_data", "data"}),
     (RealMarketDataNodeExecutor, "_execute_korea_stock", {"symbols", "ohlcv_data", "data"}),

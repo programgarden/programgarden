@@ -185,6 +185,72 @@ KOREA_STOCK_SYMBOL_QUERY_FIELDS: List[Dict[str, str]] = [
     {"name": "product", "type": "string", "description": "상품 구분 (항상 korea_stock)"},
 ]
 
+# ── KoreaStockRankingNode.rankings (t1441 / t1452 / t1463 / t1444) ──
+# Values are consumed as returned by LS; units are named, never converted.
+KOREA_STOCK_RANKING_FIELDS: List[Dict[str, str]] = [
+    {"name": "rank", "type": "integer", "description": "1-based rank in this result"},
+    {"name": "symbol", "type": "string", "description": "6-digit KRX code (shcode)"},
+    {"name": "exchange", "type": "string", "description": "Always KRX"},
+    {"name": "market", "type": "string", "description": "KOSPI/KOSDAQ when the request named a market; null for market=all"},
+    {"name": "name", "type": "string", "description": "Issue name (hname)"},
+    {"name": "price", "type": "number", "description": "Current price"},
+    {"name": "open", "type": "number", "description": "Session open (t1441 only; null otherwise)"},
+    {"name": "high", "type": "number", "description": "Session high (t1441 only; null otherwise)"},
+    {"name": "low", "type": "number", "description": "Session low (t1441 only; null otherwise)"},
+    {"name": "sign", "type": "string", "description": "Raw LS direction code (1 upper limit, 2 up, 3 unchanged, 4 lower limit, 5 down)"},
+    {"name": "change", "type": "number", "description": "Change vs previous close, signed from the sign code"},
+    {"name": "change_pct", "type": "number", "description": "Change percent vs previous close, signed from the sign code"},
+    {"name": "volume", "type": "number", "description": "Cumulative volume (shares)"},
+    {"name": "trading_value", "type": "number", "description": "Trading value as returned (t1441/t1463; null otherwise)"},
+    {"name": "trading_value_unit", "type": "string", "description": "as_returned (t1441) or KRW_million (t1463); null when trading_value is null"},
+    {"name": "market_cap", "type": "number", "description": "Market capitalisation as returned (t1441/t1463/t1444; null for t1452)"},
+    {"name": "market_cap_unit", "type": "string", "description": "as_returned (t1441), KRW_million (t1463) or KRW_100million (t1444); null when market_cap is null"},
+    {"name": "product", "type": "string", "description": "Always korea_stock"},
+    {"name": "source_tr", "type": "string", "description": "LS TR that produced the row (t1441/t1452/t1463/t1444)"},
+]
+
+# ── KoreaStockRankingNode.symbols ──
+KOREA_STOCK_RANKING_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "Always KRX"},
+    {"name": "market", "type": "string", "description": "KOSPI/KOSDAQ when the request named a market; null for market=all"},
+    {"name": "symbol", "type": "string", "description": "6-digit KRX code"},
+    {"name": "name", "type": "string", "description": "Issue name"},
+    {"name": "product", "type": "string", "description": "Always korea_stock"},
+]
+
+# ── OverseasStockRankingNode.rankings (g3112) ──
+OVERSEAS_STOCK_RANKING_FIELDS: List[Dict[str, str]] = [
+    {"name": "rank", "type": "integer", "description": "1-based rank in this result"},
+    {"name": "symbol", "type": "string", "description": "Ticker symbol"},
+    {"name": "exchange", "type": "string", "description": "NYSE or NASDAQ from the LS key symbol prefix (81/82); null when unavailable"},
+    {"name": "exchange_source", "type": "string", "description": "keysymbol when derived from the LS key symbol, otherwise unavailable"},
+    {"name": "name", "type": "string", "description": "Korean issue name (korname)"},
+    {"name": "exchange_name", "type": "string", "description": "LS exchange label and symbol as returned (exsymbol, e.g. '나스닥 AEHL')"},
+    {"name": "keysymbol", "type": "string", "description": "LS key symbol as returned"},
+    {"name": "price", "type": "number", "description": "Current price"},
+    {"name": "sign", "type": "string", "description": "Raw LS direction code"},
+    {"name": "change", "type": "number", "description": "Change vs previous close, signed from the sign code"},
+    {"name": "change_pct", "type": "number", "description": "Change percent vs previous close, signed from the sign code"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "trading_value", "type": "number", "description": "Trading value as returned by LS (unit not declared)"},
+    {"name": "trading_value_unit", "type": "string", "description": "as_returned; null when trading_value is null"},
+    {"name": "turnover", "type": "number", "description": "Turnover as returned by LS"},
+    {"name": "market_cap", "type": "number", "description": "Market capitalisation as returned by LS (unit not declared)"},
+    {"name": "market_cap_unit", "type": "string", "description": "as_returned; null when market_cap is null"},
+    {"name": "high_52w", "type": "number", "description": "52-week high"},
+    {"name": "low_52w", "type": "number", "description": "52-week low"},
+    {"name": "product", "type": "string", "description": "Always overseas_stock"},
+    {"name": "source_tr", "type": "string", "description": "Always g3112"},
+]
+
+# ── OverseasStockRankingNode.symbols ── (rows without a known exchange are omitted)
+OVERSEAS_STOCK_RANKING_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "NYSE or NASDAQ"},
+    {"name": "symbol", "type": "string", "description": "Ticker symbol"},
+    {"name": "name", "type": "string", "description": "Korean issue name"},
+    {"name": "product", "type": "string", "description": "Always overseas_stock"},
+]
+
 # ── OverseasFuturesSymbolQueryNode.symbols (o3101 마스터) ──
 OVERSEAS_FUTURES_SYMBOL_QUERY_FIELDS: List[Dict[str, str]] = [
     {"name": "exchange", "type": "string", "description": "거래소 코드 (CME, HKEX 등 — 주문에 쓰는 값)"},

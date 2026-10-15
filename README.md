@@ -1,3 +1,7 @@
+The 2.6.6 release candidate adds [Korea and overseas stock ranking nodes](docs/node_reference.md#rankingnode-순위-조회), evaluates only expression templates authored in the workflow so runtime values such as AI output stay data ([expression guide](docs/expression_guide.md)), routes Gemini and DeepSeek credentials to their own APIs, and reads an unresolved futures position exchange again at most once per 5 minutes instead of leaving it empty for the whole run ([futures exchange](docs/futures-position-exchange.md#rate-and-caching), [validation](docs/release-2.6.6-validation.md)). Publication and consumer deployment are separate steps.
+
+The 2.6.5 release candidate [futures position exchange correction](docs/futures-position-exchange.md) reports each futures position's, held symbol's and pending order's exchange from o3105 instead of a fixed `HKEX`, and leaves it empty when the broker does not confirm it. Publication and consumer deployment are separate steps.
+
 The 2.6.4 release candidate [paper futures account correction](docs/paper-futures-business-date.md#account-node-and-rejection-messages-264-candidate) accepts the paper empty-account answer on the futures account node and names the broker message in unaccepted response errors. Publication and consumer deployment are separate steps.
 
 The 2.6.3 release candidate [paper futures query correction](docs/paper-futures-business-date.md) uses a fresh broker-provided account date for paper order inquiries while retaining strict response checks. Publication and consumer deployment are separate steps.
@@ -39,7 +43,7 @@ The 2.6.2 release candidate [futures minute alias correction](docs/futures-minut
 
 ## 주요 기능
 
-* **노드 기반 워크플로우** — 77개 노드를 조합하여 코딩 없이 전략 구성
+* **노드 기반 워크플로우** — 76개 노드를 조합하여 코딩 없이 전략 구성
 * **해외주식 · 해외선물 · 국내주식** — LS증권 OpenAPI 기반 실시간 시세 조회 및 자동 주문
 * **AI Agent** — LLM 기반 분석 및 의사결정을 워크플로우에 통합
 * **전략 플러그인** — RSI, MACD 등 커뮤니티 기여 전략을 조합하여 활용

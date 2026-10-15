@@ -15,7 +15,7 @@ from .ls.overseas_stock.accno import (
     COSOQ02701
 )
 from .ls.overseas_stock.chart import g3103, g3202, g3203, g3204
-from .ls.overseas_stock.market import g3101, g3102, g3104, g3106, g3190
+from .ls.overseas_stock.market import g3101, g3102, g3104, g3106, g3190, g3112
 from .ls.overseas_stock.order import (
     COSAT00301, COSAT00311, COSMT00300, COSAT00400
 )
@@ -244,6 +244,7 @@ __all__ = [
     g3104,
     g3106,
     g3190,
+    g3112,
 
     COSAT00301,
     COSAT00311,

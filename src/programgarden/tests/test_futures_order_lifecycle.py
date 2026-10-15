@@ -227,6 +227,27 @@ async def test_invalid_route_fails_before_login_and_prepare(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_journal", [False, True])
+async def test_unresolved_exchange_fails_before_prepare_and_does_not_block_retry(tmp_path, monkeypatch, with_journal):
+    """A position row whose exchange o3105 could not confirm carries exchange None (2.6.5)."""
+    journal = Journal() if with_journal else None
+    ctx = context(tmp_path, journal)
+    requests, logins = sdk(monkeypatch)
+    executor = engine.NewOrderNodeExecutor()
+    unresolved = {**CONFIG, "order": {**ORDER, "exchange": None}}
+    result = await execute(executor, ctx, unresolved)
+    assert result["order_result"]["success"] is False
+    assert "exchange is unavailable" in result["order_result"]["error"]
+    assert requests == [] and logins == []
+    assert ctx._order_lifecycle_operations == {}
+    assert journal is None or journal.prepared == []
+    # The same invocation with a confirmed exchange is not blocked as "already prepared".
+    retried = await execute(executor, ctx)
+    assert retried["order_result"]["success"] is True
+    assert len(requests) == 1 and requests[0].ExchCode == "HKEX"
+
+
+@pytest.mark.asyncio
 async def test_two_brokers_exact_second_credential_is_used(tmp_path, monkeypatch):
     requests, logins = sdk(monkeypatch)
     ctx = context(tmp_path, Journal())
@@ -332,7 +353,11 @@ async def test_actual_split_children_and_retries_keep_separate_operations(tmp_pa
 @pytest.mark.asyncio
 async def test_actual_auto_iteration_keeps_identical_items_distinct_with_legacy_registry(tmp_path, monkeypatch):
     executor = engine.WorkflowExecutor()
-    resolved, validation = executor.compile(workflow_definition())
+    # The iterated binding must be authored in the definition: since 2.6.6 the job only
+    # evaluates templates that the workflow itself wrote at that config position.
+    definition = workflow_definition()
+    definition["nodes"][2]["order"] = "{{ item }}"
+    resolved, validation = executor.compile(definition)
     assert validation.is_valid
     ctx = context(tmp_path, Journal())
     ctx.context_params["enable_order_idempotency"] = True

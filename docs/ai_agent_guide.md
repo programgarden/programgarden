@@ -207,8 +207,14 @@ flowchart LR
 | OpenAI | `llm_openai` | gpt-4o, gpt-4o-mini |
 | Anthropic | `llm_anthropic` | claude-sonnet-4-5-20250929 |
 | Google | `llm_google` | gemini-2.0-flash |
+| DeepSeek | `llm_deepseek` | deepseek-chat |
 | Azure OpenAI | `llm_azure_openai` | (배포 이름) |
 | Ollama | `llm_ollama` | llama3, mistral (로컬 실행) |
+
+> **모델 이름 (2.6.6)**: `llm_google`·`llm_deepseek` credential 의 모델 이름에 제공자 접두사가 없으면
+> 엔진이 `gemini/`·`deepseek/` 를 붙여 해당 API 로 보냅니다(예: `gemini-2.0-flash` → `gemini/gemini-2.0-flash`).
+> 접두사 없는 Gemini 이름은 litellm 이 Vertex AI 로 보내고, DeepSeek 이름은 아예 인식하지 못했기 때문입니다.
+> OpenAI·Anthropic 이름은 그대로 전달됩니다. OpenAI 외 제공자는 실제 키로 따로 확인하세요.
 
 **credential 설정 예시 (OpenAI):**
 
@@ -259,6 +265,7 @@ class MyListener(BaseExecutionListener):
 - Tool로 등록된 노드는 AI가 필요에 따라 호출합니다. 호출하지 않을 수도 있습니다.
 - `cooldown_sec`으로 과도한 API 비용을 방지하세요.
 - LLM API 비용은 제공자별로 다릅니다. `max_tokens`와 `temperature`를 적절히 설정하세요.
+- AI 답변과 도구 호출 인자는 **데이터**입니다. 그 안에 `{{ … }}` 글자가 있어도 엔진은 식으로 계산하지 않습니다(2.6.6). 자세한 내용은 [Expression 가이드](expression_guide.md)를 보세요.
 
 ---
 

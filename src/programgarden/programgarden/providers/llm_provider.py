@@ -22,6 +22,22 @@ from .llm_errors import (
 logger = logging.getLogger("programgarden.providers.llm")
 
 
+# litellm infers the API from the model name. A bare Gemini name ("gemini-2.5-flash")
+# routes to Vertex AI (GCP credentials) instead of the Google AI Studio key that the
+# llm_google credential holds, and bare DeepSeek names ("deepseek-chat") are not routed
+# at all ("LLM Provider NOT provided"). The credential already names the API, so prefix
+# those two providers. OpenAI/Anthropic names keep their current routing.
+_LITELLM_MODEL_PREFIX = {"gemini": "gemini", "deepseek": "deepseek"}
+
+
+def litellm_model(provider: str | None, model: str) -> str:
+    """Model string handed to litellm for ``provider`` (prefix only when missing)."""
+    prefix = _LITELLM_MODEL_PREFIX.get((provider or "").strip().lower())
+    if prefix and model and "/" not in model:
+        return f"{prefix}/{model}"
+    return model
+
+
 @dataclass
 class LLMConfig:
     """LLMModelNode connection 출력에서 생성되는 설정."""
@@ -268,7 +284,7 @@ class LLMProvider:
         cfg = self.config
 
         params: dict[str, Any] = {
-            "model": cfg.model,
+            "model": litellm_model(cfg.provider, cfg.model),
             "messages": messages,
             "temperature": cfg.temperature,
             "max_tokens": cfg.max_tokens,

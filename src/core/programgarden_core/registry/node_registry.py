@@ -207,6 +207,7 @@ class NodeTypeRegistry:
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,
             KoreaStockMarketDataNode, KoreaStockFundamentalNode,
             KoreaStockHistoricalDataNode, KoreaStockSymbolQueryNode,
+            KoreaStockRankingNode, OverseasStockRankingNode,
             KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)
@@ -251,6 +252,7 @@ class NodeTypeRegistry:
             KoreaStockAccountNode, KoreaStockOpenOrdersNode,
             KoreaStockMarketDataNode, KoreaStockFundamentalNode,
             KoreaStockHistoricalDataNode, KoreaStockSymbolQueryNode,
+            KoreaStockRankingNode, OverseasStockRankingNode,
             KoreaStockRealMarketDataNode, KoreaStockRealAccountNode, KoreaStockRealOrderEventNode,
             KoreaStockNewOrderNode, KoreaStockModifyOrderNode, KoreaStockCancelOrderNode,
             # Data (상품 무관)

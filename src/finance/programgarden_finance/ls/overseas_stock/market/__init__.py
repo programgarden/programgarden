@@ -24,6 +24,10 @@ from . import g3190
 from .g3190 import TrG3190
 from .g3190.blocks import G3190InBlock, G3190Request, G3190RequestHeader
 
+from . import g3112
+from .g3112 import TrG3112
+from .g3112.blocks import G3112InBlock, G3112Request, G3112RequestHeader
+
 from programgarden_core.korea_alias import EnforceKoreanAliasMeta, require_korean_alias
 
 
@@ -210,6 +214,45 @@ class Market(BaseMarket):
     마스터상장종목조회 = g3190
     마스터상장종목조회.__doc__ = "상장 종목들 조회를 합니다."
 
+    @require_korean_alias
+    def g3112(
+        self,
+        body: G3112InBlock,
+        header: Optional[G3112RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrG3112:
+        """
+        LS openAPI의 g3112 해외주식 시세순위를 조회합니다.
+
+        국가·거래소구분별로 등락률, 거래량, 거래대금, 회전율, 시가총액,
+        52주 신고가/신저가, 상한가/하한가 순위를 반환합니다.
+        cts_value 기반 연속조회를 지원합니다 (초당 1건).
+
+        Args:
+            body (G3112InBlock): delaygb, natcode, exgubun, rankgubun, cts_value 입력
+            header (Optional[G3112RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrG3112: 조회를 위한 TrG3112 인스턴스 (.req() 단건, .occurs_req() 연속)
+        """
+
+        request_data = G3112Request(
+            body={
+                "g3112InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+        return TrG3112(request_data)
+
+    시세순위 = g3112
+    시세순위.__doc__ = "해외주식 시세순위(등락률, 거래량, 거래대금, 시가총액 등)를 조회합니다."
+
 
 __init__ = [
     Market,
@@ -218,4 +261,5 @@ __init__ = [
     g3104,
     g3106,
     g3190,
+    g3112,
 ]
