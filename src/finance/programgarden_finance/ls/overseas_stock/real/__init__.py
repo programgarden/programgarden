@@ -83,6 +83,7 @@ class Real(RealRequestAbstract, BaseReal):
         ping_timeout=5.0,
         max_backoff=60.0,
         max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
+        reregister_account_events_on_reconnect: bool = True,
     ):
         super().__init__(
             reconnect=reconnect,
@@ -92,6 +93,7 @@ class Real(RealRequestAbstract, BaseReal):
             max_backoff=max_backoff,
             token_manager=token_manager,
             max_subscribe_symbols=max_subscribe_symbols,
+            reregister_account_events_on_reconnect=reregister_account_events_on_reconnect,
         )
         if not token_manager:
             raise ValueError("token_manager is required")

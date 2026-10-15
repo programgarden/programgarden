@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Generic
+from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple, TypeVar, Generic
 
 import aiohttp
 
@@ -31,6 +31,62 @@ ResponseBuilder = Callable[[Optional[object], Optional[dict], Optional[dict], Op
 # 재발급을 한 번 시도한다. 두 경로 모두 상한이 있다(무한 재시도·재발급 금지).
 TRANSIENT_RETRY_DELAYS: Tuple[float, ...] = (0.5, 1.5, 3.0)
 TOKEN_REISSUE_RETRY_MAX = 2  # 한 요청 안에서 허용하는 강제 재발급 횟수
+
+# Header-only continuation walks (``header_occurs_req``) stop after this many
+# pages even when LS still answers ``tr_cont="Y"``. A walk that stops early is
+# reported as incomplete (see :func:`occurs_complete`), never as a full list.
+DEFAULT_OCCURS_MAX_PAGES = 100
+
+
+def transient_retry_delays(retries: Optional[int]) -> Tuple[float, ...]:
+    """Return the spaced retry ladder for ``SetupOptions.transient_retries``.
+
+    ``None`` keeps the default ladder (0.5/1.5/3.0 s). ``0`` disables spaced
+    retries; ``n`` keeps the first ``n`` delays of the default ladder.
+    """
+    if retries is None:
+        return TRANSIENT_RETRY_DELAYS
+    if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
+        raise ValueError("transient_retries must be None or a non-negative integer")
+    if retries > len(TRANSIENT_RETRY_DELAYS):
+        raise ValueError(
+            f"transient_retries must not exceed {len(TRANSIENT_RETRY_DELAYS)}"
+        )
+    return TRANSIENT_RETRY_DELAYS[:retries]
+
+
+def _page_failed(response: object) -> bool:
+    """A page failed when its response carries an error message.
+
+    Some TR builders use ``""`` (not ``None``) for success, so truthiness is the
+    only reliable test across TRs.
+    """
+    return bool(getattr(response, "error_msg", None))
+
+
+def _continuation_key(response: object) -> Optional[str]:
+    """Return the next-page key when LS announced another page, else ``None``."""
+    header = getattr(response, "header", None)
+    if header is None or getattr(header, "tr_cont", None) != "Y":
+        return None
+    return getattr(header, "tr_cont_key", "") or ""
+
+
+def occurs_complete(pages: Sequence[object]) -> bool:
+    """Tell whether a continuation walk returned the complete result.
+
+    True only when at least one page was returned, no page carries an error and
+    the last page did not announce another page (``tr_cont`` is not ``"Y"``).
+    A walk that stopped on a failed page, a missing or repeated continuation key
+    or the page limit is incomplete; callers must not present it as a full list.
+    """
+    if not pages:
+        return False
+    if any(_page_failed(page) for page in pages):
+        return False
+    header = getattr(pages[-1], "header", None)
+    return header is not None and getattr(header, "tr_cont", None) != "Y"
+
 
 # 주문/정정/취소 엔드포인트. 5xx·타임아웃은 **주문이 접수됐는지 알 수 없으므로**
 # 절대 자동 재시도하지 않는다(중복 주문). 반대로 '토큰 무효' 는 인증 단계에서 거부된
@@ -77,9 +133,18 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         """주문/정정/취소 엔드포인트인지 여부 (일시 실패 재시도 금지 대상)."""
         return self._url.rstrip("/").endswith(_MUTATING_URL_SUFFIX)
 
+    def _transient_delays(self) -> Tuple[float, ...]:
+        """Spaced retry ladder for this request (``SetupOptions.transient_retries``).
+
+        Read at request time so options assigned after construction still apply.
+        """
+        options = getattr(self.request_data, "options", None)
+        return transient_retry_delays(getattr(options, "transient_retries", None))
+
     async def _execute_async_with_retry(self, session: aiohttp.ClientSession) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
         transient_attempts = 0
         reissues = 0
+        delays = self._transient_delays()
 
         while True:
             # 재발급 single-flight 판정을 위해 **요청을 보내기 직전**의 토큰 세대를 남긴다.
@@ -102,12 +167,12 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                     continue
 
             elif kind is TokenFailureKind.TRANSIENT and not self._is_mutating:
-                if transient_attempts < len(TRANSIENT_RETRY_DELAYS):
-                    delay = TRANSIENT_RETRY_DELAYS[transient_attempts]
+                if transient_attempts < len(delays):
+                    delay = delays[transient_attempts]
                     transient_attempts += 1
                     logger.warning(
                         "%s 일시 실패 — %.1f초 후 재시도 (%d/%d): %s",
-                        self._url, delay, transient_attempts, len(TRANSIENT_RETRY_DELAYS),
+                        self._url, delay, transient_attempts, len(delays),
                         detail,
                     )
                     await asyncio.sleep(delay)
@@ -116,8 +181,11 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                 # 단, **서버에 닿지도 못한 실패**(네트워크 예외)는 제외한다 — 토큰을 바꿀
                 # 이유가 없고, 회선 장애가 재발급 예산을 태워 나중의 진짜 토큰 사고를
                 # 막지 못하게 만든다.
+                # transient_retries=0 means the caller paces and retries itself;
+                # an untried ladder is not evidence of a hidden token problem.
                 if (
                     exc is None
+                    and transient_attempts > 0
                     and reissues < TOKEN_REISSUE_RETRY_MAX
                     and self._token_manager is not None
                 ):
@@ -134,6 +202,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
     def _execute_sync_with_retry(self) -> Tuple[Optional[object], Optional[dict], Optional[dict]]:
         transient_attempts = 0
         reissues = 0
+        delays = self._transient_delays()
 
         while True:
             generation = self._token_generation()
@@ -155,12 +224,12 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                     continue
 
             elif kind is TokenFailureKind.TRANSIENT and not self._is_mutating:
-                if transient_attempts < len(TRANSIENT_RETRY_DELAYS):
-                    delay = TRANSIENT_RETRY_DELAYS[transient_attempts]
+                if transient_attempts < len(delays):
+                    delay = delays[transient_attempts]
                     transient_attempts += 1
                     logger.warning(
                         "%s 일시 실패 — %.1f초 후 재시도 (%d/%d): %s",
-                        self._url, delay, transient_attempts, len(TRANSIENT_RETRY_DELAYS),
+                        self._url, delay, transient_attempts, len(delays),
                         detail,
                     )
                     time.sleep(delay)
@@ -168,6 +237,7 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
                 # 비동기 경로와 같은 이유로 네트워크 예외는 재발급으로 승격하지 않는다.
                 if (
                     exc is None
+                    and transient_attempts > 0
                     and reissues < TOKEN_REISSUE_RETRY_MAX
                     and self._token_manager is not None
                 ):
@@ -440,3 +510,128 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
             await session.close()
             callback and callback(None, RequestStatus.CLOSE)
             return results
+
+    # ------------------------------------------------------------------
+    # Header-only continuation (account TRs without a body cursor)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _continuation_stop_reason(
+        key: str, seen_keys: Set[str], pages: int, max_pages: int
+    ) -> Optional[str]:
+        """Why a walk must stop although LS announced another page, if it must."""
+        if not key.strip():
+            return "continuation requested without tr_cont_key"
+        if key in seen_keys:
+            return "continuation key repeated"
+        if pages >= max_pages:
+            return f"page limit {max_pages} reached"
+        return None
+
+    def _log_continuation_stop(self, reason: str, pages: int) -> None:
+        tr_cd = getattr(getattr(self.request_data, "header", None), "tr_cd", "?")
+        logger.error(
+            "%s continuation stopped after %d page(s): %s — result is incomplete",
+            tr_cd, pages, reason,
+        )
+
+    def header_occurs_req(
+        self,
+        callback: Optional[Callable[[Optional[R], RequestStatus], None]] = None,
+        delay: float = 1,
+        max_pages: int = DEFAULT_OCCURS_MAX_PAGES,
+    ) -> list[R]:
+        """Read every page of a TR whose continuation is carried by headers only.
+
+        Each next page re-sends the same body with request header
+        ``tr_cont="Y"`` and ``tr_cont_key`` = the previous response's key.
+        Every request passes this TR's own rate limiter, and ``delay`` seconds
+        are slept between pages.
+
+        Returns the page responses in order; rows are never merged. A failed
+        page is kept as the last element. The walk also stops, keeping the last
+        successful page (which still says ``tr_cont="Y"``), when the key is
+        blank or repeats or ``max_pages`` is reached. Use
+        :func:`occurs_complete` to tell a complete result from a partial one.
+        The request header's continuation fields are restored afterwards.
+        """
+        if max_pages < 1:
+            raise ValueError("max_pages must be at least 1")
+        header = self.request_data.header
+        initial = (header.tr_cont, header.tr_cont_key)
+        results: list[R] = []
+        seen_keys: Set[str] = set()
+        try:
+            callback and callback(None, RequestStatus.REQUEST)
+            response = self.req()
+            results.append(response)
+            while True:
+                if _page_failed(response):
+                    callback and callback(response, RequestStatus.FAIL)
+                    break
+                callback and callback(response, RequestStatus.RESPONSE)
+                key = _continuation_key(response)
+                if key is None:
+                    break
+                reason = self._continuation_stop_reason(key, seen_keys, len(results), max_pages)
+                if reason is not None:
+                    self._log_continuation_stop(reason, len(results))
+                    callback and callback(response, RequestStatus.FAIL)
+                    break
+                seen_keys.add(key)
+                callback and callback(response, RequestStatus.OCCURS_REQUEST)
+                time.sleep(delay)
+                header.tr_cont = "Y"
+                header.tr_cont_key = key
+                response = self.req()
+                results.append(response)
+        finally:
+            header.tr_cont, header.tr_cont_key = initial
+
+        callback and callback(None, RequestStatus.COMPLETE)
+        callback and callback(None, RequestStatus.CLOSE)
+        return results
+
+    async def header_occurs_req_async(
+        self,
+        callback: Optional[Callable[[Optional[R], RequestStatus], None]] = None,
+        delay: float = 1,
+        max_pages: int = DEFAULT_OCCURS_MAX_PAGES,
+    ) -> list[R]:
+        """Async form of :meth:`header_occurs_req` sharing one HTTP session."""
+        if max_pages < 1:
+            raise ValueError("max_pages must be at least 1")
+        header = self.request_data.header
+        initial = (header.tr_cont, header.tr_cont_key)
+        results: list[R] = []
+        seen_keys: Set[str] = set()
+        try:
+            async with aiohttp.ClientSession() as session:
+                callback and callback(None, RequestStatus.REQUEST)
+                response = await self._req_async_with_session(session)
+                results.append(response)
+                while True:
+                    if _page_failed(response):
+                        callback and callback(response, RequestStatus.FAIL)
+                        break
+                    callback and callback(response, RequestStatus.RESPONSE)
+                    key = _continuation_key(response)
+                    if key is None:
+                        break
+                    reason = self._continuation_stop_reason(key, seen_keys, len(results), max_pages)
+                    if reason is not None:
+                        self._log_continuation_stop(reason, len(results))
+                        callback and callback(response, RequestStatus.FAIL)
+                        break
+                    seen_keys.add(key)
+                    callback and callback(response, RequestStatus.OCCURS_REQUEST)
+                    await asyncio.sleep(delay)
+                    header.tr_cont = "Y"
+                    header.tr_cont_key = key
+                    response = await self._req_async_with_session(session)
+                    results.append(response)
+        finally:
+            header.tr_cont, header.tr_cont_key = initial
+
+        callback and callback(None, RequestStatus.COMPLETE)
+        callback and callback(None, RequestStatus.CLOSE)
+        return results

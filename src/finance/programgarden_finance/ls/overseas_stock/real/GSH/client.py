@@ -17,7 +17,10 @@ class RealGSH():
     - 개별 호가단계 잔량(offerrem/bidrem 2~10)은 항상 0 (미제공)
     - offerrem1/bidrem1은 총잔량(totofferrem/totbidrem)과 동일한 값
     - 호가 건수(offerno/bidno 1~10)는 항상 0 (미제공)
-    - 개별 잔량이 필요하면 REST API(g3106)를 사용하세요
+    - 2026-10-15 03:16 KST(미국 정규장) AAPL 관측: 실시간 15건 모두 위 모양이었고,
+      같은 시점 REST g3106 1회도 1호가에만 잔량(=매도·매수 잔량 합계)이 있고
+      2~10호가 잔량·건수는 0 이었다. g3106 으로 단계별 잔량을 얻을 수 있다고
+      보지 마세요. 한 종목·한 시점 관측이며 다른 종목·세션은 아직 확인 전입니다.
     """
     def __init__(self, parent: Real):
         self._parent = parent

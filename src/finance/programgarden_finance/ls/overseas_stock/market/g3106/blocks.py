@@ -9,8 +9,13 @@ and aggregate count totals (``offercnt`` / ``bidcnt`` at the bottom of
 the block) are also returned.
 
 ⚠️ LS API constraint observed in this codebase (overseas-stock only):
-    - Per-level prices and per-level remaining quantities are populated
-      normally.
+    - Per-level prices are populated normally. Per-level remaining
+      quantities were assumed to be populated, but the 2026-10-15 03:16 KST
+      phase-0 snapshot (AAPL / NASDAQ, US regular session, one call) returned
+      a quantity only at level 1 (``offerrem1`` / ``bidrem1``, equal to the
+      side totals ``offer`` / ``bid``) and 0 on levels 2..10 — the same shape
+      as real-time GSH. One symbol at one moment; other symbols and sessions
+      are not yet confirmed.
     - Per-level order-count fields (``offercnt1``..``offercnt10``,
       ``bidcnt1``..``bidcnt10``) are always returned as 0 by LS for
       overseas stock — the count side is not exposed for this market.

@@ -23,7 +23,13 @@ orderbook push payload.
     - This constraint applies to overseas-stock only — overseas-futures
       (OVH / WOH) and Korea-stock (H1_ / HA_) populate per-level fields
       normally.
-    - Use REST API ``g3106`` if per-level remaining quantities are needed.
+    - Phase-0 capture, 2026-10-15 03:16 KST (AAPL / NASDAQ, US regular
+      session, live key, read-only): all 15 GSH messages matched the shape
+      above, and one ``g3106`` snapshot taken at the same time did too
+      (quantity only at level 1, equal to the side total; levels 2..10 and all
+      counts 0). Do not rely on ``g3106`` for per-level quantities either.
+      This is one symbol at one moment; other symbols and sessions are not yet
+      confirmed.
 
 Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
 2026-05-06 finance TR field metadata plan):
