@@ -16,7 +16,13 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
     - Code classifiers documented in the in-source Korean comments
       (``s_b_ccd``, ``ordr_ccd``, ``ordr_typ_cd``, ``svc_id``) are listed
       verbatim. The ``ordr_typ_cd`` ``Literal["1", "2", "3", "4"]``
-      annotation is preserved verbatim from source.
+      annotation is preserved from source and widened by ``""``, the value
+      observed on cancel confirmations (2026-10-15 paper capture).
+    - Observed payload differences from the guide (LS paper overseas
+      futures, 2026-10-15, ``tests/fixtures/tc_frames_paper_futures_20261015.json``):
+      the user id arrives as ``user_id`` (guide ``userid``). Both names are
+      accepted; before this, every TC2 frame failed validation and listeners
+      received ``body=None``.
     - Unlike TC1 (where ``ordr_prc`` / ``cndt_ordr_prc`` are float and
       ``ordr_q`` is int), TC2 declares all of them as ``str`` in source —
       preserved verbatim. Stringified-numeric scale not declared.
@@ -29,7 +35,7 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import AliasChoices, BaseModel, Field, PrivateAttr
 from websockets import Response
 
 from ....models import BlockRealRequestHeader, BlockRealResponseHeader
@@ -187,14 +193,16 @@ class TC2RealResponseBody(BaseModel):
         description="Order-action classifier. '1' = new (신규), '2' = modify (정정), '3' = cancel (취소).",
         examples=["1", "2", "3"],
     )
-    ordr_typ_cd: Literal["1", "2", "3", "4"] = Field(
+    ordr_typ_cd: Literal["", "1", "2", "3", "4"] = Field(
         ...,
         title="주문유형코드 (Order-type code)",
         description=(
             "Order-type code. '1' = market (시장가), '2' = limit (지정가), "
-            "'3' = Stop Market, '4' = Stop Limit."
+            "'3' = Stop Market, '4' = Stop Limit. Observed blank ('') on the "
+            "HO02 confirmation of a cancel (ordr_ccd '3'; LS paper overseas "
+            "futures, 2026-10-15), so a blank value is accepted."
         ),
-        examples=["1", "2", "3", "4"],
+        examples=["1", "2", "3", "4", ""],
     )
     ordr_typ_prd_ccd: str = Field(
         ...,
@@ -281,9 +289,17 @@ class TC2RealResponseBody(BaseModel):
         examples=["", "INVALID PRICE"],
     )
     userid: str = Field(
-        ...,
+        default="",
+        validation_alias=AliasChoices("userid", "user_id"),
         title="사용자ID (User ID)",
-        description="LS user ID associated with the order.",
+        description=(
+            "LS user ID associated with the order. The guide names this field "
+            "``userid``; LS paper overseas futures TC2 frames observed on "
+            "2026-10-15 send ``user_id`` instead. Both spellings are read into "
+            "this attribute, and an absent value is kept as '' so that an "
+            "identity field no consumer needs cannot drop the whole event. It "
+            "carries the LS login id: never log or forward it."
+        ),
         examples=["USER01"],
     )
 

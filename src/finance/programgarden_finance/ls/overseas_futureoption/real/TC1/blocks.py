@@ -24,13 +24,16 @@ Field source policy (per CLAUDE.md ``feedback_no_inferred_formulas`` and the
       rather than inferred.
     - Account number placeholders use ``"12345678901"`` per safety policy
       (see Phase 2d/3d/3e plan note) — never real account numbers.
+    - Observed payload difference from the guide (LS paper overseas futures,
+      2026-10-15): the exercise-reservation code arrives as
+      ``xrc_rsv_tcp_code`` (guide ``xrc_rsv_tp_code``); both are accepted.
     - ``examples`` for ``tr_key`` reflect the example script which omits
       ``tr_key`` (account-wide subscription); response examples mirror
       typical LS WS order-push payload shapes.
 """
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import AliasChoices, BaseModel, Field, PrivateAttr
 from websockets import Response
 
 from ....models import BlockRealRequestHeader, BlockRealResponseHeader
@@ -260,6 +263,19 @@ class TC1RealResponseBody(BaseModel):
         title="사용자ID (User ID)",
         description="LS user ID associated with the order.",
         examples=["USER01"],
+    )
+    xrc_rsv_tp_code: str = Field(
+        default="",
+        validation_alias=AliasChoices("xrc_rsv_tp_code", "xrc_rsv_tcp_code"),
+        title="행사예약구분코드 (Option exercise reservation code)",
+        description=(
+            "'1' = option exercise reservation (옵션행사예약), '0' = not an "
+            "exercise reservation (옵션행사예약아님). The guide names this "
+            "field ``xrc_rsv_tp_code``; LS paper overseas futures TC1 frames "
+            "observed on 2026-10-15 send ``xrc_rsv_tcp_code`` (value '0'). "
+            "Both spellings are read into this attribute; '' when absent."
+        ),
+        examples=["0", "1"],
     )
 
 

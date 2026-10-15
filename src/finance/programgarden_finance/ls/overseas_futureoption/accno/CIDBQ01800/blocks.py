@@ -237,15 +237,27 @@ class CIDBQ01800OutBlock2(BaseModel):
     OvrsFutsOrdNo: str = Field(
         default="",
         title="Overseas futures order number (해외선물주문번호)",
-        description="LS-issued order number for the overseas futures order.",
-        examples=["", "1234567"],
+        description=(
+            "LS-issued order number for the overseas futures order. Observed "
+            "zero-padded to 10 digits (\"0000000027\", LS paper, 2026-10-15) "
+            "while the order TRs (CIDBT00100/00900/01000 ``OvrsFutsOrdNo``) and "
+            "the TC1/TC2/TC3 frames (``ordr_no``) carry the same order as "
+            "\"27\": compare order numbers by their integer value, e.g. "
+            "``extension.execution_history.normalize_broker_identity``."
+        ),
+        examples=["", "0000000027"],
     )
 
     OvrsFutsOrgOrdNo: str = Field(
         default="",
         title="Overseas futures original order number (해외선물원주문번호)",
-        description="Original order number for modify/cancel records. Empty for original orders.",
-        examples=["", "1234567"],
+        description=(
+            "Original order number for modify/cancel records: the direct "
+            "predecessor in the order chain. Observed zero-padded like "
+            "``OvrsFutsOrdNo``, and \"0000000000\" (not blank) on a new "
+            "order's row (LS paper, 2026-10-15)."
+        ),
+        examples=["0000000000", "0000000027"],
     )
 
     FcmOrdNo: str = Field(
@@ -577,15 +589,23 @@ class CIDBQ01800OutBlock2(BaseModel):
     OvrsFutsOrdNo2: str = Field(
         default="",
         title="Overseas futures order number 2 (해외선물주문번호2)",
-        description="Secondary order number as returned by LS. Exact semantics not declared in available source.",
-        examples=["", "1234568"],
+        description=(
+            "Secondary order number as returned by LS. Exact semantics not "
+            "declared in available source; in the 2026-10-15 paper capture it "
+            "equalled ``OvrsFutsOrdNo`` (zero-padded) on every row."
+        ),
+        examples=["", "0000000027"],
     )
 
     OvrsFutsOrgOrdNo2: str = Field(
         default="",
         title="Overseas futures original order number 2 (해외선물원주문번호2)",
-        description="Secondary original order number. Exact semantics not declared in available source.",
-        examples=["", "1234567"],
+        description=(
+            "Secondary original order number. Exact semantics not declared in "
+            "available source; in the 2026-10-15 paper capture it equalled "
+            "``OvrsFutsOrgOrdNo`` (zero-padded) on every row."
+        ),
+        examples=["", "0000000000"],
     )
 
     OvrsDrvtIsuCode2: str = Field(
