@@ -1,4 +1,4 @@
-## [2.0.4] - Unreleased (prepared 2026-10-15, not published)
+## [2.0.5] - Unreleased (prepared 2026-10-15, not published)
 
 ### Added
 - `occurs_req()`/`occurs_req_async()` for `CSPAQ13700`, `COSAQ00102`, `COSOQ00201`, `CIDBQ01500`, `CIDBQ01800` and `CIDBQ02400`: header-only continuation (`tr_cont="Y"` + previous `tr_cont_key`, body unchanged), one page response per element, a failed page kept last, and stops on a blank/repeated key or `max_pages` (100). `tr_helpers.occurs_complete(pages)` tells a complete walk from a partial one.
@@ -15,6 +15,13 @@
 - `COSAT00301InBlock1` rejects a buy (`OrdPtnCode="02"`) with sell-only `OrdprcPtnCode` 03/M3/M4 ("매도인경우 호가유형 확대" in the guide).
 - Reconnects are detected by a prior open socket instead of `backoff > 1.0`, so market resubscription also runs when `max_backoff <= 1`.
 - Docs: removed unsourced body-cursor paging rules from `CSPAQ13700.SrtOrdNo2` and `COSAQ00102.SrtOrdNo`; TC2 is 확인/거부 (HO02/HO03), not a fill; `COSAT00311.OrdQty` cites the guide "0 입력" and the 2026-09-24 observation; GSH/g3106 record the 2026-10-15 AAPL level-1-only observation; the "3 concurrent connections" claim is marked unsourced; README overseas stock TR names follow the guide (`COSMT00300` is 매도상환, not cancel); CIDBQ01800 order numbers are documented as zero-padded; `docs/observed_broker_responses.md` records the 2026-10-15 paper futures order-event sequences.
+
+## [2.0.4] - 2026-10-15
+
+### Fixed
+- `collect_domestic_open_orders` (t0425) no longer rejects an account with no orders today. A real read-only t0425 on 2026-10-15 returned HTTP 200, `rsp_cd="00000"`, `rsp_msg="조회가 완료되었습니다."`, header `tr_cd=t0425`, `tr_cont=""`, an empty `tr_cont_key` and neither `t0425OutBlock` nor `t0425OutBlock1`. The collector raised `incomplete_orders_response` on every call, so cloud and desktop start checks for such domestic accounts could not pass. That exact first-page answer is now an empty list. A single or null block, another code or message, `tr_cont="Y"`, a continuation key, or omitted blocks on a later page still fail.
+- The t0425 parser records whether both blocks were omitted from the JSON body (`_order_blocks_absent`), separately from an explicit null or empty block.
+- The collector now names transport failures `orders_transport_failure` and non-`00000` answers `orders_response_rejected`. Before, both were reported as `incomplete_orders_response`. That reason now means only a missing header or block on a successful answer.
 
 ## [2.0.3] - 2026-10-15
 

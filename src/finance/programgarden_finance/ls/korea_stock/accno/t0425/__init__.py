@@ -57,6 +57,7 @@ class TrT0425(TRRequestAbstract, OccursReqAbstract):
         resp_headers: Optional[Dict[str, Any]],
         exc: Optional[Exception],
     ) -> T0425Response:
+        original_json = resp_json
         resp_json = resp_json or {}
         cont_data = resp_json.get("t0425OutBlock", None)
         block_data = resp_json.get("t0425OutBlock1", [])
@@ -96,6 +97,12 @@ class TrT0425(TRRequestAbstract, OccursReqAbstract):
             error_msg=error_msg,
         )
         result._orders_block_present = isinstance(resp_json.get("t0425OutBlock1"), list)
+        # Key absence only: a null or malformed block is not an omitted one.
+        result._order_blocks_absent = (
+            exc is None and not is_error_status and isinstance(original_json, dict)
+            and "t0425OutBlock" not in original_json
+            and "t0425OutBlock1" not in original_json
+        )
         if resp is not None:
             result.raw_data = resp
         return result

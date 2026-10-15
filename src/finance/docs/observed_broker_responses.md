@@ -1,5 +1,30 @@
 # Observed LS broker responses
 
+## t0425 real domestic-stock account with no orders today (2026-10-15)
+
+One read-only t0425 at 11:22:00 UTC used the exact all-orders example request
+(`expcode=""`, `chegb="0"`, `medosu="0"`, `sortgb="1"`, `cts_ordno=""`). It
+reused the account's existing shared token and was sent once, with no retry,
+token issuance, session clear or order. The real account had no orders that
+day.
+
+| Field | Observed value |
+| --- | --- |
+| HTTP | 200, `application/json;charset=UTF-8` |
+| Header | `tr_cd="t0425"`, `tr_cont=""`, `tr_cont_key` present and empty |
+| Body keys | `rsp_cd`, `rsp_msg` only |
+| `rsp_cd` / `rsp_msg` | `00000` / `조회가 완료되었습니다.` |
+| `t0425OutBlock`, `t0425OutBlock1` | both omitted |
+
+The read-only verification on 2026-09-15 had one order that day. It returned
+both blocks and `tr_cont="0"`. `collect_domestic_open_orders` accepts the
+2026-10-15 shape as an empty list, but only on the first page and only with
+both blocks omitted. The message must match exactly, `tr_cont` must be `""`,
+`N` or `0`, and the continuation key must be empty. A single block, a null
+block, another code or message, a continuation flag or key, or omitted blocks
+after a `Y` page still fail. This observation covers one account mode and one
+day. It does not show what an account with orders returns on every page.
+
 ## COSAQ00102 real overseas-stock empty responses (2026-09-09)
 
 Two read-only observations at 13:32:35 and 13:32:37 UTC returned HTTP 200,
@@ -278,7 +303,7 @@ id and account number replaced are in
 - Field names differing from the guide: TC2 sends `user_id` (guide
   `userid`); TC1 sends `xrc_rsv_tcp_code` (guide `xrc_rsv_tp_code`). TC3 adds
   `base_xchrat`, `eval_pnl_amt`, `krw_conv_eval_pnl_amt`, `mxchg_unit_amt`.
-  Before 2.0.4 every TC2 frame failed `TC2RealResponseBody` validation
+  Before 2.0.5 every TC2 frame failed `TC2RealResponseBody` validation
   (`userid` required) and listeners got `body=None`.
 - Order numbers: `"27"` in CIDBT00100/00900/01000 `OvrsFutsOrdNo` and TC
   `ordr_no`, `"0000000027"` in CIDBQ01800 `OvrsFutsOrdNo` (a new order's

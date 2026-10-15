@@ -416,6 +416,9 @@ class T0425Response(BaseModel):
 
     _raw_data: Optional[Response] = PrivateAttr(default=None)
     _orders_block_present: bool = PrivateAttr(default=False)
+    # True only when the JSON body had neither t0425OutBlock nor t0425OutBlock1
+    # key. Observed 2026-10-15 for a real account with no orders that day.
+    _order_blocks_absent: bool = PrivateAttr(default=False)
 
     @property
     def raw_data(self) -> Optional[Response]:
