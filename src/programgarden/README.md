@@ -176,7 +176,11 @@ exchange execution numbers and broker execution numbers are not interchangeable.
 This ledger API alone does not reconcile finite workflows after their shutdown.
 
 Standalone futures TC3 callbacks interpret `s_b_ccd="1"` as sell and `"2"` as buy,
-matching the SDK contract. Unknown or blank side codes are logged and skipped
+matching the SDK contract. TC2 confirmations use the same codes and find the
+workflow's order through `orgn_ordr_no`: a futures modify or cancel gets its own
+new order number (LS paper, 2026-10-15), so the cancel confirmation cancels the
+original order in the ledger and a modify confirmation updates the successor row
+recorded by ModifyOrderNodeExecutor. Unknown or blank side codes are logged and skipped
 before any inventory write is scheduled. With an app order lifecycle handler,
 TC3 still bypasses this legacy fill path: canonical REST reconciliation remains
 the sole writer. This side correction does not establish an alias between TC3

@@ -244,6 +244,127 @@ def _stock_position_fill_currency(position: Any, symbol: str, market_code: str) 
     return unit if re.fullmatch(r"[A-Z]{3}", unit) else None
 
 
+# LS guide apis[30] TC1/TC2/TC3 ``s_b_ccd`` (매도매수유형): "1" = 매도, "2" = 매수.
+# Observed the same way on LS paper overseas futures 2026-10-15: buys (CIDBT00100
+# BnsTpCode "2") arrived as "2", the closing sell (BnsTpCode "1") as "1".
+_FUTURES_EVENT_SIDE = {"1": "sell", "2": "buy"}
+
+
+def _futures_event_order_number(value: Any) -> Optional[str]:
+    """TC frame order number → the integer form, or None for blank / "0".
+
+    New orders carry ``orgn_ordr_no "0"``; CIDBQ01800 pads the same numbers to 10
+    digits ("0000000027") while TC frames and order TRs say "27".
+    """
+    text = str(value if value is not None else "").strip()
+    if not text:
+        return None
+    if text.isascii() and text.isdigit():
+        return text.lstrip("0") or None
+    return text
+
+
+async def _apply_futures_tc2_confirmation(context: Any, body: Any) -> str:
+    """Apply one overseas futures TC2 frame to the workflow order ledger.
+
+    Returns a short outcome code (logged at debug level and asserted by tests).
+
+    What LS sends (LS paper overseas futures, 2026-10-15, 8 orders; frames in
+    ``tests/fixtures/tc_frames_paper_futures_20261015.json``):
+
+    - New orders get **no** TC2 (TC1 HO01/HO04, then TC3 when filled).
+    - A modify (CIDBT00900) gets a **new** order number ``ordr_no``; the TC2 HO02
+      carries ``ordr_ccd "2"``, ``orgn_ordr_no`` = the order that was modified
+      (direct predecessor), ``mthr_ordr_no`` = the first order of the chain, and
+      ``cnfr_q`` = the quantity moved to the new price. A partial move leaves the
+      rest working under the predecessor's number.
+    - A cancel (CIDBT01000) also gets its **own** order number; the TC2 HO02 has
+      ``ordr_ccd "3"``, ``orgn_ordr_no`` = the order cancelled and ``cnfr_q`` = the
+      quantity cancelled.
+
+    So the order this workflow owns is found through ``orgn_ordr_no``, never
+    ``ordr_no`` (that number is the modify/cancel's own) and never
+    ``mthr_ordr_no`` (after a partial modify the chain head can still be
+    working, and a cancel of the successor must not touch it).
+
+    - Cancel: the owned original order is cancelled in the ledger.
+    - Modify: when this engine issued the modify, ModifyOrderNodeExecutor already
+      recorded the successor (inheriting side/symbol); the confirmed quantity and
+      price are written to that row. When the successor is unknown (modified in
+      HTS/MTS or the board order window), nothing is recorded — recognising
+      outside modifies of owned orders is the separately gated E1 item; its
+      fills keep the existing classification.
+    - The side code and symbol must match the owned row; otherwise nothing changes.
+    - HO03 (reject) and frames the SDK could not read (``body is None``) change
+      nothing.
+    """
+    if body is None:
+        return "unreadable"
+    service = str(getattr(body, "svc_id", "") or "").strip()
+    if service != "HO02":
+        return "not_a_confirmation"
+    action = str(getattr(body, "ordr_ccd", "") or "").strip()
+    if action not in ("2", "3"):
+        return "not_modify_or_cancel"
+    side = _FUTURES_EVENT_SIDE.get(str(getattr(body, "s_b_ccd", "") or "").strip())
+    if side is None:
+        logger.warning("Ignoring TC2 confirmation with unknown side code")
+        return "unknown_side"
+    order_date = str(getattr(body, "ordr_dt", "") or "").strip()
+    if len(order_date) != 8 or not order_date.isdigit():
+        # The frame's own date only; never the local clock (night sessions).
+        return "no_order_date"
+    original = _futures_event_order_number(getattr(body, "orgn_ordr_no", None))
+    own_number = _futures_event_order_number(getattr(body, "ordr_no", None))
+    symbol = str(getattr(body, "is_cd", "") or "").strip()
+    if original is None or own_number is None or not symbol:
+        return "no_order_numbers"
+
+    owned = context.find_workflow_order(original, order_date, symbol=symbol)
+    if owned is None:
+        return "not_a_workflow_order"
+    if (str(owned.get("symbol") or "").strip().upper() != symbol.upper()
+            or owned.get("side") != side):
+        logger.warning(
+            "TC2 confirmation for workflow order %s does not match its ledger row "
+            "(symbol/side); ledger unchanged", original,
+        )
+        return "mismatch"
+
+    if action == "3":
+        await context.cancel_workflow_order(
+            order_no=owned["order_no"], order_date=owned["order_date"],
+        )
+        logger.debug("TC2 cancel %s confirmed for workflow order %s", own_number, original)
+        return "cancelled"
+
+    successor = context.find_workflow_order(own_number, order_date, symbol=symbol)
+    if successor is None:
+        logger.info(
+            "Workflow futures order %s was modified outside this workflow (new order %s); "
+            "the new order number is not recorded", original, own_number,
+        )
+        return "modified_outside"
+    if (str(successor.get("symbol") or "").strip().upper() != symbol.upper()
+            or successor.get("side") != side):
+        logger.warning(
+            "TC2 modify %s does not match its ledger row (symbol/side); ledger unchanged", own_number,
+        )
+        return "mismatch"
+    quantity = _whole_unit_quantity(_qty_num(getattr(body, "cnfr_q", None)) or _qty_num(getattr(body, "ordr_q", None)))
+    try:
+        price = float(str(getattr(body, "ordr_prc", "") or "0").strip() or 0)
+    except ValueError:
+        price = 0.0
+    await context.modify_workflow_order(
+        order_no=successor["order_no"],
+        order_date=successor["order_date"],
+        new_quantity=quantity if quantity and quantity > 0 else None,
+        new_price=price if price > 0 else None,
+    )
+    return "modified"
+
+
 def _usable_execution_identity(order_no: Any, order_date: Any) -> bool:
     """체결 프레임의 (주문번호, 주문일자)가 원장 execution identity 키로 쓸 수 있나.
 
@@ -5159,59 +5280,18 @@ class BrokerNodeExecutor(NodeExecutorBase):
         loop = asyncio.get_running_loop()
 
         def on_tc2_event(resp):
-            """TC2 이벤트 처리 (주문 확인/정정/취소)
+            """TC2 HO02(정정/취소 확인)를 원장에 반영한다 — 판정은 _apply_futures_tc2_confirmation.
 
-            TC2 필드명:
-            - svc_id: HO02=주문확인, HO03=주문거부
-            - ordr_no: 주문번호
-            - ordr_dt: 주문일자
-            - is_cd: 종목코드
-            - s_b_ccd: 매매구분 (1=매수, 2=매도)
-            - ordr_ccd: 주문구분 (1=신규, 2=정정, 3=취소)
-            - ordr_q: 주문수량
-            - ordr_prc: 주문가격
+            SDK 는 동기 리스너를 워커 스레드에서 부르므로 원장 조회·갱신은 전부
+            이벤트 루프로 넘긴다(다른 원장 경로와 같은 규약).
             """
             try:
                 if context.is_shutdown:
                     return
-                body = getattr(resp, 'body', resp)
-                header = getattr(resp, 'header', None)
-                # TC2에서는 svc_id가 body에 있음
-                svc_id = getattr(body, 'svc_id', '') or (getattr(header, 'svc_id', '') if header else '')
-
-                order_no = str(getattr(body, 'ordr_no', ''))
-                order_date = getattr(body, 'ordr_dt', datetime.now().strftime('%Y%m%d'))
-                symbol = getattr(body, 'is_cd', '')
-                side_code = getattr(body, 's_b_ccd', '')  # 매매구분
-                quantity = int(getattr(body, 'ordr_q', 0) or getattr(body, 'cnfr_q', 0) or 0)
-                price = float(getattr(body, 'ordr_prc', 0) or 0)
-                ordr_ccd = getattr(body, 'ordr_ccd', '')  # 1=신규, 2=정정, 3=취소
-
-                # 매매구분
-                side = 'buy' if side_code == '1' else 'sell'
-
-                logger.debug(f"[TC2] svc_id={svc_id}, ordr_ccd={ordr_ccd}, order_no={order_no}, symbol={symbol}")
-
-                if svc_id == 'HO02':  # 주문 확인
-                    if ordr_ccd == '2':  # 정정 완료
-                        asyncio.run_coroutine_threadsafe(
-                            context.modify_workflow_order(
-                                order_no=order_no,
-                                order_date=order_date,
-                                new_quantity=quantity if quantity > 0 else None,
-                                new_price=price if price > 0 else None,
-                            ),
-                            loop
-                        )
-                    elif ordr_ccd == '3':  # 취소 완료
-                        asyncio.run_coroutine_threadsafe(
-                            context.cancel_workflow_order(
-                                order_no=order_no,
-                                order_date=order_date,
-                            ),
-                            loop
-                        )
-
+                body = getattr(resp, 'body', None)
+                asyncio.run_coroutine_threadsafe(
+                    _apply_futures_tc2_confirmation(context, body), loop
+                )
             except Exception as e:
                 logger.warning(f"Error processing TC2 event: {e}")
 
@@ -9072,6 +9152,16 @@ class RealOrderEventNodeExecutor(NodeExecutorBase):
                         return
                     
                     body = getattr(resp, 'body', resp)
+                    if body is None:
+                        # The SDK could not read this frame (it then hands over
+                        # body=None with error_msg). Parsing None produced an
+                        # empty 'accepted' event that still triggered the next
+                        # nodes — up to finance 2.0.3 that was every TC2 frame
+                        # (LS sends `user_id`, the model required `userid`).
+                        # error_msg is not logged: it echoes the raw frame,
+                        # including the account number and login id.
+                        logger.warning(f"[{_node_id}] {tr_cd} order event could not be read; skipped")
+                        return
                     
                     if tr_cd == "TC1":
                         event_data = self._parse_tc1_data(body)

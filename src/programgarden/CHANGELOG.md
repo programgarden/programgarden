@@ -1,3 +1,16 @@
+## [2.6.7] - Unreleased (prepared 2026-10-15, not published)
+
+### Fixed
+- Overseas futures TC2 (정정/취소 확인) handling, evidence from LS paper 2026-10-15 (frames in `tests/fixtures/tc_frames_paper_futures_20261015.json`, ids replaced):
+  - The order this workflow owns is looked up through `orgn_ordr_no`. A modify and a cancel each get their own new order number (`ordr_no`); the handler used that number, so a cancel never reached the cancelled order.
+  - Cancel confirmations cancel the owned original order in the ledger. Modify confirmations update the successor row that ModifyOrderNodeExecutor recorded; a modify made outside the workflow (HTS/MTS, board order window) is logged and not recorded (recognising those is the separate E1 item).
+  - `s_b_ccd` follows the guide (`"1"` = sell, `"2"` = buy); the handler mapped `"1"` to buy. A side or symbol that does not match the ledger row changes nothing; an unknown side code is skipped.
+  - The handler no longer synthesises an order date from the local clock.
+- Overseas futures RealOrderEventNode skips a frame the SDK could not read (`body=None`) instead of emitting an empty `accepted` event. Up to finance 2.0.3 every TC2 frame was unreadable (LS sends `user_id`, the model required `userid`), so each modify/cancel confirmation fired the node's `accepted` output with blank fields and triggered the connected nodes.
+
+### Release note
+- These paths only run once the SDK reads TC2 (programgarden-finance 2.0.4). Release 2.6.7 with `programgarden-finance = "^2.0.4"` and publish both together; do not publish finance 2.0.4 alone, because engine 2.6.6 (`^2.0.3`) would pick it up and run the old handler. With finance 2.0.4, futures RealOrderEventNode TC2 frames reach the `modified`/`cancelled`/`rejected` outputs for the first time.
+
 ## [2.6.6] - 2026-10-15
 
 ### Added
