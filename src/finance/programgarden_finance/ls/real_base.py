@@ -13,7 +13,7 @@ KO:
 from abc import ABC
 import asyncio
 import json
-from typing import Callable, Dict, List, Optional, Any, TypeVar
+from typing import Callable, Dict, List, Optional, Any, Tuple, TypeVar
 import importlib
 import random
 
@@ -40,13 +40,16 @@ _RESPONSE_MODULE_BASES = [
 ]
 
 # A-6: per-connection real-time subscription cap.
-# EN: LS allows up to 3 concurrent connections per account and limits the number
-#     of real-time registrations per connection. We default to a conservative 100
-#     symbols per connection (sum across all TR codes) and reject overflow with an
-#     explicit error instead of silently flooding the websocket.
-# KO: LS는 계정당 최대 3개 동시연결을 허용하며 연결당 실시간 등록 수에 제한이 있습니다.
-#     연결당(모든 TR 코드 합산) 기본 100종목으로 보수적으로 cap 을 두고, 초과 시
+# EN: The SDK caps registrations at a conservative 100 symbols per connection
+#     (sum across all TR codes) and rejects overflow with an explicit error
+#     instead of silently flooding the websocket.
+#     UNSOURCED: the often-quoted "3 concurrent connections per account" and any
+#     per-connection registration limit are not stated in the LS OpenAPI guide
+#     (v20261012053652748). Treat both as unverified until observed.
+# KO: 연결당(모든 TR 코드 합산) 기본 100종목으로 보수적으로 cap 을 두고, 초과 시
 #     웹소켓을 조용히 폭주시키는 대신 명시적 에러로 거부합니다.
+#     출처 없음: 흔히 인용되는 "계정당 동시연결 3개"와 연결당 등록 수 제한은 LS OpenAPI
+#     가이드(v20261012053652748)에 없는 수치입니다. 관측 전까지 미확인으로 취급하세요.
 DEFAULT_MAX_SUBSCRIBE_SYMBOLS = 100
 
 
@@ -85,6 +88,7 @@ class RealRequestAbstract(ABC):
         max_backoff=60.0,
         token_manager: Optional[TokenManager] = None,
         max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
+        reregister_account_events_on_reconnect: bool = True,
     ):
         super().__init__()
 
@@ -96,6 +100,11 @@ class RealRequestAbstract(ABC):
         self._token_manager = token_manager
         # A-6: 연결당 실시간 구독 종목 수 cap. <=0 이면 무제한(가드 비활성).
         self._max_subscribe_symbols = max_subscribe_symbols
+        # 재연결 뒤 계좌(주문 이벤트) 실시간 등록을 다시 보낼지. 등록은 소켓에 보낸
+        # 메시지라 새 소켓에는 남아 있지 않다고 보고 기본값은 True 다.
+        # Phase-0 F3(LS 모의 해외선물, 2026-10-15): 재연결한 새 소켓은 tr_type=1 을 다시
+        # 보내기 전까지 계좌 이벤트를 하나도 받지 못했다 — 기본값 True 가 필요하다.
+        self._reregister_account_events_on_reconnect = bool(reregister_account_events_on_reconnect)
 
         # Event that is set when a websocket connection is successfully opened
         self._connected_event = asyncio.Event()
@@ -215,6 +224,10 @@ class RealRequestAbstract(ABC):
             - Inner loop: runs while a single websocket connection is open and receives messages.
             """
             backoff = 1.0
+            # True once this loop has had an open socket: every later successful
+            # connect is a reconnect. (``backoff > 1.0`` used to stand in for this
+            # and missed reconnects when ``max_backoff <= 1``.)
+            connected_once = False
             # Outer loop: connection attempt / reconnect
             while not self._stop:
                 try:
@@ -237,8 +250,11 @@ class RealRequestAbstract(ABC):
                         except Exception:
                             pass
 
+                        is_reconnect = connected_once
+                        connected_once = True
+
                         # 재연결 시 이전 구독 자동 복원
-                        if backoff > 1.0 and self._subscribed_symbols:
+                        if is_reconnect and self._subscribed_symbols:
                             import logging
                             _logger = logging.getLogger("programgarden_finance.real")
                             for _tr_cd, _syms in self._subscribed_symbols.items():
@@ -253,6 +269,10 @@ class RealRequestAbstract(ABC):
                                         _logger.error(
                                             f"WebSocket 재구독 실패 ({_tr_cd}): {_e}"
                                         )
+
+                        # 재연결 시 계좌(주문 이벤트) 실시간 등록 복원 — 시세 재구독 다음에 보낸다.
+                        if is_reconnect and self._reregister_account_events_on_reconnect:
+                            self._reregister_account_events()
 
                         backoff = 1.0  # reset backoff after successful connect
 
@@ -608,8 +628,8 @@ class RealRequestAbstract(ABC):
                 raise SubscriptionLimitExceeded(
                     f"실시간 구독 종목 수가 연결당 상한({self._max_subscribe_symbols})을 "
                     f"초과합니다: 현재 {current_total}개 구독 + 신규 {len(new_unique)}개 "
-                    f"= {projected}개 요청 (tr_cd={tr_cd}). LS는 계정당 최대 3개 "
-                    f"동시연결을 허용하며 연결당 실시간 등록 수에 제한이 있습니다. "
+                    f"= {projected}개 요청 (tr_cd={tr_cd}). 이 상한은 SDK 의 보수적 기본값이며 "
+                    f"LS 공식 수치가 아닙니다. "
                     f"종목 수를 줄이거나 max_subscribe_symbols 를 조정하세요."
                 )
 
@@ -926,6 +946,57 @@ class RealRequestAbstract(ABC):
             req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
 
             asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _account_event_registrations(self) -> List[Tuple[str, Callable[[], None]]]:
+        """Account-event families as ``(flag attribute, registration method)``.
+
+        EN:
+            A family is re-registered after a reconnect only while its flag is
+            set, i.e. while a listener still uses it. Product clients with
+            their own families (overseas futures TC1/TC2/TC3) override this.
+
+        KO:
+            재연결 뒤에는 플래그가 켜진(리스너가 남아 있는) 계좌 실시간만 다시 등록합니다.
+            자체 계좌 실시간이 있는 상품(해외선물 TC1/TC2/TC3)은 이 메서드를 재정의합니다.
+        """
+        return [
+            ("_as01234_connect", self._add_real_order),
+            ("_sc01234_connect", self._add_real_order_korea),
+        ]
+
+    def _reregister_account_events(self) -> List[str]:
+        """Re-send account registration (``tr_type="1"``) on the current socket.
+
+        EN:
+            Called after a reconnect, following the market-data resubscription.
+            Each active family's flag is reset and its registration method is
+            called again, which sends one registration and sets the flag. A
+            failed send leaves the flag cleared so the next listener retries.
+
+        KO:
+            재연결 직후(시세 재구독 다음) 호출됩니다. 켜져 있던 계좌 실시간마다 플래그를
+            내리고 등록 메서드를 다시 불러 등록 1건을 보내고 플래그를 다시 켭니다. 전송에
+            실패하면 플래그가 꺼진 채로 남아 다음 리스너 등록 때 다시 시도합니다.
+
+        Returns:
+            List[str]: flag attributes whose registration was re-sent.
+        """
+        import logging
+        _logger = logging.getLogger("programgarden_finance.real")
+        resent: List[str] = []
+        for flag, register in self._account_event_registrations():
+            if getattr(self, flag, False) is not True:
+                continue
+            setattr(self, flag, False)
+            try:
+                register()
+            except Exception as exc:
+                _logger.error(f"WebSocket 재연결 후 계좌 실시간 재등록 실패 ({flag}): {exc}")
+                setattr(self, flag, False)
+                continue
+            resent.append(flag)
+            _logger.info(f"WebSocket 재연결 후 계좌 실시간 재등록: {flag}")
+        return resent
 
     def _add_real_order(self):
         """Auto-subscribe to all overseas stock order lifecycle feeds.

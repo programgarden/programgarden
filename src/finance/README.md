@@ -22,6 +22,15 @@ Programgarden Finance는 AI 시대에 맞춰 파이썬을 모르는 투자자도
 
 ## 설치
 
+Account history and balance TRs `CSPAQ13700`, `COSAQ00102`, `COSOQ00201`,
+`CIDBQ01500`, `CIDBQ01800` and `CIDBQ02400` read every page with
+`occurs_req()`/`occurs_req_async()` (header `tr_cont_key` continuation, pages
+kept separate, a failed page kept last). Check `occurs_complete(pages)` before
+treating the result as complete. Real-time clients re-send account (order
+event) registrations after a reconnect, overseas futures unregisters when its
+last listener leaves, and `SetupOptions.transient_retries` controls the spaced
+read retries. See the [account continuation contract](docs/account_continuation.md).
+
 The [US equity eligibility contract](docs/us_equity_eligibility_contract.md)
 distinguishes documented expiry from delisting, raw status flags from effective
 halt events, and account dividend evidence from sparse field labels. These
@@ -277,11 +286,11 @@ values must remain distinct; aggregate inflow is not automatically USD.
 - **실시간**: `S3_`(체결), `K3_`(KOSDAQ체결), `H1_`(호가), `HA_`(KOSDAQ호가), `NH1`(NXT호가), `IJ_`(업종지수), `DVI`/`NVI`(VI발동해제), `SC0`~`SC4`(주문접수/체결/정정/취소/거부)
 
 #### 해외 주식
-- **시장 정보**: `g3101`(현재가), `g3102`(해외지수), `g3104`(거래소마스터), `g3106`(환율), `g3190`(뉴스), `g3112`(시세순위: 등락률·거래량·거래대금·회전율·시가총액·52주 신고/신저)
+- **시장 정보**: `g3101`(현재가), `g3102`(시간대별), `g3104`(종목정보), `g3106`(현재가호가), `g3190`(마스터), `g3112`(시세순위: 등락률·거래량·거래대금·회전율·시가총액·52주 신고/신저)
 - **차트**: `g3103`(일별), `g3202`(분봉), `g3203`(틱봉), `g3204`(시간외)
 - **계좌**: `COSAQ00102`(주문체결내역), `COSAQ01400`(예약주문처리결과), `COSOQ00201`(종합잔고평가), `COSOQ02701`(외화예수금/주문가능금액)
-- **주문**: `COSAT00301`(정정주문), `COSAT00311`(신규주문), `COSMT00300`(취소주문), `COSAT00400`(예약주문)
-- **실시간**: `GSC`(체결), `GSH`(호가), `AS0`~`AS4`(각종 실시간 시세)
+- **주문**: `COSAT00301`(미국시장주문 — 매도 01·매수 02·취소 08), `COSAT00311`(미국시장정정주문), `COSMT00300`(해외증권 매도상환주문 — 취소 TR 이 아님), `COSAT00400`(예약주문 등록·취소)
+- **실시간**: `GSC`(체결), `GSH`(호가), `AS0`~`AS4`(주문 접수/체결/정정/취소/거부)
 
 #### 해외 선물옵션
 - **시장 정보**: `o3101`(선물마스터), `o3104`~`o3107`(거래소/통화/가격단위/정산환율), `o3116`(옵션마스터), `o3121`~`o3128`(각종 시장 정보), `o3136`, `o3137`(추가 시장 정보)
@@ -375,7 +384,9 @@ example/
 ├── overseas_stock/             # 해외 주식 예제
 │   ├── run_g3101.py           # 현재가 조회
 │   ├── run_g3102.py           # 해외지수 조회
-│   ├── run_COSAT00311.py      # 신규주문
+│   ├── run_COSAT00301.py      # 신규주문 (매수/매도)
+│   ├── run_COSAT00301_cancel.py  # 취소주문 (OrdPtnCode 08)
+│   ├── run_COSAT00311.py      # 정정주문
 │   ├── real_GSC.py            # 실시간 체결 구독
 │   ├── real_GSH.py            # 실시간 호가 구독
 │   └── ...
@@ -449,8 +460,8 @@ from programgarden_finance import (
     g3202, g3203, g3204,                        # 차트
     COSAQ00102, COSAQ01400,                     # 주문체결/예약주문
     COSOQ00201, COSOQ02701,                     # 종합잔고/외화예수금
-    COSAT00301, COSAT00311,                     # 주문
-    COSMT00300, COSAT00400,                     # 취소/예약
+    COSAT00301, COSAT00311,                     # 주문(신규·취소)/정정
+    COSMT00300, COSAT00400,                     # 매도상환/예약
     GSC, GSH, AS0, AS1, AS2, AS3, AS4,         # 실시간
 
     # 해외 선물옵션 TR

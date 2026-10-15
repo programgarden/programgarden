@@ -79,8 +79,14 @@ class COSAT00311InBlock1(BaseModel):
     OrdQty: int = Field(
         ...,
         title="주문수량 (Order quantity)",
-        description="Revised order quantity in shares.",
-        examples=[1, 5],
+        description=(
+            "Order quantity in shares. The guide's field note is '0 입력' (enter 0). "
+            "Observed live on 2026-09-24 (1-share US limit order): sending the "
+            "order's effective remaining quantity (1) with a new price was accepted "
+            "and returned a new order number. Changing the quantity through this TR "
+            "has not been observed; do not rely on it."
+        ),
+        examples=[0, 1],
     )
     OvrsOrdPrc: float = Field(
         ...,

@@ -242,3 +242,41 @@ async def test_observed_empty_stock_startup_preserves_evidence_guards(tmp_path, 
         assert context._startup_reconciled
         assert context._startup_broker_snapshot.positions.quantities == {}
         assert [name for name, _ in calls] == ["COSOQ00201", "COSAQ00102"]
+
+
+def domestic_client(t0425_response):
+    from programgarden_finance.ls.korea_stock.accno.t0425 import TrT0425
+
+    response = TrT0425._build_response(None, NS(status_code=200), t0425_response,
+                                       {"Content-Type": "application/json;charset=UTF-8",
+                                        "tr_cd": "t0425", "tr_cont": "", "tr_cont_key": ""}, None)
+    tr = NS(req_async=AsyncMock(return_value=response),
+            request_data=NS(header=NS(tr_cont="N", tr_cont_key="")))
+    accno = NS(t0425=lambda body: tr)
+    return NS(korea_stock=lambda: NS(accno=lambda: accno)), tr
+
+
+@pytest.mark.asyncio
+async def test_domestic_startup_accepts_the_observed_no_orders_answer(monkeypatch):
+    # Shape of the 2026-10-15 read-only t0425 on a real account with no orders
+    # that day: success code and message only, both blocks omitted.
+    monkeypatch.setattr("programgarden_finance.ls.korea_stock.extension.valuation."
+                        "collect_domestic_trading_positions", AsyncMock(return_value=(None, [])))
+    client, tr = domestic_client({"rsp_cd": "00000", "rsp_msg": "조회가 완료되었습니다."})
+    snapshot = await read(client, product="korea_stock")
+    assert snapshot.pending_orders == () and snapshot.positions.quantities == {}
+    assert snapshot.positions.source == "CSPAQ12300+t0425"
+    assert snapshot.positions.pending_orders_verified is True
+    assert tr.req_async.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_domestic_startup_still_holds_when_one_order_block_is_missing(monkeypatch):
+    from programgarden_finance.ls.korea_stock.extension.valuation import DomesticPositionEvidenceUnavailable
+
+    monkeypatch.setattr("programgarden_finance.ls.korea_stock.extension.valuation."
+                        "collect_domestic_trading_positions", AsyncMock(return_value=(None, [])))
+    client, _ = domestic_client({"rsp_cd": "00000", "rsp_msg": "조회가 완료되었습니다.",
+                                 "t0425OutBlock": {"cts_ordno": ""}})
+    with pytest.raises(DomesticPositionEvidenceUnavailable):
+        await read(client, product="korea_stock")

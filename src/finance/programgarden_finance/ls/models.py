@@ -64,6 +64,25 @@ class SetupOptions(BaseModel):
     )
     """Account identifier key that all TRs of one account share for cumulative limiting."""
 
+    transient_retries: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=3,  # length of tr_helpers.TRANSIENT_RETRY_DELAYS
+        title="일시 실패 재시도 횟수",
+        description=(
+            "조회 TR 의 일시 실패(5xx·429·타임아웃) 간격 재시도 횟수. None 이면 기본 사다리"
+            "(0.5/1.5/3.0초)를 그대로 쓰고, 0 이면 재시도하지 않으며 그 경우 '재시도 소진 후 "
+            "토큰 재발급'도 하지 않습니다. 호출 간격을 직접 조절하는 플랫폼 호출자는 0 을 씁니다. "
+            "주문 TR 은 이 값과 무관하게 일시 실패를 재시도하지 않습니다."
+        ),
+    )
+    """Spaced retries for transient read failures (``None`` = default 0.5/1.5/3.0 s ladder).
+
+    ``0`` disables the spaced retries and the token reissue that otherwise
+    follows an exhausted ladder; callers that pace requests themselves use it.
+    Explicit token failures still follow the token manager's reissue policy.
+    Order TRs never retry transient failures."""
+
     # 내부 실행 컨텍스트에서만 참조하는 객체이므로 검증/직렬화와 분리
     token_manager: Optional[TokenManager] = Field(
         default=None,

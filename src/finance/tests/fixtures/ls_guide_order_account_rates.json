@@ -1,0 +1,133 @@
+{
+  "source": "LS OpenAPI TR guide",
+  "guide_version": "20261012053652748",
+  "field": "transactionPerSec",
+  "transactions": [
+    {
+      "code": "CIDBQ01400",
+      "name": "해외선물 체결내역개별 조회(주문가능수량)",
+      "group": "[해외선물] 계좌",
+      "path": "/overseas-futureoption/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CIDBQ01500",
+      "name": "해외선물 미결제잔고내역 조회",
+      "group": "[해외선물] 계좌",
+      "path": "/overseas-futureoption/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CIDBQ01800",
+      "name": "해외선물 주문내역 조회",
+      "group": "[해외선물] 계좌",
+      "path": "/overseas-futureoption/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CIDBQ02400",
+      "name": "해외선물 주문체결내역 상세 조회",
+      "group": "[해외선물] 계좌",
+      "path": "/overseas-futureoption/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CIDBT00100",
+      "name": "해외선물 신규주문",
+      "group": "[해외선물] 주문",
+      "path": "/overseas-futureoption/order",
+      "transactionPerSec": 5
+    },
+    {
+      "code": "CIDBT00900",
+      "name": "해외선물 정정주문",
+      "group": "[해외선물] 주문",
+      "path": "/overseas-futureoption/order",
+      "transactionPerSec": 5
+    },
+    {
+      "code": "CIDBT01000",
+      "name": "해외선물 취소주문",
+      "group": "[해외선물] 주문",
+      "path": "/overseas-futureoption/order",
+      "transactionPerSec": 5
+    },
+    {
+      "code": "COSAQ00102",
+      "name": "해외주식 계좌주문체결내역조회 API",
+      "group": "[해외주식] 계좌",
+      "path": "/overseas-stock/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "COSAT00301",
+      "name": "미국시장주문 API",
+      "group": "[해외주식] 주문",
+      "path": "/overseas-stock/order",
+      "transactionPerSec": 10
+    },
+    {
+      "code": "COSAT00311",
+      "name": "미국시장정정주문 API",
+      "group": "[해외주식] 주문",
+      "path": "/overseas-stock/order",
+      "transactionPerSec": 10
+    },
+    {
+      "code": "COSAT00400",
+      "name": "해외주식 예약주문 등록 및 취소",
+      "group": "[해외주식] 주문",
+      "path": "/overseas-stock/order",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "COSMT00300",
+      "name": "해외증권 매도상환주문(미국)",
+      "group": "[해외주식] 주문",
+      "path": "/overseas-stock/order",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "COSOQ00201",
+      "name": "해외주식 종합잔고평가 API",
+      "group": "[해외주식] 계좌",
+      "path": "/overseas-stock/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CSPAQ13700",
+      "name": "현물계좌 주문체결내역 조회(API)",
+      "group": "[주식] 계좌",
+      "path": "/stock/accno",
+      "transactionPerSec": 1
+    },
+    {
+      "code": "CSPAT00601",
+      "name": "현물주문",
+      "group": "[주식] 주문",
+      "path": "/stock/order",
+      "transactionPerSec": 10
+    },
+    {
+      "code": "CSPAT00701",
+      "name": "현물정정주문",
+      "group": "[주식] 주문",
+      "path": "/stock/order",
+      "transactionPerSec": 3
+    },
+    {
+      "code": "CSPAT00801",
+      "name": "현물취소주문",
+      "group": "[주식] 주문",
+      "path": "/stock/order",
+      "transactionPerSec": 3
+    },
+    {
+      "code": "CSPBQ00200",
+      "name": "현물계좌증거금률별주문가능수량조회",
+      "group": "[주식] 계좌",
+      "path": "/stock/accno",
+      "transactionPerSec": 1
+    }
+  ]
+}

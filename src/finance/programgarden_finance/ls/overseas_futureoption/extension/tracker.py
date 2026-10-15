@@ -34,6 +34,7 @@ from .calculator import (
 )
 from .symbol_spec_manager import SymbolSpecManager, SymbolSpec
 from .subscription_manager import SubscriptionManager
+from .execution_history import normalize_broker_identity
 
 # LS증권 API 응답 코드
 # 이 집합은 "확실히 아는" 정상 코드만 담는다 — LS 가 붙이는 코드 상수에 전부 의존하지
@@ -501,6 +502,44 @@ class FuturesAccountTracker:
             self._last_errors["balance"] = error_msg
             logger.error(f"[_fetch_balance] 조회 실패: {e}", exc_info=True)
     
+    def _open_order_from_row(self, item, now: datetime) -> Optional[FuturesOpenOrder]:
+        """One CIDBQ01800OutBlock2 row → FuturesOpenOrder, keyed like the order TRs.
+
+        Field names are the CIDBQ01800OutBlock2 model's (the guide's). Earlier
+        code read ``OrdNo``/``OrdPrc``/``UnexecQty``/``OrdStatCode``/``OrdPtnCode``,
+        which this TR does not have, so every row got order number ``''`` and
+        collapsed into one entry with price and remaining quantity 0.
+
+        CIDBQ01800 returns zero-padded numbers (``"0000000027"``) while the order
+        TRs and the TC1/TC2/TC3 frames say ``"27"`` (LS paper, 2026-10-15), so the
+        key is the integer form. Rows without a usable number, or with nothing
+        left to fill, are not open orders.
+        """
+        order_no = normalize_broker_identity(getattr(item, 'OvrsFutsOrdNo', None))
+        if order_no is None:
+            return None
+        remaining = getattr(item, 'UnercQty', 0) or 0
+        if remaining <= 0:
+            return None
+        symbol = str(getattr(item, 'IsuCodeVal', '') or '').strip()
+        spec = self._spec_manager.get_spec(symbol)
+        return FuturesOpenOrder(
+            order_no=order_no,
+            symbol=symbol,
+            symbol_name=getattr(item, 'IsuNm', ''),
+            exchange_code=spec.exchange_code if spec else "",
+            # 매매구분: 1 매도, 2 매수 (guide / CIDBQ01800 BnsTpCode)
+            is_long=getattr(item, 'BnsTpCode', '') == '2',
+            order_type=getattr(item, 'AbrdFutsOrdPtnCode', ''),
+            order_qty=getattr(item, 'OrdQty', 0),
+            order_price=Decimal(str(getattr(item, 'OvrsDrvtOrdPrc', 0))),
+            executed_qty=getattr(item, 'ExecQty', 0),
+            remaining_qty=remaining,
+            order_time=getattr(item, 'OrdTime', ''),
+            order_status=getattr(item, 'FutsOrdStatCode', ''),
+            last_updated=now,
+        )
+
     async def _fetch_open_orders(self):
         """미체결 주문 조회 (CIDBQ01800)"""
         logger.debug("[_fetch_open_orders] 조회 시작")
@@ -559,31 +598,13 @@ class FuturesAccountTracker:
             # block2에 미체결 데이터가 있음
             if hasattr(resp, 'block2') and resp.block2:
                 for item in resp.block2:
-                    symbol = getattr(item, 'IsuCodeVal', '')
-                    
-                    # SymbolSpecManager에서 거래소 코드 조회
-                    spec = self._spec_manager.get_spec(symbol)
-                    exchange_code = spec.exchange_code if spec else ""
-                    
-                    order = FuturesOpenOrder(
-                        order_no=str(getattr(item, 'OrdNo', '')),
-                        symbol=symbol,
-                        symbol_name=getattr(item, 'IsuNm', ''),
-                        exchange_code=exchange_code,
-                        is_long=getattr(item, 'BnsTpCode', '2') == '2',
-                        order_type=getattr(item, 'OrdPtnCode', ''),
-                        order_qty=getattr(item, 'OrdQty', 0),
-                        order_price=Decimal(str(getattr(item, 'OrdPrc', 0))),
-                        executed_qty=getattr(item, 'ExecQty', 0),
-                        remaining_qty=getattr(item, 'UnexecQty', 0),
-                        order_time=getattr(item, 'OrdTime', ''),
-                        order_status=getattr(item, 'OrdStatCode', ''),
-                        last_updated=now
-                    )
+                    order = self._open_order_from_row(item, now)
+                    if order is None:
+                        continue
                     self._open_orders[order.order_no] = order
                     logger.debug(
                         f"[_fetch_open_orders] 미체결 추가: #{order.order_no} "
-                        f"{order.symbol}@{exchange_code} {'매수' if order.is_long else '매도'} "
+                        f"{order.symbol}@{order.exchange_code} {'매수' if order.is_long else '매도'} "
                         f"{order.order_qty}계약 @{order.order_price}"
                     )
                 
