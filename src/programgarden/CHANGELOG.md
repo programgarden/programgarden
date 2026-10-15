@@ -1,3 +1,20 @@
+## [2.6.7] - 2026-10-16
+
+### Fixed
+- Overseas futures TC2 (정정/취소 확인) handling, evidence from LS paper 2026-10-15 (frames in `tests/fixtures/tc_frames_paper_futures_20261015.json`, ids replaced):
+  - The order this workflow owns is looked up through `orgn_ordr_no`. A modify and a cancel each get their own new order number (`ordr_no`); the handler used that number, so a cancel never reached the cancelled order.
+  - Cancel confirmations cancel the owned original order in the ledger. Modify confirmations update the successor row that ModifyOrderNodeExecutor recorded; a modify made outside the workflow (HTS/MTS, board order window) is logged and not recorded (recognising those is the separate E1 item).
+  - `s_b_ccd` follows the guide (`"1"` = sell, `"2"` = buy); the handler mapped `"1"` to buy. A side or symbol that does not match the ledger row changes nothing; an unknown side code is skipped.
+  - The handler no longer synthesises an order date from the local clock.
+- Overseas futures RealOrderEventNode skips a frame the SDK could not read (`body=None`) instead of emitting an empty `accepted` event. Up to finance 2.0.3 every TC2 frame was unreadable (LS sends `user_id`, the model required `userid`), so each modify/cancel confirmation fired the node's `accepted` output with blank fields and triggered the connected nodes.
+
+### Dependencies
+- Require programgarden-finance ^2.0.5, which reads the TC2 frames LS sends (`user_id`, blank `ordr_typ_cd` on cancel confirmations), re-registers account events after a reconnect and unregisters futures account events when the last listener leaves. Core ^2.6.3 and community ^2.3.1 are unchanged.
+
+### Release note
+- These paths only run once the SDK reads TC2 (programgarden-finance 2.0.5; 2.0.4 is the separate domestic open-orders fix). Finance 2.0.5 and engine 2.6.7 are published together: engine 2.6.6 (`^2.0.3`) would also resolve finance 2.0.5 and run the old handler, so consumers pin both versions. With finance 2.0.5, futures RealOrderEventNode TC2 frames reach the `modified`/`cancelled`/`rejected` outputs for the first time.
+- Validation: [release 2.6.7 validation](../../docs/release-2.6.7-validation.md).
+
 ## [2.6.6] - 2026-10-15
 
 ### Added

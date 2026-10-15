@@ -2,6 +2,13 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.7 release [futures TC2 confirmation handling](../../docs/release-2.6.7-validation.md)
+requires programgarden-finance 2.0.5, which reads overseas futures modify and
+cancel confirmations (TC2) as LS sends them and re-registers account events
+after a reconnect. The engine finds the workflow's order through
+`orgn_ordr_no`, uses the guide's side codes and skips frames the SDK could
+not read.
+
 The 2.6.6 release candidate [ranking nodes and runtime-values-as-data correction](../../docs/release-2.6.6-validation.md)
 adds KoreaStockRankingNode and OverseasStockRankingNode, evaluates only
 expression templates authored in the workflow, routes Gemini and DeepSeek
@@ -176,7 +183,11 @@ exchange execution numbers and broker execution numbers are not interchangeable.
 This ledger API alone does not reconcile finite workflows after their shutdown.
 
 Standalone futures TC3 callbacks interpret `s_b_ccd="1"` as sell and `"2"` as buy,
-matching the SDK contract. Unknown or blank side codes are logged and skipped
+matching the SDK contract. TC2 confirmations use the same codes and find the
+workflow's order through `orgn_ordr_no`: a futures modify or cancel gets its own
+new order number (LS paper, 2026-10-15), so the cancel confirmation cancels the
+original order in the ledger and a modify confirmation updates the successor row
+recorded by ModifyOrderNodeExecutor. Unknown or blank side codes are logged and skipped
 before any inventory write is scheduled. With an app order lifecycle handler,
 TC3 still bypasses this legacy fill path: canonical REST reconciliation remains
 the sole writer. This side correction does not establish an alias between TC3
