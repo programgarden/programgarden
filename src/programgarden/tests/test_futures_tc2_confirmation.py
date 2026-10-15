@@ -17,7 +17,7 @@ ran in practice because finance ≤ 2.0.3 handed it ``body=None`` (TC2 sends
 
 Bodies are built with the frame's own field names (``SimpleNamespace``), so the
 engine logic is tested independently of the installed SDK; the last test runs
-the SDK model too when the installed finance can read these frames (≥ 2.0.4).
+the SDK model too when the installed finance can read these frames (≥ 2.0.5).
 """
 
 import asyncio
@@ -320,7 +320,7 @@ async def test_with_the_installed_sdk_model_when_it_reads_ls_frames(tmp_path):
     try:
         body = TC2RealResponseBody.model_validate(raw)
     except Exception:
-        pytest.skip("installed programgarden-finance cannot read LS TC2 frames (fixed in 2.0.4)")
+        pytest.skip("installed programgarden-finance cannot read LS TC2 frames (fixed in 2.0.5)")
     ctx, tracker = _context(tmp_path)
     _record(ctx, "38", 1, 22980.0)
     assert await _apply_futures_tc2_confirmation(ctx, body) == "cancelled"

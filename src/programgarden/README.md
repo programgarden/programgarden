@@ -2,6 +2,13 @@ The 2.6.2 release candidate [futures minute alias correction](../../docs/futures
 
 # ProgramGarden
 
+The 2.6.7 release [futures TC2 confirmation handling](../../docs/release-2.6.7-validation.md)
+requires programgarden-finance 2.0.5, which reads overseas futures modify and
+cancel confirmations (TC2) as LS sends them and re-registers account events
+after a reconnect. The engine finds the workflow's order through
+`orgn_ordr_no`, uses the guide's side codes and skips frames the SDK could
+not read.
+
 The 2.6.6 release candidate [ranking nodes and runtime-values-as-data correction](../../docs/release-2.6.6-validation.md)
 adds KoreaStockRankingNode and OverseasStockRankingNode, evaluates only
 expression templates authored in the workflow, routes Gemini and DeepSeek
