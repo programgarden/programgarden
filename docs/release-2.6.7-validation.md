@@ -91,3 +91,26 @@ the engine's finance lower bound (`>=2.0.5`). A fresh environment installed the
 two wheels with core 2.6.3 and community 2.3.1 from PyPI (`uv pip check`
 clean) and passed the engine TC2 confirmation cases (25) and the new finance
 cases (139) from copies of the test directories.
+
+## Publication
+
+Both packages were built from an export of the engine branch with
+`SOURCE_DATE_EPOCH=1792085033` (the release-prep commit time); a second build
+from the following commit was byte-identical. The `src/finance` tree of the
+#112 merge commit `3ab277ec` (tag `finance-v2.0.5`) equals the built tree.
+Finance 2.0.5 was uploaded to PyPI first (17:30:52Z) and engine 2.6.7 five
+seconds later (17:30:57Z). Published files:
+
+| File | SHA-256 |
+|---|---|
+| `programgarden_finance-2.0.5-py3-none-any.whl` | `7ff15b2910cfd46bba42e4df24b9bdae502152d7316e18c27913e2e1d2b1a1d1` |
+| `programgarden_finance-2.0.5.tar.gz` | `f5317c32d85d2eef7e79a07d7a681798d7313eb3e27b004d04e7321e6e76414b` |
+| `programgarden-2.6.7-py3-none-any.whl` | `859bafc29b1ed10c0c36afac19c55fcf6edc4f11d79c1f420a0d2fa246ff9876` |
+| `programgarden-2.6.7.tar.gz` | `5b224bfe686a2609e94b8af8b02077574e725fe4f46648a6f826d37784b360a0` |
+
+A fresh environment installed `programgarden==2.6.7` from PyPI, resolved
+finance 2.0.5, core 2.6.3 and community 2.3.1 (`uv pip check` clean) and
+passed the 25 TC2 confirmation and 139 new finance cases. The engine lock was
+then refreshed with Poetry 2.4.1 (`poetry lock`, no upgrade): only the finance
+entry and the content hash change, and the locked hashes are the published
+files above.
