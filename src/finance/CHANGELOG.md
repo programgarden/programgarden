@@ -1,4 +1,4 @@
-## [2.0.5] - Unreleased (prepared 2026-10-15, not published)
+## [2.0.5] - 2026-10-16
 
 ### Added
 - `occurs_req()`/`occurs_req_async()` for `CSPAQ13700`, `COSAQ00102`, `COSOQ00201`, `CIDBQ01500`, `CIDBQ01800` and `CIDBQ02400`: header-only continuation (`tr_cont="Y"` + previous `tr_cont_key`, body unchanged), one page response per element, a failed page kept last, and stops on a blank/repeated key or `max_pages` (100). `tr_helpers.occurs_complete(pages)` tells a complete walk from a partial one.
