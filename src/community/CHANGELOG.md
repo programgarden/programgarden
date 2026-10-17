@@ -1,3 +1,7 @@
+## [2.3.2] - 2026-10-18
+### Changed
+- RollManagement and TimeBasedExit read the replay fixture clock (`context.validation_as_of`, an ISO-8601 instant with a timezone) when it is present, so a credential-free replay judges expiry distance and holding days at its own instant. Live contexts have no such value and keep `datetime.now()` / `date.today()`. Helper: `plugins/_replay_clock.fixture_now`.
+
 ## [2.3.1] - 2026-09-29
 ### Changed
 - TelegramNode uses the `ask` missing-credential policy: the authoring client

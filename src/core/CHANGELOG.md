@@ -1,3 +1,12 @@
+## [2.7.0] - 2026-10-18
+
+### Added
+- OverseasStockHistoricalDataNode reads minute bars: `interval` accepts `1m`, `5m`, `10m`, `15m`, `30m` and `60m` (LS g3203 `ncnt` 1/5/10/15/30/60) besides `1d`, `1w`, `1M`, `1Y` (g3204). Each bar size answered `rsp_cd=00000` with bars of exactly that step on one live read-only call per size (NVDA, 2026-10-18, stored platform token, no issuance). A minute read is one page: the newest up to 500 bars at or before `end_date` within `start_date..end_date`; a longer range is not completed by paging. A bar's `date` is `YYYYMMDDHHMMSS` in the exchange's local time as LS labels it, and pre-market/after-hours bars are kept as LS returns them. No completion or finality flag is added (the newest bar may still be forming).
+- Field schema enum, guide text, examples check and ko/en labels (`enums.interval.10m`, `enums.interval.60m`) follow the executor.
+
+### Changed
+- The refusal for other values (`1h`, `1min`, `2m`, `30s`, ...) names both families; daily bars are never relabeled as minute bars.
+
 ## [2.6.3] - 2026-10-15
 
 ### Added
