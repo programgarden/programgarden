@@ -17,6 +17,7 @@ from programgarden_finance.ls.token_errors import (
     classify_token_failure,
 )
 from .tr_base import TRAccnoAbstract
+from . import replay_transport as _replay
 
 
 R = TypeVar("R")
@@ -138,6 +139,8 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
 
         Read at request time so options assigned after construction still apply.
         """
+        if _replay.active_transport() is not None:
+            return ()  # a recorded answer does not change on retry
         options = getattr(self.request_data, "options", None)
         return transient_retry_delays(getattr(options, "transient_retries", None))
 
@@ -274,6 +277,9 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
     ) -> bool:
         if self._token_manager is None:
             return False
+        if _replay.active_transport() is not None:
+            _replay.notify_refused("token_reissue", self._url)
+            return False
         self._log_reissue_reason(kind, detail)
         try:
             refreshed = self._token_manager.force_reissue(observed_generation=generation)
@@ -292,6 +298,9 @@ class GenericTR(TRAccnoAbstract, Generic[R]):
         self, generation: Optional[int], kind: TokenFailureKind, detail: str
     ) -> bool:
         if self._token_manager is None:
+            return False
+        if _replay.active_transport() is not None:
+            _replay.notify_refused("token_reissue", self._url)
             return False
         self._log_reissue_reason(kind, detail)
         try:

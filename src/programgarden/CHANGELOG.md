@@ -1,3 +1,23 @@
+## [2.7.0] - 2026-10-18
+
+### Added
+- Replay: per-item recordings inside SplitNode branches (baskets). A recording `{"items": {key: record}}` on a node inside a split branch is selected by the split item at that branch's index, read from the split's `items` output (the single `item` slot is overwritten by parallel branches). Keys: `EXCHANGE:SYMBOL` (domestic `KRX:SYMBOL` without an exchange), any other item by its content hash; `replay_external.per_item_key()` computes them for recording authors. A missing item recording is `REPLAY_FIXTURE_REQUIRED` naming the key and branch; a recording bound to another item is `REPLAY_FIXTURE_MISMATCH`. Flat recordings keep their meaning (one request for every item, `item` null).
+- Replay: `ls_tape` recording kind for LS REST read nodes (Account, OpenOrders, MarketData, HistoricalData, Fundamental, SymbolQuery for each product; Korea/Overseas ranking; FuturesContract, OverseasFuturesContractInfo, OverseasFuturesOrderableQuantity). The node runs its live executor and the finance TR parser over recorded HTTP answers (finance `replay_transport`), matched by TR, continuation header and exact JSON body except listed `ignore` paths (for request fields the executor fills from the wall clock, such as `COSOQ00201InBlock1.BaseDt`). The node reads a non-secret placeholder credential and a fresh replay LS client (no login, never cached). An unanswered request is `REPLAY_FIXTURE_REQUIRED` naming the TR and the differing body paths; order TRs, token issuance and token reissue are `REPLAY_CAPABILITY_BLOCKED`. Live read code still stamps its own wall clock (for example `observed_at`). Node-output recordings keep working.
+- Replay: `responder` recording kind for nodes whose request binds run-time values. TelegramNode renders the message as the live node would, never sends it, returns `sent=true` / `message_id="replay-N"` and appends `{node_id, text, parse_mode, scope}` to `ReplayResult.outbox`. LLMModelNode returns its non-secret connection. AIAgentNode parses a scenario `answer` (or `answers` per item) with the live output parser (presets, `output_format`, `output_schema`). OverseasFuturesOrderableQuantityNode builds a CIDBQ01400 answer for the ACTUAL resolved request (echo + the scenario's `orderable_quantity`) and reads it with the live parser.
+- `ReplayResult.outbox` and `ReplayResult.assumptions` (which nodes were answered by tapes or responders). These are scenario assumptions, never broker or provider evidence.
+- Overseas stock minute history (LS g3203) for 1m, 5m, 10m, 15m, 30m and 60m: one page of the newest up to 500 bars, `date` = `YYYYMMDD` + `loctime`, `volume` = `exevol`, oldest first, extended-hours bars kept; a g3203 error is an empty series with a warning, never daily bars. Static validation and deep validation follow (deep fixtures carry `YYYYMMDDHHMMSS` stamps). Contract: [stock history intervals](../../docs/stock-history-interval-contract.md).
+
+### Fixed
+- Overseas futures fill-price recovery (`BrokerNodeExecutor._sync_overseas_futures_fill_prices`) reads CIDBQ01800. It called a client method that does not exist, sent the wrong block name and read field names the TR does not have, so it always ended in a logged warning and never recovered a price. It now reads one CIDBQ01800 page per order date with an unpriced order, matches `OvrsFutsOrdNo` by integer identity (CIDBQ01800 zero-pads it) and writes back `AbrdFutsExecPrc` only for rows with an executed quantity and a positive price. Tested on the LS paper capture of 2026-10-15 (orders 614/615 filled at 24114/24104). The path runs only when a filled order has no price and no managed futures reconciliation handler owns history.
+
+### Dependencies
+- Require programgarden-core ^2.7.0 (minute interval enum), programgarden-finance ^2.0.6 (replay transport) and programgarden-community ^2.3.2 (fixture clock in two plugins).
+
+### Release note
+- `VALIDATOR_VERSION` (`incremental-replay-3`) and `CONTRACT_VERSION` are unchanged: no existing recording changes meaning. The runtime identity changes, so skeleton catalogs keyed by it are re-seeded for 2.7.0.
+- `ReplayResult` has two new fields. A consumer that rebuilds `ReplayResult` from every dataclass field of a worker answer needs the worker on 2.7.0 first (or together); a 2.6.x consumer ignores the extra keys.
+- Validation: [release 2.7.0 validation](../../docs/release-2.7.0-validation.md).
+
 ## [2.6.7] - 2026-10-16
 
 ### Fixed

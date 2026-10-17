@@ -32,6 +32,7 @@ from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 from .._position_qty import coerce_number, preserve_qty
+from .._replay_clock import fixture_now
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,8 @@ async def roll_management_condition(
             "analysis": {"error": "No positions data"},
         }
 
-    now = datetime.now()
+    # A replay judges the expiry distance at its fixture instant (live: wall clock).
+    now = fixture_now(context) or datetime.now()
     passed, failed, symbol_results = [], [], []
 
     # strategy_state 접근 — 메서드 이름·호출 규약은 **실제 트래커**(WorkflowRiskTracker)에

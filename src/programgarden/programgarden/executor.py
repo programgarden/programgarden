@@ -1012,6 +1012,12 @@ class LSClientManager:
             (ls_instance, success: bool, error_message: str | None)
         """
         from programgarden_finance import LS
+        from programgarden_finance.ls.replay_transport import active_transport, replay_client
+
+        # Offline replay (ls_tape) only: a client whose REST TRs are answered from
+        # the recording. No login, no token provider, never cached or reused.
+        if active_transport() is not None:
+            return replay_client(paper_trading), True, None
         
         # 이미 해당 product의 인스턴스가 있고 로그인된 경우
         if product in cls._instances:
@@ -5717,37 +5723,64 @@ class BrokerNodeExecutor(NodeExecutorBase):
         context: ExecutionContext,
         node_id: str,
     ) -> None:
-        """해외선물 체결내역에서 가격 동기화"""
+        """Recover missing futures fill prices from CIDBQ01800 order rows.
+
+        One CIDBQ01800 read per order date that has an unpriced order (the
+        ledger's order date is the broker order date the order was sent with).
+        A row supplies a price only for the same broker order — OvrsFutsOrdNo
+        compared as the integer identity, because CIDBQ01800 zero-pads it
+        ("0000000614") while the order TRs answer "614" — with an executed
+        quantity and a positive AbrdFutsExecPrc (LS paper 2026-10-15:
+        ``ExecQty=1``, ``AbrdFutsExecPrc="24114.00000000000"``). The stored
+        order number and date are written back unchanged.
+
+        Until 2.7.0 this called a method that does not exist, so every attempt
+        ended in a logged warning and no price was ever recovered.
+        """
         try:
-            from programgarden_finance import CIDBQ01800
-            
-            # 오늘 날짜 기준 체결내역 조회
-            today = datetime.now().strftime("%Y%m%d")
-            
-            response = ls.overseas_futureoption().accno().해외선물체결내역조회(
-                body=CIDBQ01800.CIDBQ01800InBlock(
-                    QryDt=today,
-                )
+            from programgarden_finance.ls.overseas_futureoption.accno.CIDBQ01800.blocks import (
+                CIDBQ01800InBlock1,
             )
-            result = await response.req_async()
-            
-            if not result or not hasattr(result, 'block1') or not result.block1:
-                return
-            
-            # 체결내역에서 주문번호별 가격 추출
+            from programgarden_finance.ls.overseas_futureoption.extension.execution_history import (
+                normalize_broker_identity,
+            )
+
+            wanted: Dict[str, Dict[str, Any]] = {}
+            for order in orders or []:
+                identity = normalize_broker_identity(order.get("order_no"))
+                order_date = str(order.get("order_date") or "")
+                if identity and len(order_date) == 8 and order_date.isdigit():
+                    wanted.setdefault(order_date, {})[identity] = order
+
+            accno = ls.overseas_futureoption().accno()
             fill_history = []
-            for item in result.block1:
-                fill_history.append({
-                    "order_no": str(getattr(item, 'OrdNo', '')),
-                    "order_date": today,
-                    "fill_price": float(getattr(item, 'ExecPrc', 0)),
-                })
-            
+            for order_date, by_identity in wanted.items():
+                result = await accno.CIDBQ01800(body=CIDBQ01800InBlock1(
+                    RecCnt=1, IsuCodeVal="", OrdDt=order_date, ThdayTpCode="",
+                    OrdStatCode="0", BnsTpCode="0", QryTpCode="1", OrdPtnCode="00",
+                    OvrsDrvtFnoTpCode="A",
+                )).req_async()
+                if getattr(result, "error_msg", None):
+                    context.log("warning", f"CIDBQ01800 fill price read failed ({order_date}): {result.error_msg}", node_id)
+                    continue
+                for row in getattr(result, "block2", None) or []:
+                    order = by_identity.get(normalize_broker_identity(getattr(row, "OvrsFutsOrdNo", None)))
+                    price = getattr(row, "AbrdFutsExecPrc", None)
+                    executed = getattr(row, "ExecQty", 0) or 0
+                    if (order is None or isinstance(price, bool) or not isinstance(price, (int, float))
+                            or not math.isfinite(price) or price <= 0 or executed <= 0):
+                        continue
+                    fill_history.append({
+                        "order_no": order["order_no"],
+                        "order_date": order["order_date"],
+                        "fill_price": float(price),
+                    })
+
             if fill_history:
                 updated = context.sync_workflow_fill_prices_from_history(fill_history)
                 if updated > 0:
                     context.log("info", f"Synced {updated} order fill prices from futures history", node_id)
-                    
+
         except Exception as e:
             context.log("warning", f"Failed to sync futures fill prices: {e}", node_id)
     
@@ -12486,7 +12519,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
     HistoricalDataNode executor - 과거 OHLCV 데이터 조회
     
     LS Finance Chart API를 사용하여 과거 차트 데이터를 조회합니다.
-    - Overseas stock: g3204 (daily/weekly/monthly/yearly; no intraday)
+    - Overseas stock: g3204 (daily/weekly/monthly/yearly), g3203 (1/5/10/15/30/60-minute bars)
     - 해외선물: o3108 (일봉), o3103 (분봉)
     """
 
@@ -12512,10 +12545,12 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         # The broker-specific fetch repeats this guard for direct/legacy callers.
         connection = config.get("connection")
         product = connection.get("product") if isinstance(connection, dict) else None
+        stock_minute_step = None
         if node_type == "OverseasStockHistoricalDataNode" or (
             node_type == "HistoricalDataNode" and product in (None, "overseas_stock")
         ):
-            self._stock_history_gubun(config.get("interval", "1d"))
+            tr_code, selector = self._stock_history_request(config.get("interval", "1d"))
+            stock_minute_step = selector if tr_code == "g3203" else None
         if node_type == "OverseasFuturesHistoricalDataNode" or (
             node_type == "HistoricalDataNode" and product in FUTURES_PRODUCTS
         ):
@@ -12536,7 +12571,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                 _seed = _cfg_sym or _in_sym
             except Exception:
                 _seed = None
-            fixture = _df.historical_data_fixture(config, _seed)
+            fixture = _df.historical_data_fixture(config, _seed, minute_step=stock_minute_step)
             override = context.get_deep_fixture(node_id, node_type)
             return _df.apply_override(fixture, override)
 
@@ -12765,17 +12800,38 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         # 파싱 실패 시 오늘 날짜 반환
         return datetime.now().strftime("%Y%m%d")
 
-    @staticmethod
-    def _stock_history_gubun(interval: str) -> str:
-        """Reject unsupported periods instead of relabeling daily bars."""
-        periods = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
-        if not isinstance(interval, str) or interval not in periods:
+    # LS g3204 period selectors (gubun) and g3203 bar sizes (ncnt, minutes).
+    # Every ncnt below answered rsp_cd 00000 with bars of exactly that step on a
+    # live platform call (2026-10-18, NVDA): 1, 5, 10, 15, 30 and 60.
+    STOCK_PERIOD_GUBUN = {"1d": "2", "1w": "3", "1M": "4", "1Y": "5"}
+    STOCK_MINUTE_NCNT = {"1m": 1, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "60m": 60}
+
+    @classmethod
+    def _stock_history_request(cls, interval: str) -> tuple:
+        """``("g3204", gubun)`` for a period, ``("g3203", ncnt)`` for minute bars.
+
+        Unknown values are refused instead of relabeling daily bars.
+        """
+        if isinstance(interval, str) and interval in cls.STOCK_PERIOD_GUBUN:
+            return "g3204", cls.STOCK_PERIOD_GUBUN[interval]
+        if isinstance(interval, str) and interval in cls.STOCK_MINUTE_NCNT:
+            return "g3203", cls.STOCK_MINUTE_NCNT[interval]
+        raise ValueError(
+            "UNSUPPORTED_STOCK_HISTORY_INTERVAL: OverseasStockHistoricalDataNode "
+            "supports 1d, 1w, 1M and 1Y through LS g3204 and 1m, 5m, 10m, 15m, 30m "
+            "and 60m minute bars through LS g3203; select a supported interval explicitly."
+        )
+
+    @classmethod
+    def _stock_history_gubun(cls, interval: str) -> str:
+        """The g3204 period selector; minute intervals and unknown values are refused."""
+        tr_code, selector = cls._stock_history_request(interval)
+        if tr_code != "g3204":
             raise ValueError(
-                "UNSUPPORTED_STOCK_HISTORY_INTERVAL: OverseasStockHistoricalDataNode "
-                "supports 1d, 1w, 1M and 1Y through LS g3204. "
-                "Intraday g3203 is not supported; select a supported period explicitly."
+                "UNSUPPORTED_STOCK_HISTORY_INTERVAL: g3204 reads 1d, 1w, 1M and 1Y; "
+                f"{interval} is a g3203 minute interval."
             )
-        return periods[interval]
+        return selector
 
     async def _fetch_overseas_stock(
         self,
@@ -12789,7 +12845,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         symbol_exchange_map: Dict[str, str] = None,
         symbols_raw: List[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """해외주식 차트 데이터 조회 (g3204)
+        """해외주식 차트 데이터 조회 (g3204 기간봉 / g3203 분봉)
         
         g3204 API 사용 (sdate, edate, qrycnt 지원):
         - g3103: date 기준 최근 30개만 반환 (제한적)
@@ -12799,7 +12855,9 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         """
         
         # Validate before credential access or login, outside the soft-failure handler.
-        gubun = self._stock_history_gubun(interval)
+        tr_code, selector = self._stock_history_request(interval)
+        gubun = selector if tr_code == "g3204" else None
+        ncnt = selector if tr_code == "g3203" else None
 
         credential = context.get_credential()
         if not credential:
@@ -12808,6 +12866,7 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         
         try:
             from programgarden_finance.ls.overseas_stock.chart.g3204.blocks import G3204InBlock
+            from programgarden_finance.ls.overseas_stock.chart.g3203.blocks import G3203InBlock
             
             ls, success, error = ensure_ls_login(
                 credential.get("appkey"),
@@ -12861,6 +12920,25 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
                     exchange = symbol_to_exchange.get(symbol) or exchcd_to_exchange.get(exchcd, "NASDAQ")
                     
                     keysymbol = f"{exchcd}{symbol}"
+
+                    if ncnt is not None:
+                        bars = await self._fetch_overseas_stock_minutes(
+                            api, G3203InBlock(
+                                delaygb="R",
+                                comp_yn="N",
+                                keysymbol=keysymbol,
+                                exchcd=exchcd,
+                                symbol=symbol,
+                                ncnt=ncnt,
+                                qrycnt=500,  # LS cap for an uncompressed page
+                                sdate=start_date,
+                                edate=end_date,
+                                cts_date="",
+                                cts_time="",
+                            ), symbol, context, node_id,
+                        )
+                        result_list.append({"symbol": symbol, "exchange": exchange, "time_series": bars})
+                        continue
                     
                     # g3204 API 사용 (sdate, edate, qrycnt 지원)
                     body = G3204InBlock(
@@ -12924,6 +13002,41 @@ class HistoricalDataNodeExecutor(NodeExecutorBase):
         except Exception as e:
             context.log("error", f"Historical data fetch error: {e}", node_id)
             return self._empty_historical_result(symbols, f"i18n:errors.HISTORICAL_DATA_FETCH_ERROR|error={e}")
+
+    async def _fetch_overseas_stock_minutes(self, api, body, symbol: str, context, node_id: str) -> List[Dict[str, Any]]:
+        """Read one g3203 page of overseas-stock N-minute bars, oldest first.
+
+        LS answers the newest ``qrycnt`` bars at or before ``edate`` within
+        ``sdate..edate`` (observed 2026-10-18: ascending rows, ``tr_cont=Y`` when
+        older bars exist). This reads that first page only, like the futures
+        o3103 path: the requested range is not guaranteed to be complete.
+        ``date`` is ``YYYYMMDD`` + ``loctime`` (``YYYYMMDDHHMMSS``, the exchange
+        local time label exactly as LS returns it); ``volume`` is ``exevol``.
+        Bars outside the regular session are kept as LS returns them; no
+        completion or finality flag is added.
+        """
+        result = await api.chart().g3203(body=body).req_async()
+        if getattr(result, "error_msg", None):
+            context.log("warning", f"g3203 {symbol}: {result.error_msg}", node_id)
+            return []
+        bars = []
+        for item in result.block1 or []:
+            day = getattr(item, "date", "") or ""
+            clock = getattr(item, "loctime", "") or ""
+            bars.append({
+                "date": f"{day}{clock}" if day and clock else day,
+                "open": float(item.open) if item.open else 0,
+                "high": float(item.high) if item.high else 0,
+                "low": float(item.low) if item.low else 0,
+                "close": float(item.close) if item.close else 0,
+                "volume": int(item.exevol) if item.exevol else 0,
+            })
+        bars.sort(key=lambda x: x["date"])
+        if not bars:
+            context.log("warning", f"No minute data for {symbol}", node_id)
+        else:
+            context.log("debug", f"Fetched {len(bars)} g3203 bars for {symbol} (ncnt={body.ncnt})", node_id)
+        return bars
 
     async def _fetch_overseas_futures(
         self,

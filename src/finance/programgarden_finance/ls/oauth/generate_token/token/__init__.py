@@ -13,6 +13,7 @@ from .blocks import (
 )
 from ....tr_base import TRRequestAbstract
 from ....config import URLS
+from .... import replay_transport as _replay
 import logging
 
 logger = logging.getLogger("programgarden.ls.oauth.generate_token.token")
@@ -81,7 +82,14 @@ class Token(TRRequestAbstract):
         if not isinstance(self.request_data, TokenRequest):
             raise TrRequestDataNotFoundException()
 
+    def _refused_during_replay(self) -> TokenResponse:
+        _replay.notify_refused("token", URLS.OAUTH_URL)
+        return TokenResponse(header=None, block=None,
+                             error_msg="token issuance is refused while a replay transport is installed")
+
     async def req_async(self) -> TokenResponse:
+        if _replay.active_transport() is not None:
+            return self._refused_during_replay()
         try:
             if self.on_rate_limit == "stop":
                 if self.is_rate_limited():
@@ -130,6 +138,8 @@ class Token(TRRequestAbstract):
             )
 
     def req(self) -> TokenResponse:
+        if _replay.active_transport() is not None:
+            return self._refused_during_replay()
         try:
             if self.on_rate_limit == "stop":
                 if self.is_rate_limited():

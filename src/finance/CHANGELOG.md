@@ -1,3 +1,12 @@
+## [2.0.6] - 2026-10-18
+
+### Added
+- `programgarden_finance.ls.replay_transport`: an opt-in replay transport for offline validation, off by default. It is a `ContextVar`, so only the task that enters `use_replay_transport(transport)` (and tasks it creates there) sees it; other tasks keep the network path. While installed, `TRRequestAbstract.execute_async_with_session` / `execute_sync` hand the request (header without `authorization`, JSON body) to `transport.answer(tr_cd, url, header, body)` and return its `(status, json, headers)`; no socket opens and no rate-limit wait happens. OAuth token issuance (`Token.req` / `req_async`) is refused, and `GenericTR` neither retries transient failures nor force-reissues a token (the transport is told through an optional `refused(kind, detail)`).
+- `replay_transport.replay_client(paper_trading)`: a fresh `LS` client with a placeholder unexpired token and no token provider, never the singleton.
+
+### Unchanged
+- With no transport installed every request path is the same as 2.0.5 (`tests/test_replay_transport.py` checks the session call). Only `tr_base` and the OAuth token module send HTTP; both are covered.
+
 ## [2.0.5] - 2026-10-16
 
 ### Added

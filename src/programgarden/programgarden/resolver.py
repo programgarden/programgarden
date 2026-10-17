@@ -379,13 +379,13 @@ class WorkflowResolver:
                 continue
             result.add(build_error(
                 ErrorCode.INVALID_FIELD_ENUM,
-                "Stock historical intervals require a supported LS g3204 period; "
-                "intraday g3203 is not supported.",
+                "Stock historical intervals are 1d, 1w, 1M, 1Y (LS g3204) or the "
+                "1m, 5m, 10m, 15m, 30m, 60m minute bars (LS g3203).",
                 location=ErrorLocation(
                     node_id=node.get("id"), node_type=node_type, field_path="interval",
                 ),
                 available_values=field.enum_values,
-                suggestion="Choose 1d, 1w, 1M or 1Y explicitly; do not substitute daily bars for an intraday strategy.",
+                suggestion="Choose one of the listed intervals explicitly (60m, not 1h); do not substitute daily bars for an intraday strategy.",
             ))
 
     def _validate_futures_history_contract(self, workflow, registry, result) -> None:
