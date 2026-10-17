@@ -4699,6 +4699,129 @@
     ],
     "count": 1
    }
+  },
+  "futures_contract_info_linked": {
+   "ledger": {
+    "product": "overseas_futures",
+    "paper": true
+   },
+   "tape": [
+    {
+     "tr": "o3105",
+     "request": {
+      "o3105InBlock": {
+       "symbol": "MESZ26"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "o3105",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "synthetic: query ok",
+      "o3105OutBlock": {
+       "Symbol": "MESZ26",
+       "SymbolNm": "MESZ26",
+       "ApplDate": "20261016",
+       "BscGdsCd": "MES",
+       "BscGdsNm": "",
+       "ExchCd": "CME",
+       "ExchNm": "",
+       "EcCd": "",
+       "CrncyCd": "USD",
+       "NotaCd": "",
+       "UntPrc": 0.0,
+       "MnChgAmt": 0.0,
+       "RgltFctr": 0.0,
+       "CtrtPrAmt": 0.0,
+       "LstngMCnt": 0,
+       "GdsCd": "",
+       "MrktCd": "",
+       "EminiCd": "",
+       "LstngYr": "",
+       "LstngM": "",
+       "SeqNo": 0,
+       "LstngDt": "20261016",
+       "MtrtDt": "20261016",
+       "FnlDlDt": "20261016",
+       "FstTrsfrDt": "20261016",
+       "EcPrc": 0.0,
+       "DlDt": "20261016",
+       "DlStrtTm": "000000",
+       "DlEndTm": "000000",
+       "OvsStrDay": "",
+       "OvsStrTm": "000000",
+       "OvsEndDay": "",
+       "OvsEndTm": "000000",
+       "DlPsblCd": "",
+       "MgnCltCd": "",
+       "OpngMgn": 0.0,
+       "MntncMgn": 0.0,
+       "OpngMgnR": 0.0,
+       "MntncMgnR": 0.0,
+       "DotGb": 0,
+       "TimeDiff": 0,
+       "OvsDate": "20261016",
+       "KorDate": "20261016",
+       "TrdTm": "000000",
+       "RcvTm": "230000",
+       "TrdP": 6050.25,
+       "TrdQ": 0,
+       "TotQ": 0,
+       "TrdAmt": 0.0,
+       "TotAmt": 0.0,
+       "OpenP": 6050.25,
+       "HighP": 6050.25,
+       "LowP": 6050.25,
+       "CloseP": 6050.25,
+       "YdiffP": 0.0,
+       "YdiffSign": "",
+       "Cgubun": "",
+       "Diff": 0.0
+      }
+     }
+    }
+   ],
+   "expected": {
+    "value": {
+     "symbol": "MESZ26",
+     "exchange": "CME",
+     "source_tr": "o3105",
+     "observed_at": "2026-10-17T17:28:45.006778+00:00",
+     "symbol_name": "MESZ26",
+     "underlying_code": "MES",
+     "currency": "USD",
+     "trade_status_code": null,
+     "maturity_date": "2026-10-16",
+     "last_trading_date": "2026-10-16",
+     "first_notice_date": "2026-10-16",
+     "master_received_date": "2026-10-16",
+     "korea_start_date": "2026-10-16",
+     "local_start_date": null,
+     "local_end_date": null,
+     "korea_start_time": "00:00:00",
+     "korea_end_time": "00:00:00",
+     "local_start_time": "00:00:00",
+     "local_end_time": "00:00:00",
+     "initial_margin": 0.0,
+     "maintenance_margin": 0.0,
+     "tick_size": null,
+     "tick_value": null
+    },
+    "verified": true,
+    "missing_fields": [
+     "local_end_date",
+     "local_start_date",
+     "tick_size",
+     "tick_value",
+     "trade_status_code"
+    ],
+    "error": null
+   }
   }
  }
 }

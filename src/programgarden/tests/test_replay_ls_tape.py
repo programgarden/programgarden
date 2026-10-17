@@ -126,6 +126,28 @@ async def test_quote_and_futures_contract_nodes_run_from_the_tape():
 
 
 @pytest.mark.asyncio
+async def test_a_linked_futures_credential_reference_resolves_to_the_placeholder():
+    """ContractInfo requires the exact linked broker credential; under a tape it is the placeholder."""
+    data = SCENARIOS["futures_contract_info_linked"]
+    connection = {"product": "overseas_futures", "provider": "ls-sec.co.kr", "paper_trading": True,
+                  "broker_node_id": "broker", "credential_id": "futures-cred"}
+    graph = {"id": "tape", "name": "Tape", "nodes": [
+        {"id": "start", "type": "StartNode"},
+        {"id": "broker", "type": "OverseasFuturesBrokerNode", "paper_trading": True, "credential_id": "futures-cred"},
+        {"id": "read", "type": "OverseasFuturesContractInfoNode", "symbol": {"symbol": "MESZ26", "exchange": "CME"}}],
+        "edges": [{"from": "start", "to": "broker"}, {"from": "broker", "to": "read"}],
+        "credentials": [{"credential_id": "futures-cred", "type": "broker_ls_overseas_futures", "data": []}]}
+    fixture = {"as_of": AS_OF, "nodes": {
+        "broker": recording("OverseasFuturesBrokerNode", {"paper_trading": True, "credential_id": "futures-cred"},
+                            {"connection": connection}, {"type": "object", "required": ["connection"]}, as_of=AS_OF),
+        "read": {"kind": "ls_tape", "as_of": AS_OF, "tape": deepcopy(data["tape"])}}}
+    result = await replay(graph, fixture)
+    assert result.passed, result.errors
+    assert _stable(result.outputs["read"]) == _stable(data["expected"])
+    assert result.outputs["read"]["verified"] is True
+
+
+@pytest.mark.asyncio
 async def test_a_request_the_tape_does_not_answer_names_the_tr():
     config = {"symbol": {"symbol": "TSLA", "exchange": "NASDAQ"}, "start_date": "20261015",
               "end_date": "20261016", "interval": "15m"}

@@ -25,8 +25,10 @@ is told about refused token issuance.
 
 from __future__ import annotations
 
+import json
 import time
 from contextlib import contextmanager
+from copy import deepcopy
 from contextvars import ContextVar
 from typing import Any, Dict, Iterator, Optional, Tuple
 
@@ -66,13 +68,25 @@ def use_replay_transport(transport: Any) -> Iterator[Any]:
 
 
 class ReplayHTTPResponse:
-    """The attributes TR response builders read from an HTTP response."""
+    """The attributes TR response builders and evidence readers use on a response.
+
+    ``json()`` returns a copy of the recorded body, as ``requests.Response.json``
+    does (some readers re-read the raw body to tell omitted blocks from defaults).
+    """
 
     reason = "replay"
 
-    def __init__(self, status: int, headers: Dict[str, Any]):
+    def __init__(self, status: int, headers: Dict[str, Any], payload: Any = None):
         self.status = self.status_code = int(status)
         self.headers = dict(headers)
+        self._payload = payload
+
+    def json(self) -> Any:
+        return deepcopy(self._payload)
+
+    @property
+    def text(self) -> str:
+        return json.dumps(self._payload, ensure_ascii=False)
 
     def raise_for_status(self) -> None:  # builders read ``status`` themselves
         return None
@@ -88,7 +102,7 @@ def answer_request(tr: Any, url: str, request_data: Any) -> Tuple[ReplayHTTPResp
     body = tr._build_json_body(request_data)
     status, payload, headers = transport.answer(str(header.get("tr_cd") or ""), url, header, body)
     headers = dict(headers or {})
-    return ReplayHTTPResponse(status, headers), payload, headers
+    return ReplayHTTPResponse(status, headers, payload), payload, headers
 
 
 def notify_refused(kind: str, detail: str) -> None:

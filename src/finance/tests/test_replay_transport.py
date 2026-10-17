@@ -118,6 +118,10 @@ async def test_installed_transport_answers_async_and_sync_with_the_real_parser(n
     assert call["body"]["g3203InBlock"]["keysymbol"] == "82NVDA" and call["body"]["g3203InBlock"]["ncnt"] == 15
     assert len(tape.calls) == 2
     assert rt.active_transport() is None
+    # Evidence readers re-read the raw body (requests.Response.json); it is a copy.
+    raw = response.raw_data
+    assert raw.json() == BARS and raw.json() is not raw.json()
+    assert raw.status_code == 200 and '"g3203OutBlock1"' in raw.text
 
 
 @pytest.mark.asyncio
