@@ -79,7 +79,8 @@ def _config_symbols(config: Dict[str, Any]) -> Any:
 _FIXTURE_BARS = 64
 
 
-def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0) -> List[Dict[str, Any]]:
+def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0,
+                  minute_step: Optional[int] = None) -> List[Dict[str, Any]]:
     """Build a deterministic OHLCV series for one symbol (oldest bar first).
 
     The close path rises for the first ~⅔ of the window then declines into the
@@ -93,6 +94,9 @@ def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0) -
     price = base
     for i in range(n):
         day = _FIXTURE_ANCHOR + timedelta(days=i)
+        if minute_step:
+            # Minute bars carry YYYYMMDDHHMMSS stamps, like the live g3203/o3103 rows.
+            day = _FIXTURE_ANCHOR.replace(hour=9, minute=30) + timedelta(minutes=i * minute_step)
         # Rise toward the peak, then ease back down — a gentle mean-reverting arc.
         if i <= peak:
             price = base + i * 0.8
@@ -101,7 +105,7 @@ def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0) -
         price = max(price, base * 0.5)
         bars.append(
             {
-                "date": day.strftime("%Y%m%d"),
+                "date": day.strftime("%Y%m%d%H%M%S" if minute_step else "%Y%m%d"),
                 "open": round(price - 0.5, 2),
                 "high": round(price + 1.0, 2),
                 "low": round(price - 1.0, 2),
@@ -112,7 +116,8 @@ def _ohlcv_series(symbol: str, *, n: int = _FIXTURE_BARS, base: float = 100.0) -
     return bars
 
 
-def _time_series_entries(config: Dict[str, Any], symbols_raw: Any = None) -> List[Dict[str, Any]]:
+def _time_series_entries(config: Dict[str, Any], symbols_raw: Any = None,
+                         minute_step: Optional[int] = None) -> List[Dict[str, Any]]:
     """Build the per-symbol ``{symbol, exchange, time_series:[bars]}`` list that
     HistoricalDataNode emits at runtime. Downstream ConditionNode auto-iterates
     this list, so each entry must carry the keys its ``items.extract`` reads
@@ -125,7 +130,7 @@ def _time_series_entries(config: Dict[str, Any], symbols_raw: Any = None) -> Lis
             {
                 "symbol": entry["symbol"],
                 "exchange": entry["exchange"],
-                "time_series": _ohlcv_series(entry["symbol"], base=100.0 + idx * 10),
+                "time_series": _ohlcv_series(entry["symbol"], base=100.0 + idx * 10, minute_step=minute_step),
             }
         )
     return entries
@@ -179,7 +184,8 @@ def market_data_fixture(config: Dict[str, Any], symbols_raw: Any = None, *, prod
     return {"values": values}
 
 
-def historical_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> Dict[str, Any]:
+def historical_data_fixture(config: Dict[str, Any], symbols_raw: Any = None, *,
+                            minute_step: Optional[int] = None) -> Dict[str, Any]:
     """HistoricalDataNode deep fixture.
 
     Real shape (executor.py ``HistoricalDataNodeExecutor.execute`` return):
@@ -195,7 +201,7 @@ def historical_data_fixture(config: Dict[str, Any], symbols_raw: Any = None) -> 
     """
     if symbols_raw is None:
         symbols_raw = config.get("symbol") or _config_symbols(config)
-    entries = _time_series_entries(config, symbols_raw)
+    entries = _time_series_entries(config, symbols_raw, minute_step=minute_step)
     single = entries[0] if len(entries) == 1 else None
     return {
         "value": single,

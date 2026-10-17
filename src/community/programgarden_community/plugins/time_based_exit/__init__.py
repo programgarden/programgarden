@@ -64,6 +64,7 @@ from programgarden_core.registry import PluginSchema
 from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
 
 from .._position_qty import preserve_qty
+from .._replay_clock import fixture_now
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +228,9 @@ async def time_based_exit_condition(
             "analysis": {"error": "No positions data", "stale_state_cleared": stale},
         }
 
-    today = date.today()
+    # A replay counts holding days at its fixture date (live: wall clock).
+    _fixture_instant = fixture_now(context)
+    today = _fixture_instant.date() if _fixture_instant is not None else date.today()
     today_str = today.isoformat()
 
     passed, failed, symbol_results = [], [], []

@@ -17,6 +17,7 @@ import requests
 
 from programgarden_finance.ls.models import SetupOptions
 from programgarden_finance.ls.token_manager import TokenManager
+from programgarden_finance.ls import replay_transport as _replay
 
 from .status import RequestStatus
 
@@ -221,6 +222,9 @@ class TRRequestAbstract(ABC):
         """
         비동기 TR 요청을 실행합니다.
         """
+        if _replay.active_transport() is not None:
+            # Offline replay only (default off): a recorded answer, never the network.
+            return _replay.answer_request(self, url, request_data)
         try:
             if self.on_rate_limit == "stop":
                 if self.is_rate_limited():
@@ -258,6 +262,9 @@ class TRRequestAbstract(ABC):
         """
         동기 TR 요청을 실행합니다.
         """
+        if _replay.active_transport() is not None:
+            # Offline replay only (default off): a recorded answer, never the network.
+            return _replay.answer_request(self, url, request_data)
         try:
             if self.on_rate_limit == "stop":
                 if self.is_rate_limited():

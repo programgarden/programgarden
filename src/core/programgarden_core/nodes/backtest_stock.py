@@ -65,9 +65,10 @@ class OverseasStockHistoricalDataNode(BaseNode):
         default="{{ date.today(format='yyyymmdd') }}",
         description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
     )
-    interval: Literal["1d", "1w", "1M", "1Y"] = Field(
+    interval: Literal["1d", "1w", "1M", "1Y", "1m", "5m", "10m", "15m", "30m", "60m"] = Field(
         default="1d",
-        description="LS g3204 interval: daily, weekly, monthly or yearly. Intraday is unsupported.",
+        description=("Bar size: 1d, 1w, 1M, 1Y read LS g3204; 1m, 5m, 10m, 15m, 30m, 60m read LS g3203 "
+                     "minute bars (one page, newest up to 500 bars)."),
     )
     adjust: bool = Field(
         default=False,
@@ -81,6 +82,7 @@ class OverseasStockHistoricalDataNode(BaseNode):
     _usage: ClassVar[Dict[str, Any]] = {
         "when_to_use": [
             "Retrieve daily, weekly, monthly or yearly OHLCV history for a US-listed stock to compute technical indicators or run backtests",
+            "Retrieve 1/5/10/15/30/60-minute bars of a US-listed stock for an intraday indicator (one page of the newest bars)",
             "Feed time-series data into ConditionNode plugins (RSI, MACD, Bollinger, etc.) that require a `data` list of candles",
             "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to get a rolling lookback window without hardcoding dates",
         ],
@@ -97,7 +99,9 @@ class OverseasStockHistoricalDataNode(BaseNode):
     }
     _features: ClassVar[List[str]] = [
         "Returns a list of OHLCV candles in `value.time_series`: [{date, open, high, low, close, volume}, ...]",
-        "Supports intervals: 1d, 1w, 1M, 1Y through LS g3204; intraday history is unsupported",
+        "Supports intervals: 1d, 1w, 1M, 1Y through LS g3204 and 1m, 5m, 10m, 15m, 30m, 60m through LS g3203",
+        "A minute interval reads ONE g3203 page: the newest up to 500 bars at or before end_date within start_date..end_date; a longer range is not completed by paging",
+        "A minute bar's date is YYYYMMDDHHMMSS in the exchange's local time as LS labels it; pre-market and after-hours bars are included as LS returns them",
         "start_date / end_date accept YYYYMMDD strings or expression namespace calls: `{{ date.ago(30, format='yyyymmdd') }}`",
         "adjust=True applies split/dividend-adjusted prices for accurate long-term backtesting",
         "is_tool_enabled=True — AI Agent can fetch historical data autonomously for technical analysis",
@@ -161,7 +165,8 @@ class OverseasStockHistoricalDataNode(BaseNode):
         "input_handling": (
             "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` in a per-symbol loop. "
             "start_date / end_date accept 'YYYYMMDD' strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions. "
-            "Supported intervals: 1d, 1w, 1M, 1Y through LS g3204. Intraday g3203 is not connected to this node."
+            "Supported intervals: 1d, 1w, 1M, 1Y through LS g3204; 1m, 5m, 10m, 15m, 30m, 60m through LS g3203 "
+            "(one page of the newest up to 500 bars, date = YYYYMMDDHHMMSS exchange local time)."
         ),
         "output_consumption": (
             "The `value` port emits a dict: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
@@ -177,9 +182,10 @@ class OverseasStockHistoricalDataNode(BaseNode):
         "pitfalls": [
             "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
             "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port is a dict, not a plain list",
-            "Intraday intervals (1m/5m/15m/1h) are unsupported; never substitute daily bars or invent a g3203 node connection",
+            "Minute intervals are 1m, 5m, 10m, 15m, 30m and 60m (not 1h or 1min); daily bars are never a substitute for an intraday strategy",
+            "Minute bars include pre-market and after-hours bars as LS returns them; filter by the time part of `date` when a strategy needs the regular session only",
             "adjust=False (default) returns unadjusted prices; set True when comparing long-term price levels across splits",
-            "The current executor requests one g3204 page; it does not expose response-time, continuation-completion or candle-finality evidence",
+            "The executor requests one g3204 or g3203 page; it does not expose response-time, continuation-completion or candle-finality evidence (the newest minute bar may still be forming)",
         ],
     }
 
@@ -300,12 +306,18 @@ class OverseasStockHistoricalDataNode(BaseNode):
                 description="i18n:fields.OverseasStockHistoricalDataNode.interval",
                 default="1d",
                 required=True,
-                enum_values=["1d", "1w", "1M", "1Y"],
+                enum_values=["1d", "1w", "1M", "1Y", "1m", "5m", "10m", "15m", "30m", "60m"],
                 enum_labels={
                     "1d": "i18n:enums.interval.1d",
                     "1w": "i18n:enums.interval.1w",
                     "1M": "i18n:enums.interval.1M",
-                    "1Y": "i18n:enums.interval.1Y"
+                    "1Y": "i18n:enums.interval.1Y",
+                    "1m": "i18n:enums.interval.1m",
+                    "5m": "i18n:enums.interval.5m",
+                    "10m": "i18n:enums.interval.10m",
+                    "15m": "i18n:enums.interval.15m",
+                    "30m": "i18n:enums.interval.30m",
+                    "60m": "i18n:enums.interval.60m",
                 },
                 category=FieldCategory.PARAMETERS,
                 expression_mode=ExpressionMode.FIXED_ONLY,

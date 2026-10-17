@@ -115,6 +115,12 @@ class ReplayResult:
     # no events (or the main flow raised) — consumers then fall back to the final state.
     main_outputs: dict[str, Any] | None = None
     main_executed: list[str] | None = None
+    # Messages notification responders would have sent (never sent), in order:
+    # {node_id, text, parse_mode, scope}. Scenario output, not delivery evidence.
+    outbox: list[dict[str, Any]] = field(default_factory=list)
+    # Which nodes were answered by scenario assumptions (ls_tape, responder),
+    # so a reader never mistakes them for broker or provider evidence.
+    assumptions: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def initial_outputs(self) -> dict[str, Any]:
@@ -242,7 +248,28 @@ class ReplayExecutor(WorkflowExecutor):
             rules = self.fixture.get("contracts", {}).get(node_id, {})
             if "input" in rules:
                 check_contract(config, rules["input"], f"{node_id}.input")
-            if node_type in FIXTURE_NODES:
+            own_record = self.fixture.get("nodes", {}).get(node_id)
+            record_kind = own_record.get("kind") if isinstance(own_record, dict) else None
+            if record_kind == "ls_tape":
+                from programgarden.replay_tape import TAPE_NODES, execute_tape
+                if node_type not in TAPE_NODES:
+                    raise ContractViolation(node_id, "An ls_tape recording serves LS REST read nodes only",
+                                            "REPLAY_CAPABILITY_BLOCKED")
+                output = await execute_tape(self, node_id, node_type, config, context, own_record, kwargs)
+                if node_type.endswith("OpenOrdersNode") and isinstance(output, dict):
+                    # Same snapshot/book rules as a node-output recording.
+                    from programgarden.replay_order_adapter import check_open_orders_snapshot
+                    if self.orders is not None:
+                        self.orders.check_open_orders(output, node_type)
+                    else:
+                        check_open_orders_snapshot(output)
+            elif record_kind == "responder":
+                from programgarden.replay_responders import RESPONDER_NODES, respond
+                if node_type not in RESPONDER_NODES:
+                    raise ContractViolation(node_id, "No responder for this node type",
+                                            "REPLAY_CAPABILITY_BLOCKED")
+                output = respond(self, node_id, node_type, config, context, own_record)
+            elif node_type in FIXTURE_NODES:
                 from programgarden.replay_external import external_record
                 from programgarden.replay_order_adapter import check_open_orders_snapshot, check_order_events_shape
                 record = external_record(self.fixture, node_id, node_type, config, context)

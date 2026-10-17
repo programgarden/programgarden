@@ -1,0 +1,4704 @@
+{
+ "_about": "Synthetic LS REST answers for the ls_tape replay tests: generated from finance block models and a scenario ledger (account numbers are placeholders), not broker observations. 'expected' is the read method's output over the same tape, run directly.",
+ "scenarios": {
+  "overseas_stock_account_holding": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false,
+    "cash": 10000.0,
+    "positions": [
+     {
+      "symbol": "NVDA",
+      "qty": 10,
+      "avg": 158.4,
+      "price": 180.0,
+      "market_code": "82",
+      "long": true,
+      "name": "NVDA"
+     }
+    ],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "COSOQ00201",
+     "request": {
+      "COSOQ00201InBlock1": {
+       "RecCnt": 1,
+       "BaseDt": "20261018",
+       "CrcyCode": "ALL",
+       "AstkBalTpCode": "00"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "COSOQ00201",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "COSOQ00201OutBlock1": {
+       "RecCnt": 1,
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "BaseDt": "20261018",
+       "CrcyCode": "ALL",
+       "AstkBalTpCode": "00"
+      },
+      "COSOQ00201OutBlock2": {
+       "RecCnt": 1,
+       "ErnRat": 13.636364,
+       "DpsConvEvalAmt": 13500000.0,
+       "StkConvEvalAmt": 2430000.0,
+       "DpsastConvEvalAmt": 0.0,
+       "WonEvalSumAmt": 15930000.0,
+       "ConvEvalPnlAmt": 291600.0,
+       "WonDpsBalAmt": 0.0,
+       "D2EstiDps": 0.0,
+       "LoanAmt": 0.0
+      },
+      "COSOQ00201OutBlock3": [
+       {
+        "CrcyCode": "USD",
+        "FcurrDps": 10000.0,
+        "FcurrEvalAmt": 1800.0,
+        "FcurrEvalPnlAmt": 216.0,
+        "PnlRat": 0.0,
+        "BaseXchrat": 1350.0,
+        "DpsConvEvalAmt": 0.0,
+        "PchsAmt": 0.0,
+        "StkConvEvalAmt": 0.0,
+        "ConvEvalPnlAmt": 0.0,
+        "FcurrBuyAmt": 1584.0,
+        "FcurrOrdAbleAmt": 10000.0,
+        "LoanAmt": 0.0
+       }
+      ],
+      "COSOQ00201OutBlock4": [
+       {
+        "CrcyCode": "USD",
+        "ShtnIsuNo": "NVDA",
+        "IsuNo": "NVDA",
+        "JpnMktHanglIsuNm": "NVDA",
+        "AstkBalTpCode": "10",
+        "AstkBalTpCodeNm": "",
+        "AstkBalQty": 10.0,
+        "AstkSellAbleQty": 10.0,
+        "FcstckUprc": 158.4,
+        "FcurrBuyAmt": 1584.0,
+        "FcstckMktIsuCode": "",
+        "OvrsScrtsCurpri": 180.0,
+        "FcurrEvalAmt": 1800.0,
+        "FcurrEvalPnlAmt": 216.0,
+        "PnlRat": 13.636364,
+        "BaseXchrat": 1350.0,
+        "PchsAmt": 0.0,
+        "DpsConvEvalAmt": 0.0,
+        "StkConvEvalAmt": 0.0,
+        "ConvEvalPnlAmt": 0.0,
+        "AstkSettQty": 10.0,
+        "MktTpNm": "나스닥",
+        "FcurrMktCode": "82",
+        "LoanDt": "20261016",
+        "LoanDtlClssCode": "",
+        "LoanAmt": 0.0,
+        "DueDt": "20261016",
+        "AstkBasePrc": 0.0
+       }
+      ]
+     },
+     "ignore": [
+      "COSOQ00201InBlock1.BaseDt"
+     ]
+    },
+    {
+     "tr": "COSOQ02701",
+     "request": {
+      "COSOQ02701InBlock1": {
+       "RecCnt": 1,
+       "CrcyCode": "USD"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "COSOQ02701",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "COSOQ02701OutBlock1": {
+       "RecCnt": 1,
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "CrcyCode": "USD"
+      },
+      "COSOQ02701OutBlock2": [],
+      "COSOQ02701OutBlock3": [
+       {
+        "CntryNm": "미국",
+        "CrcyCode": "USD",
+        "T4FcurrDps": 10000.0,
+        "FcurrDps": 10000.0,
+        "FcurrOrdAbleAmt": 10000.0,
+        "PrexchOrdAbleAmt": 10000.0,
+        "FcurrOrdAmt": 0.0,
+        "FcurrPldgAmt": 0.0,
+        "ExecRuseFcurrAmt": 0.0,
+        "FcurrMxchgAbleAmt": 0.0,
+        "BaseXchrat": 1350.0
+       }
+      ],
+      "COSOQ02701OutBlock4": {
+       "RecCnt": 1,
+       "WonDpsBalAmt": 0,
+       "MnyoutAbleAmt": 0,
+       "WonPrexchAbleAmt": 0,
+       "OvrsMgn": 0.0
+      },
+      "COSOQ02701OutBlock5": {
+       "RecCnt": 1,
+       "NrfCode": ""
+      }
+     }
+    }
+   ],
+   "expected": {
+    "held_symbols": [
+     {
+      "exchange": "NASDAQ",
+      "exchange_code": "82",
+      "symbol": "NVDA"
+     }
+    ],
+    "positions": [
+     {
+      "symbol": "NVDA",
+      "name": "NVDA",
+      "qty": 10.0,
+      "quantity": 10.0,
+      "sellable_qty": 10.0,
+      "direction": "long",
+      "close_side": "sell",
+      "avg_price": 158.4,
+      "current_price": 180.0,
+      "pnl_rate": 13.636364,
+      "pnl_amount": 216.0,
+      "currency": "USD",
+      "market": "나스닥",
+      "exchange": "NASDAQ",
+      "exchange_code": "82",
+      "eval_amount": 1800.0,
+      "purchase_amount": 1584.0
+     }
+    ],
+    "balance": {
+     "total_pnl_rate": 13.636364,
+     "cash_krw": 0.0,
+     "stock_eval_krw": 2430000.0,
+     "total_eval_krw": 15930000.0,
+     "total_pnl_krw": 291600.0,
+     "orderable_amount": 10000.0,
+     "foreign_cash": 10000.0,
+     "exchange_rate": 1350.0,
+     "withdrawable_krw": 0.0,
+     "overseas_margin": 0.0
+    }
+   }
+  },
+  "overseas_stock_account_cash_only": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false,
+    "cash": 10000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "COSOQ00201",
+     "request": {
+      "COSOQ00201InBlock1": {
+       "RecCnt": 1,
+       "BaseDt": "20261018",
+       "CrcyCode": "ALL",
+       "AstkBalTpCode": "00"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "COSOQ00201",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "02679",
+      "rsp_msg": "조회내역이 없습니다.",
+      "COSOQ00201OutBlock1": {
+       "RecCnt": 1,
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "BaseDt": "20261018",
+       "CrcyCode": "ALL",
+       "AstkBalTpCode": "00"
+      },
+      "COSOQ00201OutBlock2": {
+       "RecCnt": 1,
+       "ErnRat": 0.0,
+       "DpsConvEvalAmt": 13500000.0,
+       "StkConvEvalAmt": 0.0,
+       "DpsastConvEvalAmt": 0.0,
+       "WonEvalSumAmt": 13500000.0,
+       "ConvEvalPnlAmt": 0.0,
+       "WonDpsBalAmt": 0.0,
+       "D2EstiDps": 0.0,
+       "LoanAmt": 0.0
+      },
+      "COSOQ00201OutBlock3": [],
+      "COSOQ00201OutBlock4": []
+     },
+     "ignore": [
+      "COSOQ00201InBlock1.BaseDt"
+     ]
+    },
+    {
+     "tr": "COSOQ02701",
+     "request": {
+      "COSOQ02701InBlock1": {
+       "RecCnt": 1,
+       "CrcyCode": "USD"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "COSOQ02701",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "COSOQ02701OutBlock1": {
+       "RecCnt": 1,
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "CrcyCode": "USD"
+      },
+      "COSOQ02701OutBlock2": [],
+      "COSOQ02701OutBlock3": [
+       {
+        "CntryNm": "미국",
+        "CrcyCode": "USD",
+        "T4FcurrDps": 10000.0,
+        "FcurrDps": 10000.0,
+        "FcurrOrdAbleAmt": 10000.0,
+        "PrexchOrdAbleAmt": 10000.0,
+        "FcurrOrdAmt": 0.0,
+        "FcurrPldgAmt": 0.0,
+        "ExecRuseFcurrAmt": 0.0,
+        "FcurrMxchgAbleAmt": 0.0,
+        "BaseXchrat": 1350.0
+       }
+      ],
+      "COSOQ02701OutBlock4": {
+       "RecCnt": 1,
+       "WonDpsBalAmt": 0,
+       "MnyoutAbleAmt": 0,
+       "WonPrexchAbleAmt": 0,
+       "OvrsMgn": 0.0
+      },
+      "COSOQ02701OutBlock5": {
+       "RecCnt": 1,
+       "NrfCode": ""
+      }
+     }
+    }
+   ],
+   "expected": {
+    "held_symbols": [],
+    "positions": [],
+    "balance": {
+     "total_pnl_rate": 0.0,
+     "cash_krw": 0.0,
+     "stock_eval_krw": 0.0,
+     "total_eval_krw": 13500000.0,
+     "total_pnl_krw": 0.0,
+     "orderable_amount": 10000.0,
+     "foreign_cash": 10000.0,
+     "exchange_rate": 1350.0,
+     "withdrawable_krw": 0.0,
+     "overseas_margin": 0.0
+    }
+   }
+  },
+  "korea_stock_account_holding": {
+   "ledger": {
+    "product": "korea_stock",
+    "paper": false,
+    "cash": 10000000.0,
+    "positions": [
+     {
+      "symbol": "005930",
+      "qty": 10,
+      "avg": 61600.0,
+      "price": 70000.0,
+      "market_code": "82",
+      "long": true,
+      "name": "005930"
+     }
+    ],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "CSPAQ12300",
+     "request": {
+      "CSPAQ12300InBlock1": {
+       "RecCnt": 1,
+       "BalCreTp": "0",
+       "CmsnAppTpCode": "0",
+       "D2balBaseQryTp": "0",
+       "UprcTpCode": "0"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CSPAQ12300",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "CSPAQ12300OutBlock1": {
+       "RecCnt": 1,
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "BalCreTp": "0",
+       "CmsnAppTpCode": "0",
+       "D2balBaseQryTp": "0",
+       "UprcTpCode": "0"
+      },
+      "CSPAQ12300OutBlock2": {
+       "RecCnt": 1,
+       "BrnNm": "",
+       "AcntNm": "",
+       "MnyOrdAbleAmt": 0,
+       "MnyoutAbleAmt": 0,
+       "SeOrdAbleAmt": 0,
+       "KdqOrdAbleAmt": 0,
+       "HtsOrdAbleAmt": 0,
+       "MgnRat100pctOrdAbleAmt": 0,
+       "BalEvalAmt": 0,
+       "PchsAmt": 0,
+       "RcvblAmt": 0,
+       "PnlRat": 0.0,
+       "InvstOrgAmt": 0,
+       "InvstPlAmt": 0,
+       "CrdtPldgOrdAmt": 0,
+       "Dps": 0,
+       "D1Dps": 0,
+       "D2Dps": 0,
+       "OrdDt": "20261016",
+       "MnyMgn": 0,
+       "SubstMgn": 0,
+       "SubstAmt": 0,
+       "PrdayBuyExecAmt": 0,
+       "PrdaySellExecAmt": 0,
+       "CrdayBuyExecAmt": 0,
+       "CrdaySellExecAmt": 0,
+       "EvalPnlSum": 0,
+       "DpsastTotamt": 0,
+       "Evrprc": 0,
+       "RuseAmt": 0,
+       "EtclndAmt": 0,
+       "PrcAdjstAmt": 0,
+       "D1CmsnAmt": 0,
+       "D2CmsnAmt": 0,
+       "D1EvrTax": 0,
+       "D2EvrTax": 0,
+       "D1SettPrergAmt": 0,
+       "D2SettPrergAmt": 0,
+       "PrdayKseMnyMgn": 0,
+       "PrdayKseSubstMgn": 0,
+       "PrdayKseCrdtMnyMgn": 0,
+       "PrdayKseCrdtSubstMgn": 0,
+       "CrdayKseMnyMgn": 0,
+       "CrdayKseSubstMgn": 0,
+       "CrdayKseCrdtMnyMgn": 0,
+       "CrdayKseCrdtSubstMgn": 0,
+       "PrdayKdqMnyMgn": 0,
+       "PrdayKdqSubstMgn": 0,
+       "PrdayKdqCrdtMnyMgn": 0,
+       "PrdayKdqCrdtSubstMgn": 0,
+       "CrdayKdqMnyMgn": 0,
+       "CrdayKdqSubstMgn": 0,
+       "CrdayKdqCrdtMnyMgn": 0,
+       "CrdayKdqCrdtSubstMgn": 0,
+       "PrdayFrbrdMnyMgn": 0,
+       "PrdayFrbrdSubstMgn": 0,
+       "CrdayFrbrdMnyMgn": 0,
+       "CrdayFrbrdSubstMgn": 0,
+       "PrdayCrbmkMnyMgn": 0,
+       "PrdayCrbmkSubstMgn": 0,
+       "CrdayCrbmkMnyMgn": 0,
+       "CrdayCrbmkSubstMgn": 0,
+       "DpspdgQty": 0,
+       "BuyAdjstAmtD2": 0,
+       "SellAdjstAmtD2": 0,
+       "RepayRqrdAmtD1": 0,
+       "RepayRqrdAmtD2": 0,
+       "LoanAmt": 0,
+       "EvalPnl": 0
+      },
+      "CSPAQ12300OutBlock3": [
+       {
+        "IsuNo": "A005930",
+        "IsuNm": "005930",
+        "BalQty": 10,
+        "BnsBaseBalQty": 10,
+        "SellPrc": 0.0,
+        "BuyPrc": 0.0,
+        "NowPrc": 70000.0,
+        "AvrUprc": 61600.0,
+        "BalEvalAmt": 700000,
+        "EvalPnl": 84000,
+        "PnlRat": 0.13636363636363635,
+        "SellAbleQty": 10,
+        "CrdtAmt": 0,
+        "LoanDt": "20261016",
+        "Expdt": "20261016",
+        "SellQty": 0,
+        "BuyQty": 0,
+        "SecBalPtnCode": "",
+        "SecBalPtnNm": "",
+        "CrdayBuyExecQty": 0,
+        "CrdaySellExecQty": 0,
+        "SellPnlAmt": 0,
+        "DueDt": "20261016",
+        "PrdaySellExecPrc": 0.0,
+        "PrdaySellQty": 0,
+        "PrdayBuyExecPrc": 0.0,
+        "PrdayBuyQty": 0,
+        "SellOrdQty": 0,
+        "CrdayBuyExecAmt": 0,
+        "CrdaySellExecAmt": 0,
+        "PrdayBuyExecAmt": 0,
+        "PrdaySellExecAmt": 0,
+        "MnyOrdAbleAmt": 0,
+        "OrdAbleAmt": 0,
+        "SellUnercQty": 0,
+        "SellUnsttQty": 0,
+        "BuyUnercQty": 0,
+        "BuyUnsttQty": 0,
+        "UnsttQty": 0,
+        "UnercQty": 0,
+        "PrdayCprc": 0.0,
+        "PchsAmt": 616000,
+        "RegMktCode": "",
+        "LoanDtlClssCode": "",
+        "DpspdgLoanQty": 0
+       }
+      ]
+     }
+    },
+    {
+     "tr": "CSPAQ22200",
+     "request": {
+      "CSPAQ22200InBlock1": {
+       "BalCreTp": "0"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CSPAQ22200",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "CSPAQ22200OutBlock1": {
+       "RecCnt": 1,
+       "MgmtBrnNo": "",
+       "BalCreTp": "0"
+      },
+      "CSPAQ22200OutBlock2": {
+       "RecCnt": 1,
+       "BrnNm": "",
+       "AcntNm": "",
+       "MnyOrdAbleAmt": 10000000,
+       "SubstOrdAbleAmt": 0,
+       "SeOrdAbleAmt": 0,
+       "KdqOrdAbleAmt": 0,
+       "CrdtPldgOrdAmt": 0,
+       "MgnRat100pctOrdAbleAmt": 0,
+       "MgnRat35ordAbleAmt": 0,
+       "MgnRat50ordAbleAmt": 0,
+       "CrdtOrdAbleAmt": 0,
+       "Dps": 10000000,
+       "SubstAmt": 0,
+       "MgnMny": 0,
+       "MgnSubst": 0,
+       "D1Dps": 0,
+       "D2Dps": 10000000,
+       "RcvblAmt": 0,
+       "D1ovdRepayRqrdAmt": 0,
+       "D2ovdRepayRqrdAmt": 0,
+       "MloanAmt": 0,
+       "ChgAfPldgRat": 0.0,
+       "RqrdPldgAmt": 0,
+       "PdlckAmt": 0,
+       "OrgPldgSumAmt": 0,
+       "SubPldgSumAmt": 0,
+       "CrdtPldgAmtMny": 0,
+       "CrdtPldgSubstAmt": 0,
+       "Imreq": 0,
+       "CrdtPldgRuseAmt": 0,
+       "DpslRestrcAmt": 0,
+       "PrdaySellAdjstAmt": 0,
+       "PrdayBuyAdjstAmt": 0,
+       "CrdaySellAdjstAmt": 0,
+       "CrdayBuyAdjstAmt": 0,
+       "CslLoanAmtdt1": 0,
+       "RcvblUablOrdAbleAmt": 10000000
+      }
+     }
+    }
+   ],
+   "expected": {
+    "held_symbols": [
+     {
+      "exchange": "KRX",
+      "symbol": "005930"
+     }
+    ],
+    "positions": [
+     {
+      "symbol": "005930",
+      "quantity": 10,
+      "sellable_qty": 10,
+      "product": "korea_stock",
+      "symbol_name": "005930",
+      "currency": "KRW",
+      "buy_price": 61600.0,
+      "average_price": 61600.0,
+      "acquisition_amount": 616000.0,
+      "current_price": 70000.0,
+      "eval_amount": 700000.0,
+      "pnl_amount": 84000.0,
+      "pnl_rate": 13.636363636363635,
+      "pnl_rate_basis": "broker_average_commission_excluded",
+      "pnl_rate_status": "available",
+      "pnl_status": "available",
+      "pnl_unavailable_reason": null,
+      "cost_basis": "broker_average_commission_excluded",
+      "cost_status": "available",
+      "cost_unavailable_reason": null,
+      "observed_at": "2026-10-17T17:05:32.385176+00:00",
+      "exchange": "KRX",
+      "name": "005930",
+      "price": 70000.0,
+      "avg_price": 61600.0,
+      "purchase_amount": 616000.0
+     }
+    ],
+    "balance": {
+     "orderable_amount": 10000000.0,
+     "deposit": 10000000.0,
+     "d2_deposit": 10000000.0,
+     "margin_cash": 0.0,
+     "total_eval": 700000.0,
+     "purchase_amount": 616000.0,
+     "eval_pnl": 84000.0,
+     "pnl_rate": null
+    }
+   }
+  },
+  "korea_stock_open_orders_empty": {
+   "ledger": {
+    "product": "korea_stock",
+    "paper": false,
+    "cash": 10000000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "t0425",
+     "request": {
+      "t0425InBlock": {
+       "expcode": "",
+       "chegb": "0",
+       "medosu": "0",
+       "sortgb": "1",
+       "cts_ordno": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "t0425",
+      "tr_cont": "",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다."
+     }
+    }
+   ],
+   "expected": {
+    "open_orders": [],
+    "count": 0
+   }
+  },
+  "korea_stock_open_orders_pending": {
+   "ledger": {
+    "product": "korea_stock",
+    "paper": false,
+    "cash": 10000000.0,
+    "positions": [],
+    "open_orders": [
+     {
+      "order_no": 31002,
+      "symbol": "005930",
+      "side": "buy",
+      "qty": 1,
+      "filled": 0,
+      "price": 67900.0,
+      "market_code": "82"
+     }
+    ]
+   },
+   "tape": [
+    {
+     "tr": "t0425",
+     "request": {
+      "t0425InBlock": {
+       "expcode": "",
+       "chegb": "0",
+       "medosu": "0",
+       "sortgb": "1",
+       "cts_ordno": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "t0425",
+      "tr_cont": "0",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "t0425OutBlock": {
+       "tqty": 1,
+       "tcheqty": 0,
+       "tordrem": 0,
+       "cmss": 0,
+       "tamt": 0,
+       "tmdamt": 0,
+       "tmsamt": 0,
+       "tax": 0,
+       "cts_ordno": ""
+      },
+      "t0425OutBlock1": [
+       {
+        "ordno": 31002,
+        "expcode": "005930",
+        "medosu": "2",
+        "qty": 1,
+        "price": 67900,
+        "cheqty": 0,
+        "cheprice": 0,
+        "ordrem": 1,
+        "cfmqty": 0,
+        "status": "접수",
+        "orgordno": 0,
+        "ordgb": "",
+        "ordtime": "23000000",
+        "ordermtd": "",
+        "sysprocseq": 0,
+        "hogagb": "00",
+        "price1": 0,
+        "orggb": "",
+        "singb": "",
+        "loandt": "20261016",
+        "exchname": "KRX"
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "open_orders": [
+     {
+      "order_id": "31002",
+      "symbol": "005930",
+      "exchange": "KRX",
+      "order_venue": "KRX",
+      "name": "",
+      "side": "buy",
+      "quantity": 1,
+      "filled_quantity": 0,
+      "remaining_quantity": 1,
+      "price": 67900.0,
+      "order_type": "00",
+      "order_time": "23000000"
+     }
+    ],
+    "count": 1
+   }
+  },
+  "overseas_stock_open_orders_empty": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false,
+    "cash": 10000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "COSAQ00102",
+     "request": {
+      "COSAQ00102InBlock1": {
+       "RecCnt": 1,
+       "QryTpCode": "1",
+       "BkseqTpCode": "1",
+       "OrdMktCode": "00",
+       "BnsTpCode": "0",
+       "IsuNo": "",
+       "SrtOrdNo": 999999999,
+       "OrdDt": "20261018",
+       "ExecYn": "2",
+       "CrcyCode": "000",
+       "ThdayBnsAppYn": "1",
+       "LoanBalHldYn": "0"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "COSAQ00102",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "02679",
+      "rsp_msg": "조회내역이 없습니다.",
+      "COSAQ00102OutBlock1": {
+       "RecCnt": 1,
+       "QryTpCode": "1",
+       "BkseqTpCode": "1",
+       "OrdMktCode": "%",
+       "AcntNo": "20300012345",
+       "Pwd": "********",
+       "BnsTpCode": "0",
+       "IsuNo": "",
+       "SrtOrdNo": 999999999,
+       "OrdDt": "20261018",
+       "ExecYn": "2",
+       "CrcyCode": "000",
+       "ThdayBnsAppYn": "1",
+       "LoanBalHldYn": "0"
+      },
+      "COSAQ00102OutBlock2": {
+       "RecCnt": 1,
+       "AcntNm": "",
+       "JpnMktHanglIsuNm": "",
+       "MgmtBrnNm": "",
+       "SellExecFcurrAmt": "0",
+       "SellExecQty": 0.0,
+       "BuyExecFcurrAmt": "0",
+       "BuyExecQty": 0.0
+      },
+      "COSAQ00102OutBlock3": []
+     },
+     "ignore": [
+      "COSAQ00102InBlock1.OrdDt"
+     ]
+    }
+   ],
+   "expected": {
+    "open_orders": [],
+    "count": 0
+   }
+  },
+  "overseas_futures_account_paper_empty": {
+   "ledger": {
+    "product": "overseas_futures",
+    "paper": true,
+    "cash": 50000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "CIDBQ01500",
+     "request": {
+      "CIDBQ01500InBlock1": {
+       "RecCnt": 1,
+       "AcntTpCode": "1",
+       "QryDt": "20261018",
+       "BalTpCode": "2",
+       "FcmAcntNo": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CIDBQ",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "02679",
+      "rsp_msg": "조회내역이 없습니다.",
+      "CIDBQ01500OutBlock1": {
+       "RecCnt": 1,
+       "AcntTpCode": "1",
+       "AcntNo": "55500012345",
+       "FcmAcntNo": "",
+       "Pwd": "********",
+       "QryDt": "20261018",
+       "BalTpCode": "2"
+      },
+      "CIDBQ01500OutBlock2": []
+     },
+     "ignore": [
+      "CIDBQ01500InBlock1.QryDt"
+     ]
+    },
+    {
+     "tr": "CIDBQ05300",
+     "request": {
+      "CIDBQ05300InBlock1": {
+       "RecCnt": 1,
+       "OvrsAcntTpCode": "1",
+       "FcmAcntNo": "",
+       "CrcyCode": "ALL"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CIDBQ05300",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00136",
+      "rsp_msg": "모의투자 조회가 완료되었습니다.",
+      "CIDBQ05300OutBlock1": {
+       "RecCnt": 1,
+       "OvrsAcntTpCode": "1",
+       "FcmAcntNo": "",
+       "AcntNo": "55500012345",
+       "AcntPwd": "********",
+       "CrcyCode": "ALL"
+      },
+      "CIDBQ05300OutBlock2": [
+       {
+        "AcntNo": "55500012345",
+        "CrcyCode": "USD",
+        "OvrsFutsDps": 50000.0,
+        "AbrdFutsCsgnMgn": 0.0,
+        "OvrsFutsSplmMgn": 0.0,
+        "CustmLpnlAmt": 0.0,
+        "AbrdFutsEvalPnlAmt": 0.0,
+        "AbrdFutsCmsnAmt": 0.0,
+        "AbrdFutsEvalDpstgTotAmt": 50000.0,
+        "Xchrat": 0.0,
+        "FcurrRealMxchgAmt": 0.0,
+        "AbrdFutsWthdwAbleAmt": 50000.0,
+        "AbrdFutsOrdAbleAmt": 50000.0,
+        "FutsDueNarrvLqdtPnlAmt": 0.0,
+        "FutsDueNarrvCmsn": 0.0,
+        "AbrdFutsLqdtPnlAmt": 0.0,
+        "OvrsFutsDueCmsn": 0.0,
+        "OvrsFutsOptBuyAmt": 0.0,
+        "OvrsFutsOptSellAmt": 0.0,
+        "OptBuyMktWrthAmt": 0.0,
+        "OptSellMktWrthAmt": 0.0
+       }
+      ],
+      "CIDBQ05300OutBlock3": {
+       "RecCnt": 1,
+       "OvrsFutsDps": 50000.0,
+       "AbrdFutsLqdtPnlAmt": 0.0,
+       "FutsDueNarrvLqdtPnlAmt": 0.0,
+       "AbrdFutsEvalPnlAmt": 0.0,
+       "AbrdFutsEvalDpstgTotAmt": 50000.0,
+       "CustmLpnlAmt": 0.0,
+       "OvrsFutsDueCmsn": 0.0,
+       "FcurrRealMxchgAmt": 0.0,
+       "AbrdFutsCmsnAmt": 0.0,
+       "FutsDueNarrvCmsn": 0.0,
+       "AbrdFutsCsgnMgn": 0.0,
+       "OvrsFutsMaintMgn": 0.0,
+       "OvrsFutsOptBuyAmt": 0.0,
+       "OvrsFutsOptSellAmt": 0.0,
+       "CtlmtAmt": 0.0,
+       "OvrsFutsSplmMgn": 0.0,
+       "MgnclRat": 0.0,
+       "AbrdFutsOrdAbleAmt": 50000.0,
+       "AbrdFutsWthdwAbleAmt": 0.0,
+       "OptBuyMktWrthAmt": 0.0,
+       "OptSellMktWrthAmt": 0.0,
+       "OvrsOptSettAmt": 0.0,
+       "OvrsOptBalEvalAmt": 0.0
+      }
+     }
+    }
+   ],
+   "expected": {
+    "held_symbols": [],
+    "positions": [],
+    "balance": {
+     "by_currency": {
+      "USD": {
+       "deposit": 50000.0,
+       "orderable_amount": 50000.0,
+       "withdrawable_amount": 50000.0,
+       "eval_pnl": 0.0
+      }
+     },
+     "total_orderable": 50000.0,
+     "orderable_amount": 50000.0,
+     "deposit": 50000.0,
+     "margin": 0.0,
+     "maintenance_margin": 0.0,
+     "margin_call_rate": 0.0,
+     "total_eval": 50000.0,
+     "settlement_pnl": 0.0
+    }
+   }
+  },
+  "overseas_futures_account_holding": {
+   "ledger": {
+    "product": "overseas_futures",
+    "paper": false,
+    "cash": 50000.0,
+    "positions": [
+     {
+      "symbol": "MESZ26",
+      "qty": 1,
+      "avg": 5324.22,
+      "price": 6050.25,
+      "market_code": "82",
+      "long": true,
+      "name": "MESZ26"
+     }
+    ],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "CIDBQ01500",
+     "request": {
+      "CIDBQ01500InBlock1": {
+       "RecCnt": 1,
+       "AcntTpCode": "1",
+       "QryDt": "20261018",
+       "BalTpCode": "2",
+       "FcmAcntNo": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CIDBQ01500",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "CIDBQ01500OutBlock1": {
+       "RecCnt": 1,
+       "AcntTpCode": "1",
+       "AcntNo": "20300012345",
+       "FcmAcntNo": "",
+       "Pwd": "********",
+       "QryDt": "20261018",
+       "BalTpCode": "2"
+      },
+      "CIDBQ01500OutBlock2": [
+       {
+        "BaseDt": "20261016",
+        "Dps": 0.0,
+        "LpnlAmt": 0.0,
+        "FutsDueBfLpnlAmt": 0.0,
+        "FutsDueBfCmsn": 0.0,
+        "CsgnMgn": 0.0,
+        "MaintMgn": 0.0,
+        "CtlmtAmt": 0.0,
+        "AddMgn": 0.0,
+        "MgnclRat": 0.0,
+        "OrdAbleAmt": 0.0,
+        "WthdwAbleAmt": 0.0,
+        "AcntNo": "20300012345",
+        "IsuCodeVal": "MESZ26",
+        "IsuNm": "MESZ26",
+        "CrcyCodeVal": "USD",
+        "OvrsDrvtPrdtCode": "",
+        "OvrsDrvtOptTpCode": "",
+        "DueDt": "20261016",
+        "OvrsDrvtXrcPrc": 0.0,
+        "BnsTpCode": "2",
+        "CmnCodeNm": "",
+        "TpCodeNm": "",
+        "BalQty": 1.0,
+        "PchsPrc": 5324.22,
+        "OvrsDrvtNowPrc": 6050.25,
+        "AbrdFutsEvalPnlAmt": 3630.15,
+        "CsgnCmsn": 0.0,
+        "PosNo": "",
+        "EufOneCmsnAmt": 0.0,
+        "EufTwoCmsnAmt": 0.0
+       }
+      ]
+     },
+     "ignore": [
+      "CIDBQ01500InBlock1.QryDt"
+     ]
+    },
+    {
+     "tr": "CIDBQ05300",
+     "request": {
+      "CIDBQ05300InBlock1": {
+       "RecCnt": 1,
+       "OvrsAcntTpCode": "1",
+       "FcmAcntNo": "",
+       "CrcyCode": "ALL"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "CIDBQ05300",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회가 완료되었습니다.",
+      "CIDBQ05300OutBlock1": {
+       "RecCnt": 1,
+       "OvrsAcntTpCode": "1",
+       "FcmAcntNo": "",
+       "AcntNo": "20300012345",
+       "AcntPwd": "********",
+       "CrcyCode": "ALL"
+      },
+      "CIDBQ05300OutBlock2": [
+       {
+        "AcntNo": "20300012345",
+        "CrcyCode": "USD",
+        "OvrsFutsDps": 50000.0,
+        "AbrdFutsCsgnMgn": 0.0,
+        "OvrsFutsSplmMgn": 0.0,
+        "CustmLpnlAmt": 0.0,
+        "AbrdFutsEvalPnlAmt": 0.0,
+        "AbrdFutsCmsnAmt": 0.0,
+        "AbrdFutsEvalDpstgTotAmt": 50000.0,
+        "Xchrat": 0.0,
+        "FcurrRealMxchgAmt": 0.0,
+        "AbrdFutsWthdwAbleAmt": 50000.0,
+        "AbrdFutsOrdAbleAmt": 50000.0,
+        "FutsDueNarrvLqdtPnlAmt": 0.0,
+        "FutsDueNarrvCmsn": 0.0,
+        "AbrdFutsLqdtPnlAmt": 0.0,
+        "OvrsFutsDueCmsn": 0.0,
+        "OvrsFutsOptBuyAmt": 0.0,
+        "OvrsFutsOptSellAmt": 0.0,
+        "OptBuyMktWrthAmt": 0.0,
+        "OptSellMktWrthAmt": 0.0
+       }
+      ],
+      "CIDBQ05300OutBlock3": {
+       "RecCnt": 1,
+       "OvrsFutsDps": 50000.0,
+       "AbrdFutsLqdtPnlAmt": 0.0,
+       "FutsDueNarrvLqdtPnlAmt": 0.0,
+       "AbrdFutsEvalPnlAmt": 0.0,
+       "AbrdFutsEvalDpstgTotAmt": 50000.0,
+       "CustmLpnlAmt": 0.0,
+       "OvrsFutsDueCmsn": 0.0,
+       "FcurrRealMxchgAmt": 0.0,
+       "AbrdFutsCmsnAmt": 0.0,
+       "FutsDueNarrvCmsn": 0.0,
+       "AbrdFutsCsgnMgn": 0.0,
+       "OvrsFutsMaintMgn": 0.0,
+       "OvrsFutsOptBuyAmt": 0.0,
+       "OvrsFutsOptSellAmt": 0.0,
+       "CtlmtAmt": 0.0,
+       "OvrsFutsSplmMgn": 0.0,
+       "MgnclRat": 0.0,
+       "AbrdFutsOrdAbleAmt": 50000.0,
+       "AbrdFutsWthdwAbleAmt": 0.0,
+       "OptBuyMktWrthAmt": 0.0,
+       "OptSellMktWrthAmt": 0.0,
+       "OvrsOptSettAmt": 0.0,
+       "OvrsOptBalEvalAmt": 0.0
+      }
+     }
+    },
+    {
+     "tr": "o3105",
+     "request": {
+      "o3105InBlock": {
+       "symbol": "MESZ26"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "o3105",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "synthetic: query ok",
+      "o3105OutBlock": {
+       "Symbol": "MESZ26",
+       "SymbolNm": "MESZ26",
+       "ApplDate": "20261016",
+       "BscGdsCd": "MES",
+       "BscGdsNm": "",
+       "ExchCd": "CME",
+       "ExchNm": "",
+       "EcCd": "",
+       "CrncyCd": "USD",
+       "NotaCd": "",
+       "UntPrc": 0.0,
+       "MnChgAmt": 0.0,
+       "RgltFctr": 0.0,
+       "CtrtPrAmt": 0.0,
+       "LstngMCnt": 0,
+       "GdsCd": "",
+       "MrktCd": "",
+       "EminiCd": "",
+       "LstngYr": "",
+       "LstngM": "",
+       "SeqNo": 0,
+       "LstngDt": "20261016",
+       "MtrtDt": "20261016",
+       "FnlDlDt": "20261016",
+       "FstTrsfrDt": "20261016",
+       "EcPrc": 0.0,
+       "DlDt": "20261016",
+       "DlStrtTm": "000000",
+       "DlEndTm": "000000",
+       "OvsStrDay": "",
+       "OvsStrTm": "000000",
+       "OvsEndDay": "",
+       "OvsEndTm": "000000",
+       "DlPsblCd": "",
+       "MgnCltCd": "",
+       "OpngMgn": 0.0,
+       "MntncMgn": 0.0,
+       "OpngMgnR": 0.0,
+       "MntncMgnR": 0.0,
+       "DotGb": 0,
+       "TimeDiff": 0,
+       "OvsDate": "20261016",
+       "KorDate": "20261016",
+       "TrdTm": "000000",
+       "RcvTm": "230000",
+       "TrdP": 6050.25,
+       "TrdQ": 0,
+       "TotQ": 0,
+       "TrdAmt": 0.0,
+       "TotAmt": 0.0,
+       "OpenP": 6050.25,
+       "HighP": 6050.25,
+       "LowP": 6050.25,
+       "CloseP": 6050.25,
+       "YdiffP": 0.0,
+       "YdiffSign": "",
+       "Cgubun": "",
+       "Diff": 0.0
+      }
+     }
+    }
+   ],
+   "expected": {
+    "held_symbols": [
+     {
+      "exchange": "CME",
+      "symbol": "MESZ26"
+     }
+    ],
+    "positions": [
+     {
+      "symbol": "MESZ26",
+      "exchange": "CME",
+      "name": "MESZ26",
+      "direction": "long",
+      "close_side": "sell",
+      "quantity": 1,
+      "price": 6050.25,
+      "entry_price": 5324.22,
+      "current_price": 6050.25,
+      "pnl_amount": null,
+      "pnl_currency": null,
+      "pnl_basis": null,
+      "pnl_status": "unavailable",
+      "pnl_unavailable_reason": "native_estimate_requires_contract_metadata",
+      "broker_pnl_amount": 3630.15,
+      "broker_pnl_basis": "broker_reported_unconfirmed",
+      "pnl_rate": 13.63636363636363,
+      "currency": "USD"
+     }
+    ],
+    "balance": {
+     "by_currency": {
+      "USD": {
+       "deposit": 50000.0,
+       "orderable_amount": 50000.0,
+       "withdrawable_amount": 50000.0,
+       "eval_pnl": 0.0
+      }
+     },
+     "total_orderable": 50000.0,
+     "orderable_amount": 50000.0,
+     "deposit": 50000.0,
+     "margin": 0.0,
+     "maintenance_margin": 0.0,
+     "margin_call_rate": 0.0,
+     "total_eval": 50000.0,
+     "settlement_pnl": 0.0
+    }
+   }
+  },
+  "overseas_stock_daily_bars": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false,
+    "cash": 10000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "g3204",
+     "request": {
+      "g3204InBlock": {
+       "sujung": "Y",
+       "delaygb": "R",
+       "comp_yn": "N",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "symbol": "NVDA",
+       "gubun": "2",
+       "qrycnt": 500,
+       "sdate": "20260801",
+       "edate": "20261016",
+       "cts_date": "",
+       "cts_info": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "g3204",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "synthetic: query ok",
+      "g3204OutBlock": {
+       "delaygb": "R",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "symbol": "NVDA",
+       "cts_date": "",
+       "cts_info": "",
+       "rec_count": 120,
+       "preopen": 0.0,
+       "prehigh": 0.0,
+       "prelow": 0.0,
+       "preclose": "",
+       "prevolume": 0,
+       "open": 0.0,
+       "high": 0.0,
+       "low": 0.0,
+       "close": "180.0",
+       "uplimit": "",
+       "dnlimit": "",
+       "s_time": "000000",
+       "e_time": "000000",
+       "dshmin": ""
+      },
+      "g3204OutBlock1": [
+       {
+        "date": "20261016",
+        "open": 180.0,
+        "high": 181.8,
+        "low": 178.2,
+        "close": 180.0,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261015",
+        "open": 179.82,
+        "high": 181.6182,
+        "low": 178.0218,
+        "close": 179.82,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261014",
+        "open": 179.6402,
+        "high": 181.4366,
+        "low": 177.8438,
+        "close": 179.6402,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261013",
+        "open": 179.9995,
+        "high": 181.7995,
+        "low": 178.1995,
+        "close": 179.9995,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261012",
+        "open": 179.8195,
+        "high": 181.6177,
+        "low": 178.0213,
+        "close": 179.8195,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261009",
+        "open": 179.6397,
+        "high": 181.4361,
+        "low": 177.8433,
+        "close": 179.6397,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261008",
+        "open": 179.999,
+        "high": 181.799,
+        "low": 178.199,
+        "close": 179.999,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261007",
+        "open": 179.819,
+        "high": 181.6172,
+        "low": 178.0208,
+        "close": 179.819,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261006",
+        "open": 179.6392,
+        "high": 181.4356,
+        "low": 177.8428,
+        "close": 179.6392,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261005",
+        "open": 179.9985,
+        "high": 181.7985,
+        "low": 178.1985,
+        "close": 179.9985,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261002",
+        "open": 179.8185,
+        "high": 181.6167,
+        "low": 178.0203,
+        "close": 179.8185,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20261001",
+        "open": 179.6387,
+        "high": 181.4351,
+        "low": 177.8423,
+        "close": 179.6387,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260930",
+        "open": 179.998,
+        "high": 181.798,
+        "low": 178.198,
+        "close": 179.998,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260929",
+        "open": 179.818,
+        "high": 181.6162,
+        "low": 178.0198,
+        "close": 179.818,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260928",
+        "open": 179.6382,
+        "high": 181.4346,
+        "low": 177.8418,
+        "close": 179.6382,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260925",
+        "open": 179.9975,
+        "high": 181.7975,
+        "low": 178.1975,
+        "close": 179.9975,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260924",
+        "open": 179.8175,
+        "high": 181.6157,
+        "low": 178.0193,
+        "close": 179.8175,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260923",
+        "open": 179.6377,
+        "high": 181.4341,
+        "low": 177.8413,
+        "close": 179.6377,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260922",
+        "open": 179.997,
+        "high": 181.797,
+        "low": 178.197,
+        "close": 179.997,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260921",
+        "open": 179.817,
+        "high": 181.6152,
+        "low": 178.0188,
+        "close": 179.817,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260918",
+        "open": 179.6372,
+        "high": 181.4336,
+        "low": 177.8408,
+        "close": 179.6372,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260917",
+        "open": 179.9965,
+        "high": 181.7965,
+        "low": 178.1965,
+        "close": 179.9965,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260916",
+        "open": 179.8165,
+        "high": 181.6147,
+        "low": 178.0183,
+        "close": 179.8165,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260915",
+        "open": 179.6367,
+        "high": 181.4331,
+        "low": 177.8403,
+        "close": 179.6367,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260914",
+        "open": 179.996,
+        "high": 181.796,
+        "low": 178.196,
+        "close": 179.996,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260911",
+        "open": 179.816,
+        "high": 181.6142,
+        "low": 178.0178,
+        "close": 179.816,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260910",
+        "open": 179.6362,
+        "high": 181.4326,
+        "low": 177.8398,
+        "close": 179.6362,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260909",
+        "open": 179.9955,
+        "high": 181.7955,
+        "low": 178.1955,
+        "close": 179.9955,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260908",
+        "open": 179.8155,
+        "high": 181.6137,
+        "low": 178.0173,
+        "close": 179.8155,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260907",
+        "open": 179.6357,
+        "high": 181.4321,
+        "low": 177.8393,
+        "close": 179.6357,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260904",
+        "open": 179.995,
+        "high": 181.795,
+        "low": 178.1951,
+        "close": 179.995,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260903",
+        "open": 179.815,
+        "high": 181.6131,
+        "low": 178.0169,
+        "close": 179.815,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260902",
+        "open": 179.6352,
+        "high": 181.4316,
+        "low": 177.8388,
+        "close": 179.6352,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260901",
+        "open": 179.9945,
+        "high": 181.7944,
+        "low": 178.1946,
+        "close": 179.9945,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260831",
+        "open": 179.8145,
+        "high": 181.6126,
+        "low": 178.0164,
+        "close": 179.8145,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260828",
+        "open": 179.6347,
+        "high": 181.431,
+        "low": 177.8384,
+        "close": 179.6347,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260827",
+        "open": 179.994,
+        "high": 181.7939,
+        "low": 178.1941,
+        "close": 179.994,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260826",
+        "open": 179.814,
+        "high": 181.6121,
+        "low": 178.0159,
+        "close": 179.814,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260825",
+        "open": 179.6342,
+        "high": 181.4305,
+        "low": 177.8379,
+        "close": 179.6342,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260824",
+        "open": 179.9935,
+        "high": 181.7934,
+        "low": 178.1936,
+        "close": 179.9935,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260821",
+        "open": 179.8135,
+        "high": 181.6116,
+        "low": 178.0154,
+        "close": 179.8135,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260820",
+        "open": 179.6337,
+        "high": 181.43,
+        "low": 177.8374,
+        "close": 179.6337,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260819",
+        "open": 179.993,
+        "high": 181.7929,
+        "low": 178.1931,
+        "close": 179.993,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260818",
+        "open": 179.813,
+        "high": 181.6111,
+        "low": 178.0149,
+        "close": 179.813,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260817",
+        "open": 179.6332,
+        "high": 181.4295,
+        "low": 177.8369,
+        "close": 179.6332,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260814",
+        "open": 179.9925,
+        "high": 181.7924,
+        "low": 178.1926,
+        "close": 179.9925,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260813",
+        "open": 179.8125,
+        "high": 181.6106,
+        "low": 178.0144,
+        "close": 179.8125,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260812",
+        "open": 179.6327,
+        "high": 181.429,
+        "low": 177.8364,
+        "close": 179.6327,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260811",
+        "open": 179.992,
+        "high": 181.7919,
+        "low": 178.1921,
+        "close": 179.992,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260810",
+        "open": 179.812,
+        "high": 181.6101,
+        "low": 178.0139,
+        "close": 179.812,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260807",
+        "open": 179.6322,
+        "high": 181.4285,
+        "low": 177.8359,
+        "close": 179.6322,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260806",
+        "open": 179.9915,
+        "high": 181.7914,
+        "low": 178.1916,
+        "close": 179.9915,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260805",
+        "open": 179.8115,
+        "high": 181.6096,
+        "low": 178.0134,
+        "close": 179.8115,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260804",
+        "open": 179.6317,
+        "high": 181.428,
+        "low": 177.8354,
+        "close": 179.6317,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260803",
+        "open": 179.991,
+        "high": 181.7909,
+        "low": 178.1911,
+        "close": 179.991,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260731",
+        "open": 179.811,
+        "high": 181.6091,
+        "low": 178.0129,
+        "close": 179.811,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260730",
+        "open": 179.6312,
+        "high": 181.4275,
+        "low": 177.8349,
+        "close": 179.6312,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260729",
+        "open": 179.9905,
+        "high": 181.7904,
+        "low": 178.1906,
+        "close": 179.9905,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260728",
+        "open": 179.8105,
+        "high": 181.6086,
+        "low": 178.0124,
+        "close": 179.8105,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260727",
+        "open": 179.6307,
+        "high": 181.427,
+        "low": 177.8344,
+        "close": 179.6307,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260724",
+        "open": 179.99,
+        "high": 181.7899,
+        "low": 178.1901,
+        "close": 179.99,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260723",
+        "open": 179.81,
+        "high": 181.6081,
+        "low": 178.0119,
+        "close": 179.81,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260722",
+        "open": 179.6302,
+        "high": 181.4265,
+        "low": 177.8339,
+        "close": 179.6302,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260721",
+        "open": 179.9895,
+        "high": 181.7894,
+        "low": 178.1896,
+        "close": 179.9895,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260720",
+        "open": 179.8095,
+        "high": 181.6076,
+        "low": 178.0114,
+        "close": 179.8095,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260717",
+        "open": 179.6297,
+        "high": 181.426,
+        "low": 177.8334,
+        "close": 179.6297,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260716",
+        "open": 179.989,
+        "high": 181.7889,
+        "low": 178.1891,
+        "close": 179.989,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260715",
+        "open": 179.809,
+        "high": 181.6071,
+        "low": 178.0109,
+        "close": 179.809,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260714",
+        "open": 179.6292,
+        "high": 181.4255,
+        "low": 177.8329,
+        "close": 179.6292,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260713",
+        "open": 179.9885,
+        "high": 181.7884,
+        "low": 178.1886,
+        "close": 179.9885,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260710",
+        "open": 179.8085,
+        "high": 181.6066,
+        "low": 178.0104,
+        "close": 179.8085,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260709",
+        "open": 179.6287,
+        "high": 181.425,
+        "low": 177.8324,
+        "close": 179.6287,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260708",
+        "open": 179.988,
+        "high": 181.7879,
+        "low": 178.1881,
+        "close": 179.988,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260707",
+        "open": 179.808,
+        "high": 181.6061,
+        "low": 178.0099,
+        "close": 179.808,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260706",
+        "open": 179.6282,
+        "high": 181.4245,
+        "low": 177.8319,
+        "close": 179.6282,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260703",
+        "open": 179.9875,
+        "high": 181.7874,
+        "low": 178.1876,
+        "close": 179.9875,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260702",
+        "open": 179.8075,
+        "high": 181.6056,
+        "low": 178.0094,
+        "close": 179.8075,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260701",
+        "open": 179.6277,
+        "high": 181.424,
+        "low": 177.8314,
+        "close": 179.6277,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260630",
+        "open": 179.987,
+        "high": 181.7869,
+        "low": 178.1871,
+        "close": 179.987,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260629",
+        "open": 179.807,
+        "high": 181.6051,
+        "low": 178.0089,
+        "close": 179.807,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260626",
+        "open": 179.6272,
+        "high": 181.4235,
+        "low": 177.8309,
+        "close": 179.6272,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260625",
+        "open": 179.9865,
+        "high": 181.7864,
+        "low": 178.1866,
+        "close": 179.9865,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260624",
+        "open": 179.8065,
+        "high": 181.6046,
+        "low": 178.0084,
+        "close": 179.8065,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260623",
+        "open": 179.6267,
+        "high": 181.423,
+        "low": 177.8304,
+        "close": 179.6267,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260622",
+        "open": 179.986,
+        "high": 181.7859,
+        "low": 178.1861,
+        "close": 179.986,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260619",
+        "open": 179.806,
+        "high": 181.6041,
+        "low": 178.0079,
+        "close": 179.806,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260618",
+        "open": 179.6262,
+        "high": 181.4225,
+        "low": 177.8299,
+        "close": 179.6262,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260617",
+        "open": 179.9855,
+        "high": 181.7854,
+        "low": 178.1856,
+        "close": 179.9855,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260616",
+        "open": 179.8055,
+        "high": 181.6036,
+        "low": 178.0074,
+        "close": 179.8055,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260615",
+        "open": 179.6257,
+        "high": 181.422,
+        "low": 177.8294,
+        "close": 179.6257,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260612",
+        "open": 179.985,
+        "high": 181.7849,
+        "low": 178.1852,
+        "close": 179.985,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260611",
+        "open": 179.805,
+        "high": 181.603,
+        "low": 178.007,
+        "close": 179.805,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260610",
+        "open": 179.6252,
+        "high": 181.4215,
+        "low": 177.8289,
+        "close": 179.6252,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260609",
+        "open": 179.9845,
+        "high": 181.7843,
+        "low": 178.1847,
+        "close": 179.9845,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260608",
+        "open": 179.8045,
+        "high": 181.6025,
+        "low": 178.0065,
+        "close": 179.8045,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260605",
+        "open": 179.6247,
+        "high": 181.4209,
+        "low": 177.8285,
+        "close": 179.6247,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260604",
+        "open": 179.9839,
+        "high": 181.7837,
+        "low": 178.1841,
+        "close": 179.9839,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260603",
+        "open": 179.8039,
+        "high": 181.6019,
+        "low": 178.0059,
+        "close": 179.8039,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260602",
+        "open": 179.6241,
+        "high": 181.4203,
+        "low": 177.8279,
+        "close": 179.6241,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260601",
+        "open": 179.9833,
+        "high": 181.7831,
+        "low": 178.1835,
+        "close": 179.9833,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260529",
+        "open": 179.8033,
+        "high": 181.6013,
+        "low": 178.0053,
+        "close": 179.8033,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260528",
+        "open": 179.6235,
+        "high": 181.4197,
+        "low": 177.8273,
+        "close": 179.6235,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260527",
+        "open": 179.9827,
+        "high": 181.7825,
+        "low": 178.1829,
+        "close": 179.9827,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260526",
+        "open": 179.8027,
+        "high": 181.6007,
+        "low": 178.0047,
+        "close": 179.8027,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260525",
+        "open": 179.6229,
+        "high": 181.4191,
+        "low": 177.8267,
+        "close": 179.6229,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260522",
+        "open": 179.9821,
+        "high": 181.7819,
+        "low": 178.1823,
+        "close": 179.9821,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260521",
+        "open": 179.8021,
+        "high": 181.6001,
+        "low": 178.0041,
+        "close": 179.8021,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260520",
+        "open": 179.6223,
+        "high": 181.4185,
+        "low": 177.8261,
+        "close": 179.6223,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260519",
+        "open": 179.9815,
+        "high": 181.7813,
+        "low": 178.1817,
+        "close": 179.9815,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260518",
+        "open": 179.8015,
+        "high": 181.5995,
+        "low": 178.0035,
+        "close": 179.8015,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260515",
+        "open": 179.6217,
+        "high": 181.4179,
+        "low": 177.8255,
+        "close": 179.6217,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260514",
+        "open": 179.9809,
+        "high": 181.7807,
+        "low": 178.1811,
+        "close": 179.9809,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260513",
+        "open": 179.8009,
+        "high": 181.5989,
+        "low": 178.0029,
+        "close": 179.8009,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260512",
+        "open": 179.6211,
+        "high": 181.4173,
+        "low": 177.8249,
+        "close": 179.6211,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260511",
+        "open": 179.9803,
+        "high": 181.7801,
+        "low": 178.1805,
+        "close": 179.9803,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260508",
+        "open": 179.8003,
+        "high": 181.5983,
+        "low": 178.0023,
+        "close": 179.8003,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260507",
+        "open": 179.6205,
+        "high": 181.4167,
+        "low": 177.8243,
+        "close": 179.6205,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260506",
+        "open": 179.9797,
+        "high": 181.7795,
+        "low": 178.1799,
+        "close": 179.9797,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260505",
+        "open": 179.7997,
+        "high": 181.5977,
+        "low": 178.0017,
+        "close": 179.7997,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       },
+       {
+        "date": "20260504",
+        "open": 179.6199,
+        "high": 181.4161,
+        "low": 177.8237,
+        "close": 179.6199,
+        "volume": 1000000,
+        "amount": 0,
+        "jongchk": 0,
+        "prtt_rate": 0.0,
+        "pricechk": 0,
+        "ratevalue": 0,
+        "sign": "3"
+       }
+      ]
+     }
+    }
+   ],
+   "expected": [
+    {
+     "symbol": "NVDA",
+     "exchange": "NASDAQ",
+     "time_series": [
+      {
+       "date": "20260504",
+       "open": 179.6199,
+       "high": 181.4161,
+       "low": 177.8237,
+       "close": 179.6199,
+       "volume": 1000000
+      },
+      {
+       "date": "20260505",
+       "open": 179.7997,
+       "high": 181.5977,
+       "low": 178.0017,
+       "close": 179.7997,
+       "volume": 1000000
+      },
+      {
+       "date": "20260506",
+       "open": 179.9797,
+       "high": 181.7795,
+       "low": 178.1799,
+       "close": 179.9797,
+       "volume": 1000000
+      },
+      {
+       "date": "20260507",
+       "open": 179.6205,
+       "high": 181.4167,
+       "low": 177.8243,
+       "close": 179.6205,
+       "volume": 1000000
+      },
+      {
+       "date": "20260508",
+       "open": 179.8003,
+       "high": 181.5983,
+       "low": 178.0023,
+       "close": 179.8003,
+       "volume": 1000000
+      },
+      {
+       "date": "20260511",
+       "open": 179.9803,
+       "high": 181.7801,
+       "low": 178.1805,
+       "close": 179.9803,
+       "volume": 1000000
+      },
+      {
+       "date": "20260512",
+       "open": 179.6211,
+       "high": 181.4173,
+       "low": 177.8249,
+       "close": 179.6211,
+       "volume": 1000000
+      },
+      {
+       "date": "20260513",
+       "open": 179.8009,
+       "high": 181.5989,
+       "low": 178.0029,
+       "close": 179.8009,
+       "volume": 1000000
+      },
+      {
+       "date": "20260514",
+       "open": 179.9809,
+       "high": 181.7807,
+       "low": 178.1811,
+       "close": 179.9809,
+       "volume": 1000000
+      },
+      {
+       "date": "20260515",
+       "open": 179.6217,
+       "high": 181.4179,
+       "low": 177.8255,
+       "close": 179.6217,
+       "volume": 1000000
+      },
+      {
+       "date": "20260518",
+       "open": 179.8015,
+       "high": 181.5995,
+       "low": 178.0035,
+       "close": 179.8015,
+       "volume": 1000000
+      },
+      {
+       "date": "20260519",
+       "open": 179.9815,
+       "high": 181.7813,
+       "low": 178.1817,
+       "close": 179.9815,
+       "volume": 1000000
+      },
+      {
+       "date": "20260520",
+       "open": 179.6223,
+       "high": 181.4185,
+       "low": 177.8261,
+       "close": 179.6223,
+       "volume": 1000000
+      },
+      {
+       "date": "20260521",
+       "open": 179.8021,
+       "high": 181.6001,
+       "low": 178.0041,
+       "close": 179.8021,
+       "volume": 1000000
+      },
+      {
+       "date": "20260522",
+       "open": 179.9821,
+       "high": 181.7819,
+       "low": 178.1823,
+       "close": 179.9821,
+       "volume": 1000000
+      },
+      {
+       "date": "20260525",
+       "open": 179.6229,
+       "high": 181.4191,
+       "low": 177.8267,
+       "close": 179.6229,
+       "volume": 1000000
+      },
+      {
+       "date": "20260526",
+       "open": 179.8027,
+       "high": 181.6007,
+       "low": 178.0047,
+       "close": 179.8027,
+       "volume": 1000000
+      },
+      {
+       "date": "20260527",
+       "open": 179.9827,
+       "high": 181.7825,
+       "low": 178.1829,
+       "close": 179.9827,
+       "volume": 1000000
+      },
+      {
+       "date": "20260528",
+       "open": 179.6235,
+       "high": 181.4197,
+       "low": 177.8273,
+       "close": 179.6235,
+       "volume": 1000000
+      },
+      {
+       "date": "20260529",
+       "open": 179.8033,
+       "high": 181.6013,
+       "low": 178.0053,
+       "close": 179.8033,
+       "volume": 1000000
+      },
+      {
+       "date": "20260601",
+       "open": 179.9833,
+       "high": 181.7831,
+       "low": 178.1835,
+       "close": 179.9833,
+       "volume": 1000000
+      },
+      {
+       "date": "20260602",
+       "open": 179.6241,
+       "high": 181.4203,
+       "low": 177.8279,
+       "close": 179.6241,
+       "volume": 1000000
+      },
+      {
+       "date": "20260603",
+       "open": 179.8039,
+       "high": 181.6019,
+       "low": 178.0059,
+       "close": 179.8039,
+       "volume": 1000000
+      },
+      {
+       "date": "20260604",
+       "open": 179.9839,
+       "high": 181.7837,
+       "low": 178.1841,
+       "close": 179.9839,
+       "volume": 1000000
+      },
+      {
+       "date": "20260605",
+       "open": 179.6247,
+       "high": 181.4209,
+       "low": 177.8285,
+       "close": 179.6247,
+       "volume": 1000000
+      },
+      {
+       "date": "20260608",
+       "open": 179.8045,
+       "high": 181.6025,
+       "low": 178.0065,
+       "close": 179.8045,
+       "volume": 1000000
+      },
+      {
+       "date": "20260609",
+       "open": 179.9845,
+       "high": 181.7843,
+       "low": 178.1847,
+       "close": 179.9845,
+       "volume": 1000000
+      },
+      {
+       "date": "20260610",
+       "open": 179.6252,
+       "high": 181.4215,
+       "low": 177.8289,
+       "close": 179.6252,
+       "volume": 1000000
+      },
+      {
+       "date": "20260611",
+       "open": 179.805,
+       "high": 181.603,
+       "low": 178.007,
+       "close": 179.805,
+       "volume": 1000000
+      },
+      {
+       "date": "20260612",
+       "open": 179.985,
+       "high": 181.7849,
+       "low": 178.1852,
+       "close": 179.985,
+       "volume": 1000000
+      },
+      {
+       "date": "20260615",
+       "open": 179.6257,
+       "high": 181.422,
+       "low": 177.8294,
+       "close": 179.6257,
+       "volume": 1000000
+      },
+      {
+       "date": "20260616",
+       "open": 179.8055,
+       "high": 181.6036,
+       "low": 178.0074,
+       "close": 179.8055,
+       "volume": 1000000
+      },
+      {
+       "date": "20260617",
+       "open": 179.9855,
+       "high": 181.7854,
+       "low": 178.1856,
+       "close": 179.9855,
+       "volume": 1000000
+      },
+      {
+       "date": "20260618",
+       "open": 179.6262,
+       "high": 181.4225,
+       "low": 177.8299,
+       "close": 179.6262,
+       "volume": 1000000
+      },
+      {
+       "date": "20260619",
+       "open": 179.806,
+       "high": 181.6041,
+       "low": 178.0079,
+       "close": 179.806,
+       "volume": 1000000
+      },
+      {
+       "date": "20260622",
+       "open": 179.986,
+       "high": 181.7859,
+       "low": 178.1861,
+       "close": 179.986,
+       "volume": 1000000
+      },
+      {
+       "date": "20260623",
+       "open": 179.6267,
+       "high": 181.423,
+       "low": 177.8304,
+       "close": 179.6267,
+       "volume": 1000000
+      },
+      {
+       "date": "20260624",
+       "open": 179.8065,
+       "high": 181.6046,
+       "low": 178.0084,
+       "close": 179.8065,
+       "volume": 1000000
+      },
+      {
+       "date": "20260625",
+       "open": 179.9865,
+       "high": 181.7864,
+       "low": 178.1866,
+       "close": 179.9865,
+       "volume": 1000000
+      },
+      {
+       "date": "20260626",
+       "open": 179.6272,
+       "high": 181.4235,
+       "low": 177.8309,
+       "close": 179.6272,
+       "volume": 1000000
+      },
+      {
+       "date": "20260629",
+       "open": 179.807,
+       "high": 181.6051,
+       "low": 178.0089,
+       "close": 179.807,
+       "volume": 1000000
+      },
+      {
+       "date": "20260630",
+       "open": 179.987,
+       "high": 181.7869,
+       "low": 178.1871,
+       "close": 179.987,
+       "volume": 1000000
+      },
+      {
+       "date": "20260701",
+       "open": 179.6277,
+       "high": 181.424,
+       "low": 177.8314,
+       "close": 179.6277,
+       "volume": 1000000
+      },
+      {
+       "date": "20260702",
+       "open": 179.8075,
+       "high": 181.6056,
+       "low": 178.0094,
+       "close": 179.8075,
+       "volume": 1000000
+      },
+      {
+       "date": "20260703",
+       "open": 179.9875,
+       "high": 181.7874,
+       "low": 178.1876,
+       "close": 179.9875,
+       "volume": 1000000
+      },
+      {
+       "date": "20260706",
+       "open": 179.6282,
+       "high": 181.4245,
+       "low": 177.8319,
+       "close": 179.6282,
+       "volume": 1000000
+      },
+      {
+       "date": "20260707",
+       "open": 179.808,
+       "high": 181.6061,
+       "low": 178.0099,
+       "close": 179.808,
+       "volume": 1000000
+      },
+      {
+       "date": "20260708",
+       "open": 179.988,
+       "high": 181.7879,
+       "low": 178.1881,
+       "close": 179.988,
+       "volume": 1000000
+      },
+      {
+       "date": "20260709",
+       "open": 179.6287,
+       "high": 181.425,
+       "low": 177.8324,
+       "close": 179.6287,
+       "volume": 1000000
+      },
+      {
+       "date": "20260710",
+       "open": 179.8085,
+       "high": 181.6066,
+       "low": 178.0104,
+       "close": 179.8085,
+       "volume": 1000000
+      },
+      {
+       "date": "20260713",
+       "open": 179.9885,
+       "high": 181.7884,
+       "low": 178.1886,
+       "close": 179.9885,
+       "volume": 1000000
+      },
+      {
+       "date": "20260714",
+       "open": 179.6292,
+       "high": 181.4255,
+       "low": 177.8329,
+       "close": 179.6292,
+       "volume": 1000000
+      },
+      {
+       "date": "20260715",
+       "open": 179.809,
+       "high": 181.6071,
+       "low": 178.0109,
+       "close": 179.809,
+       "volume": 1000000
+      },
+      {
+       "date": "20260716",
+       "open": 179.989,
+       "high": 181.7889,
+       "low": 178.1891,
+       "close": 179.989,
+       "volume": 1000000
+      },
+      {
+       "date": "20260717",
+       "open": 179.6297,
+       "high": 181.426,
+       "low": 177.8334,
+       "close": 179.6297,
+       "volume": 1000000
+      },
+      {
+       "date": "20260720",
+       "open": 179.8095,
+       "high": 181.6076,
+       "low": 178.0114,
+       "close": 179.8095,
+       "volume": 1000000
+      },
+      {
+       "date": "20260721",
+       "open": 179.9895,
+       "high": 181.7894,
+       "low": 178.1896,
+       "close": 179.9895,
+       "volume": 1000000
+      },
+      {
+       "date": "20260722",
+       "open": 179.6302,
+       "high": 181.4265,
+       "low": 177.8339,
+       "close": 179.6302,
+       "volume": 1000000
+      },
+      {
+       "date": "20260723",
+       "open": 179.81,
+       "high": 181.6081,
+       "low": 178.0119,
+       "close": 179.81,
+       "volume": 1000000
+      },
+      {
+       "date": "20260724",
+       "open": 179.99,
+       "high": 181.7899,
+       "low": 178.1901,
+       "close": 179.99,
+       "volume": 1000000
+      },
+      {
+       "date": "20260727",
+       "open": 179.6307,
+       "high": 181.427,
+       "low": 177.8344,
+       "close": 179.6307,
+       "volume": 1000000
+      },
+      {
+       "date": "20260728",
+       "open": 179.8105,
+       "high": 181.6086,
+       "low": 178.0124,
+       "close": 179.8105,
+       "volume": 1000000
+      },
+      {
+       "date": "20260729",
+       "open": 179.9905,
+       "high": 181.7904,
+       "low": 178.1906,
+       "close": 179.9905,
+       "volume": 1000000
+      },
+      {
+       "date": "20260730",
+       "open": 179.6312,
+       "high": 181.4275,
+       "low": 177.8349,
+       "close": 179.6312,
+       "volume": 1000000
+      },
+      {
+       "date": "20260731",
+       "open": 179.811,
+       "high": 181.6091,
+       "low": 178.0129,
+       "close": 179.811,
+       "volume": 1000000
+      },
+      {
+       "date": "20260803",
+       "open": 179.991,
+       "high": 181.7909,
+       "low": 178.1911,
+       "close": 179.991,
+       "volume": 1000000
+      },
+      {
+       "date": "20260804",
+       "open": 179.6317,
+       "high": 181.428,
+       "low": 177.8354,
+       "close": 179.6317,
+       "volume": 1000000
+      },
+      {
+       "date": "20260805",
+       "open": 179.8115,
+       "high": 181.6096,
+       "low": 178.0134,
+       "close": 179.8115,
+       "volume": 1000000
+      },
+      {
+       "date": "20260806",
+       "open": 179.9915,
+       "high": 181.7914,
+       "low": 178.1916,
+       "close": 179.9915,
+       "volume": 1000000
+      },
+      {
+       "date": "20260807",
+       "open": 179.6322,
+       "high": 181.4285,
+       "low": 177.8359,
+       "close": 179.6322,
+       "volume": 1000000
+      },
+      {
+       "date": "20260810",
+       "open": 179.812,
+       "high": 181.6101,
+       "low": 178.0139,
+       "close": 179.812,
+       "volume": 1000000
+      },
+      {
+       "date": "20260811",
+       "open": 179.992,
+       "high": 181.7919,
+       "low": 178.1921,
+       "close": 179.992,
+       "volume": 1000000
+      },
+      {
+       "date": "20260812",
+       "open": 179.6327,
+       "high": 181.429,
+       "low": 177.8364,
+       "close": 179.6327,
+       "volume": 1000000
+      },
+      {
+       "date": "20260813",
+       "open": 179.8125,
+       "high": 181.6106,
+       "low": 178.0144,
+       "close": 179.8125,
+       "volume": 1000000
+      },
+      {
+       "date": "20260814",
+       "open": 179.9925,
+       "high": 181.7924,
+       "low": 178.1926,
+       "close": 179.9925,
+       "volume": 1000000
+      },
+      {
+       "date": "20260817",
+       "open": 179.6332,
+       "high": 181.4295,
+       "low": 177.8369,
+       "close": 179.6332,
+       "volume": 1000000
+      },
+      {
+       "date": "20260818",
+       "open": 179.813,
+       "high": 181.6111,
+       "low": 178.0149,
+       "close": 179.813,
+       "volume": 1000000
+      },
+      {
+       "date": "20260819",
+       "open": 179.993,
+       "high": 181.7929,
+       "low": 178.1931,
+       "close": 179.993,
+       "volume": 1000000
+      },
+      {
+       "date": "20260820",
+       "open": 179.6337,
+       "high": 181.43,
+       "low": 177.8374,
+       "close": 179.6337,
+       "volume": 1000000
+      },
+      {
+       "date": "20260821",
+       "open": 179.8135,
+       "high": 181.6116,
+       "low": 178.0154,
+       "close": 179.8135,
+       "volume": 1000000
+      },
+      {
+       "date": "20260824",
+       "open": 179.9935,
+       "high": 181.7934,
+       "low": 178.1936,
+       "close": 179.9935,
+       "volume": 1000000
+      },
+      {
+       "date": "20260825",
+       "open": 179.6342,
+       "high": 181.4305,
+       "low": 177.8379,
+       "close": 179.6342,
+       "volume": 1000000
+      },
+      {
+       "date": "20260826",
+       "open": 179.814,
+       "high": 181.6121,
+       "low": 178.0159,
+       "close": 179.814,
+       "volume": 1000000
+      },
+      {
+       "date": "20260827",
+       "open": 179.994,
+       "high": 181.7939,
+       "low": 178.1941,
+       "close": 179.994,
+       "volume": 1000000
+      },
+      {
+       "date": "20260828",
+       "open": 179.6347,
+       "high": 181.431,
+       "low": 177.8384,
+       "close": 179.6347,
+       "volume": 1000000
+      },
+      {
+       "date": "20260831",
+       "open": 179.8145,
+       "high": 181.6126,
+       "low": 178.0164,
+       "close": 179.8145,
+       "volume": 1000000
+      },
+      {
+       "date": "20260901",
+       "open": 179.9945,
+       "high": 181.7944,
+       "low": 178.1946,
+       "close": 179.9945,
+       "volume": 1000000
+      },
+      {
+       "date": "20260902",
+       "open": 179.6352,
+       "high": 181.4316,
+       "low": 177.8388,
+       "close": 179.6352,
+       "volume": 1000000
+      },
+      {
+       "date": "20260903",
+       "open": 179.815,
+       "high": 181.6131,
+       "low": 178.0169,
+       "close": 179.815,
+       "volume": 1000000
+      },
+      {
+       "date": "20260904",
+       "open": 179.995,
+       "high": 181.795,
+       "low": 178.1951,
+       "close": 179.995,
+       "volume": 1000000
+      },
+      {
+       "date": "20260907",
+       "open": 179.6357,
+       "high": 181.4321,
+       "low": 177.8393,
+       "close": 179.6357,
+       "volume": 1000000
+      },
+      {
+       "date": "20260908",
+       "open": 179.8155,
+       "high": 181.6137,
+       "low": 178.0173,
+       "close": 179.8155,
+       "volume": 1000000
+      },
+      {
+       "date": "20260909",
+       "open": 179.9955,
+       "high": 181.7955,
+       "low": 178.1955,
+       "close": 179.9955,
+       "volume": 1000000
+      },
+      {
+       "date": "20260910",
+       "open": 179.6362,
+       "high": 181.4326,
+       "low": 177.8398,
+       "close": 179.6362,
+       "volume": 1000000
+      },
+      {
+       "date": "20260911",
+       "open": 179.816,
+       "high": 181.6142,
+       "low": 178.0178,
+       "close": 179.816,
+       "volume": 1000000
+      },
+      {
+       "date": "20260914",
+       "open": 179.996,
+       "high": 181.796,
+       "low": 178.196,
+       "close": 179.996,
+       "volume": 1000000
+      },
+      {
+       "date": "20260915",
+       "open": 179.6367,
+       "high": 181.4331,
+       "low": 177.8403,
+       "close": 179.6367,
+       "volume": 1000000
+      },
+      {
+       "date": "20260916",
+       "open": 179.8165,
+       "high": 181.6147,
+       "low": 178.0183,
+       "close": 179.8165,
+       "volume": 1000000
+      },
+      {
+       "date": "20260917",
+       "open": 179.9965,
+       "high": 181.7965,
+       "low": 178.1965,
+       "close": 179.9965,
+       "volume": 1000000
+      },
+      {
+       "date": "20260918",
+       "open": 179.6372,
+       "high": 181.4336,
+       "low": 177.8408,
+       "close": 179.6372,
+       "volume": 1000000
+      },
+      {
+       "date": "20260921",
+       "open": 179.817,
+       "high": 181.6152,
+       "low": 178.0188,
+       "close": 179.817,
+       "volume": 1000000
+      },
+      {
+       "date": "20260922",
+       "open": 179.997,
+       "high": 181.797,
+       "low": 178.197,
+       "close": 179.997,
+       "volume": 1000000
+      },
+      {
+       "date": "20260923",
+       "open": 179.6377,
+       "high": 181.4341,
+       "low": 177.8413,
+       "close": 179.6377,
+       "volume": 1000000
+      },
+      {
+       "date": "20260924",
+       "open": 179.8175,
+       "high": 181.6157,
+       "low": 178.0193,
+       "close": 179.8175,
+       "volume": 1000000
+      },
+      {
+       "date": "20260925",
+       "open": 179.9975,
+       "high": 181.7975,
+       "low": 178.1975,
+       "close": 179.9975,
+       "volume": 1000000
+      },
+      {
+       "date": "20260928",
+       "open": 179.6382,
+       "high": 181.4346,
+       "low": 177.8418,
+       "close": 179.6382,
+       "volume": 1000000
+      },
+      {
+       "date": "20260929",
+       "open": 179.818,
+       "high": 181.6162,
+       "low": 178.0198,
+       "close": 179.818,
+       "volume": 1000000
+      },
+      {
+       "date": "20260930",
+       "open": 179.998,
+       "high": 181.798,
+       "low": 178.198,
+       "close": 179.998,
+       "volume": 1000000
+      },
+      {
+       "date": "20261001",
+       "open": 179.6387,
+       "high": 181.4351,
+       "low": 177.8423,
+       "close": 179.6387,
+       "volume": 1000000
+      },
+      {
+       "date": "20261002",
+       "open": 179.8185,
+       "high": 181.6167,
+       "low": 178.0203,
+       "close": 179.8185,
+       "volume": 1000000
+      },
+      {
+       "date": "20261005",
+       "open": 179.9985,
+       "high": 181.7985,
+       "low": 178.1985,
+       "close": 179.9985,
+       "volume": 1000000
+      },
+      {
+       "date": "20261006",
+       "open": 179.6392,
+       "high": 181.4356,
+       "low": 177.8428,
+       "close": 179.6392,
+       "volume": 1000000
+      },
+      {
+       "date": "20261007",
+       "open": 179.819,
+       "high": 181.6172,
+       "low": 178.0208,
+       "close": 179.819,
+       "volume": 1000000
+      },
+      {
+       "date": "20261008",
+       "open": 179.999,
+       "high": 181.799,
+       "low": 178.199,
+       "close": 179.999,
+       "volume": 1000000
+      },
+      {
+       "date": "20261009",
+       "open": 179.6397,
+       "high": 181.4361,
+       "low": 177.8433,
+       "close": 179.6397,
+       "volume": 1000000
+      },
+      {
+       "date": "20261012",
+       "open": 179.8195,
+       "high": 181.6177,
+       "low": 178.0213,
+       "close": 179.8195,
+       "volume": 1000000
+      },
+      {
+       "date": "20261013",
+       "open": 179.9995,
+       "high": 181.7995,
+       "low": 178.1995,
+       "close": 179.9995,
+       "volume": 1000000
+      },
+      {
+       "date": "20261014",
+       "open": 179.6402,
+       "high": 181.4366,
+       "low": 177.8438,
+       "close": 179.6402,
+       "volume": 1000000
+      },
+      {
+       "date": "20261015",
+       "open": 179.82,
+       "high": 181.6182,
+       "low": 178.0218,
+       "close": 179.82,
+       "volume": 1000000
+      },
+      {
+       "date": "20261016",
+       "open": 180.0,
+       "high": 181.8,
+       "low": 178.2,
+       "close": 180.0,
+       "volume": 1000000
+      }
+     ]
+    }
+   ]
+  },
+  "overseas_stock_minute_bars_15m": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false,
+    "cash": 10000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "g3203",
+     "request": {
+      "g3203InBlock": {
+       "delaygb": "R",
+       "comp_yn": "N",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "symbol": "NVDA",
+       "ncnt": 15,
+       "qrycnt": 500,
+       "sdate": "20261015",
+       "edate": "20261016",
+       "cts_date": "",
+       "cts_time": ""
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "g3203",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회완료",
+      "g3203OutBlock": {
+       "delaygb": "R",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "symbol": "NVDA",
+       "cts_date": "20261016",
+       "cts_time": "093000",
+       "rec_count": 8,
+       "preopen": 0.0,
+       "prehigh": 0.0,
+       "prelow": 0.0,
+       "preclose": "0.0000",
+       "prevolume": 0,
+       "open": 0.0,
+       "high": 0.0,
+       "low": 0.0,
+       "close": "0.0000",
+       "s_time": "200000",
+       "e_time": "180000",
+       "timediff": "-13"
+      },
+      "g3203OutBlock1": [
+       {
+        "date": "20261016",
+        "loctime": "093000",
+        "open": 179.75,
+        "high": 180.5,
+        "low": 179.5,
+        "close": "180.0000",
+        "exevol": 1000,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "094500",
+        "open": 180.25,
+        "high": 181.0,
+        "low": 180.0,
+        "close": "180.5000",
+        "exevol": 1001,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "100000",
+        "open": 180.75,
+        "high": 181.5,
+        "low": 180.5,
+        "close": "181.0000",
+        "exevol": 1002,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "101500",
+        "open": 181.25,
+        "high": 182.0,
+        "low": 181.0,
+        "close": "181.5000",
+        "exevol": 1003,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "103000",
+        "open": 181.75,
+        "high": 182.5,
+        "low": 181.5,
+        "close": "182.0000",
+        "exevol": 1004,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "104500",
+        "open": 182.25,
+        "high": 183.0,
+        "low": 182.0,
+        "close": "182.5000",
+        "exevol": 1005,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "110000",
+        "open": 182.75,
+        "high": 183.5,
+        "low": 182.5,
+        "close": "183.0000",
+        "exevol": 1006,
+        "amount": 0
+       },
+       {
+        "date": "20261016",
+        "loctime": "111500",
+        "open": 183.25,
+        "high": 184.0,
+        "low": 183.0,
+        "close": "183.5000",
+        "exevol": 1007,
+        "amount": 0
+       }
+      ]
+     }
+    }
+   ],
+   "expected": [
+    {
+     "symbol": "NVDA",
+     "exchange": "NASDAQ",
+     "time_series": [
+      {
+       "date": "20261016093000",
+       "open": 179.75,
+       "high": 180.5,
+       "low": 179.5,
+       "close": 180.0,
+       "volume": 1000
+      },
+      {
+       "date": "20261016094500",
+       "open": 180.25,
+       "high": 181.0,
+       "low": 180.0,
+       "close": 180.5,
+       "volume": 1001
+      },
+      {
+       "date": "20261016100000",
+       "open": 180.75,
+       "high": 181.5,
+       "low": 180.5,
+       "close": 181.0,
+       "volume": 1002
+      },
+      {
+       "date": "20261016101500",
+       "open": 181.25,
+       "high": 182.0,
+       "low": 181.0,
+       "close": 181.5,
+       "volume": 1003
+      },
+      {
+       "date": "20261016103000",
+       "open": 181.75,
+       "high": 182.5,
+       "low": 181.5,
+       "close": 182.0,
+       "volume": 1004
+      },
+      {
+       "date": "20261016104500",
+       "open": 182.25,
+       "high": 183.0,
+       "low": 182.0,
+       "close": 182.5,
+       "volume": 1005
+      },
+      {
+       "date": "20261016110000",
+       "open": 182.75,
+       "high": 183.5,
+       "low": 182.5,
+       "close": 183.0,
+       "volume": 1006
+      },
+      {
+       "date": "20261016111500",
+       "open": 183.25,
+       "high": 184.0,
+       "low": 183.0,
+       "close": 183.5,
+       "volume": 1007
+      }
+     ]
+    }
+   ]
+  },
+  "korea_stock_ranking_trading_value": {
+   "ledger": {
+    "product": "korea_stock",
+    "paper": false,
+    "cash": 10000000.0,
+    "positions": [],
+    "open_orders": []
+   },
+   "tape": [
+    {
+     "tr": "t1463",
+     "request": {
+      "t1463InBlock": {
+       "gubun": "1",
+       "jnilgubun": "0",
+       "jc_num": 0,
+       "sprice": 0,
+       "eprice": 0,
+       "volume": 0,
+       "idx": 0,
+       "jc_num2": 0,
+       "exchgubun": "K"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "t1463",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "조회완료",
+      "t1463OutBlock": {
+       "idx": 0
+      },
+      "t1463OutBlock1": [
+       {
+        "hname": "삼성전자",
+        "price": 70000,
+        "sign": "2",
+        "change": 100,
+        "diff": 1.5,
+        "volume": 1000000,
+        "value": 900000,
+        "jnilvalue": 0,
+        "bef_diff": 0.0,
+        "shcode": "005930",
+        "filler": "",
+        "jnilvolume": 0,
+        "ex_shcode": "",
+        "total": 4000000
+       },
+       {
+        "hname": "SK하이닉스",
+        "price": 200000,
+        "sign": "2",
+        "change": 100,
+        "diff": 1.5,
+        "volume": 1000000,
+        "value": 800000,
+        "jnilvalue": 0,
+        "bef_diff": 0.0,
+        "shcode": "000660",
+        "filler": "",
+        "jnilvolume": 0,
+        "ex_shcode": "",
+        "total": 1500000
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "rankings": [
+     {
+      "rank": 1,
+      "symbol": "005930",
+      "exchange": "KRX",
+      "market": "KOSPI",
+      "name": "삼성전자",
+      "price": 70000,
+      "open": null,
+      "high": null,
+      "low": null,
+      "sign": "2",
+      "change": 100,
+      "change_pct": 1.5,
+      "volume": 1000000,
+      "trading_value": 900000,
+      "trading_value_unit": "KRW_million",
+      "market_cap": 4000000,
+      "market_cap_unit": "KRW_million",
+      "product": "korea_stock",
+      "source_tr": "t1463"
+     },
+     {
+      "rank": 2,
+      "symbol": "000660",
+      "exchange": "KRX",
+      "market": "KOSPI",
+      "name": "SK하이닉스",
+      "price": 200000,
+      "open": null,
+      "high": null,
+      "low": null,
+      "sign": "2",
+      "change": 100,
+      "change_pct": 1.5,
+      "volume": 1000000,
+      "trading_value": 800000,
+      "trading_value_unit": "KRW_million",
+      "market_cap": 1500000,
+      "market_cap_unit": "KRW_million",
+      "product": "korea_stock",
+      "source_tr": "t1463"
+     }
+    ],
+    "symbols": [
+     {
+      "exchange": "KRX",
+      "market": "KOSPI",
+      "symbol": "005930",
+      "name": "삼성전자",
+      "product": "korea_stock"
+     },
+     {
+      "exchange": "KRX",
+      "market": "KOSPI",
+      "symbol": "000660",
+      "name": "SK하이닉스",
+      "product": "korea_stock"
+     }
+    ],
+    "count": 2
+   }
+  },
+  "overseas_stock_quote": {
+   "ledger": {
+    "product": "overseas_stock",
+    "paper": false
+   },
+   "tape": [
+    {
+     "tr": "g3101",
+     "request": {
+      "g3101InBlock": {
+       "delaygb": "R",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "symbol": "NVDA"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "g3101",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "synthetic: query ok",
+      "g3101OutBlock": {
+       "delaygb": "R",
+       "keysymbol": "82NVDA",
+       "exchcd": "82",
+       "exchange": "",
+       "suspend": "Y",
+       "sellonly": 0,
+       "symbol": "NVDA",
+       "korname": "NVDA",
+       "induname": "",
+       "low52p": "",
+       "floatpoint": "",
+       "currency": "USD",
+       "price": "180.0",
+       "sign": "3",
+       "diff": "0",
+       "rate": 0.0,
+       "volume": 1000000,
+       "amount": 0,
+       "high52p": "",
+       "uplimit": "",
+       "dnlimit": "",
+       "open": 180.0,
+       "high": 180.0,
+       "low": 180.0,
+       "perv": "",
+       "epsv": ""
+      }
+     }
+    }
+   ],
+   "expected": {
+    "values": [
+     {
+      "symbol": "NVDA",
+      "exchange": "NASDAQ",
+      "price": 180.0,
+      "change": 0.0,
+      "change_pct": 0.0,
+      "volume": 1000000,
+      "open": 180.0,
+      "high": 180.0,
+      "low": 180.0,
+      "close": 180.0,
+      "per": 0.0,
+      "eps": 0.0
+     }
+    ]
+   }
+  },
+  "futures_contract_front": {
+   "ledger": {
+    "product": "overseas_futures",
+    "paper": true
+   },
+   "tape": [
+    {
+     "tr": "o3101",
+     "request": {
+      "o3101InBlock": {
+       "gubun": "0"
+      }
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json; charset=utf-8",
+      "tr_cd": "o3101",
+      "tr_cont": "N",
+      "tr_cont_key": ""
+     },
+     "json": {
+      "rsp_cd": "00000",
+      "rsp_msg": "synthetic: query ok",
+      "o3101OutBlock": [
+       {
+        "Symbol": "MESZ26",
+        "SymbolNm": "MES 2026.12",
+        "ApplDate": "20261016",
+        "BscGdsCd": "MES",
+        "BscGdsNm": "MES",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2026",
+        "LstngM": "Z",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "MESH27",
+        "SymbolNm": "MES 2027.03",
+        "ApplDate": "20261016",
+        "BscGdsCd": "MES",
+        "BscGdsNm": "MES",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "H",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "MESM27",
+        "SymbolNm": "MES 2027.06",
+        "ApplDate": "20261016",
+        "BscGdsCd": "MES",
+        "BscGdsNm": "MES",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "M",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "MESU27",
+        "SymbolNm": "MES 2027.09",
+        "ApplDate": "20261016",
+        "BscGdsCd": "MES",
+        "BscGdsNm": "MES",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "U",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "NQZ26",
+        "SymbolNm": "NQ 2026.12",
+        "ApplDate": "20261016",
+        "BscGdsCd": "NQ",
+        "BscGdsNm": "NQ",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2026",
+        "LstngM": "Z",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "NQH27",
+        "SymbolNm": "NQ 2027.03",
+        "ApplDate": "20261016",
+        "BscGdsCd": "NQ",
+        "BscGdsNm": "NQ",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "H",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "NQM27",
+        "SymbolNm": "NQ 2027.06",
+        "ApplDate": "20261016",
+        "BscGdsCd": "NQ",
+        "BscGdsNm": "NQ",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "M",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       },
+       {
+        "Symbol": "NQU27",
+        "SymbolNm": "NQ 2027.09",
+        "ApplDate": "20261016",
+        "BscGdsCd": "NQ",
+        "BscGdsNm": "NQ",
+        "ExchCd": "CME",
+        "ExchNm": "CME",
+        "CrncyCd": "USD",
+        "NotaCd": "",
+        "UntPrc": "0.25",
+        "MnChgAmt": "",
+        "RgltFctr": "",
+        "CtrtPrAmt": "5",
+        "GdsCd": "",
+        "LstngYr": "2027",
+        "LstngM": "U",
+        "EcPrc": "",
+        "DlStrtTm": "000000",
+        "DlEndTm": "000000",
+        "DlPsblCd": "",
+        "MgnCltCd": "",
+        "OpngMgn": "",
+        "MntncMgn": "",
+        "OpngMgnR": "",
+        "MntncMgnR": "",
+        "DotGb": 0
+       }
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "symbols": [
+     {
+      "exchange": "CME",
+      "symbol": "MESZ26"
+     }
+    ],
+    "contracts": [
+     {
+      "symbol": "MESZ26",
+      "exchange": "CME",
+      "base_product": "MES",
+      "base_product_name": "MES",
+      "name": "MES 2026.12",
+      "contract_month": "2026-12"
+     }
+    ],
+    "count": 1
+   }
+  }
+ }
+}

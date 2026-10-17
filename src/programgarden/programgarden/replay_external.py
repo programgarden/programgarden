@@ -176,10 +176,54 @@ def source_recording(node_type, config, source, contract, *, as_of, item=None):
     return result
 
 
+def per_item_key(node_type, item):
+    """The key of one per-item recording in ``record["items"]``.
+
+    A symbol item is keyed ``EXCHANGE:SYMBOL`` (a domestic node's item without
+    an exchange is ``KRX:SYMBOL``, as the domestic schemas accept ``{symbol}``).
+    Any other item (a position row without an exchange, a number, a text, a
+    nested object) is keyed by its ``content_hash``. Recording authors use this
+    function so the worker and the author compute the same key.
+    """
+    from programgarden.validation_replay import content_hash
+    if isinstance(item, dict) and isinstance(item.get("symbol"), str) and item["symbol"]:
+        exchange = item.get("exchange")
+        if not exchange and node_type.startswith("KoreaStock"):
+            exchange = "KRX"
+        if isinstance(exchange, str) and exchange:
+            return exchange + ":" + item["symbol"]
+    return content_hash(item)
+
+
+def branch_item(context, config):
+    """``(split_id, index, item)`` for a node running inside a SplitNode branch, else None.
+
+    The branch runner passes ``_branch_scope = "<split_id>#<index>"`` in the
+    node config and publishes the whole array once on the split's ``items``
+    port before the first item runs. The item is read from that array by index,
+    never from the split's ``item`` port or ``_split_context`` state: parallel
+    branches overwrite those single slots while another item is still running.
+    """
+    scope = config.get("_branch_scope") if isinstance(config, dict) else None
+    if not isinstance(scope, str) or "#" not in scope:
+        return None
+    split_id, _, raw_index = scope.rpartition("#")
+    try:
+        index = int(raw_index)
+    except ValueError:
+        return None
+    items = context.get_output(split_id, "items")
+    if not isinstance(items, list) or not 0 <= index < len(items):
+        raise ContractViolation(split_id, "The split item of this branch is not available",
+                                "REPLAY_FIXTURE_REQUIRED")
+    return split_id, index, items[index]
+
+
 def external_record(fixture, node_id, node_type, config, context):
     record = fixture.get("nodes", {}).get(node_id)
     if not isinstance(record, dict):
         raise ContractViolation(node_id, "An explicit external recording is required", "REPLAY_FIXTURE_REQUIRED")
+    expected_item = None
     if context._iteration_total:
         item = context._iteration_item
         if not isinstance(item, dict) or not isinstance(item.get("symbol"), str) or not item["symbol"]:
@@ -191,6 +235,21 @@ def external_record(fixture, node_id, node_type, config, context):
         if not isinstance(exchange, str) or not exchange:
             raise ContractViolation(node_id, "An overseas recording requires exchange identity", "REPLAY_FIXTURE_REQUIRED")
         record = record.get("items", {}).get(exchange + ":" + item["symbol"])
+        expected_item = item
+    elif isinstance(record.get("items"), dict):
+        # A per-item group inside a SplitNode branch (a basket): select this
+        # item's recording. A flat recording (no "items") keeps its meaning: one
+        # request identity for every item, with no item bound (item null).
+        branch = branch_item(context, config)
+        if branch is None:
+            raise ContractViolation(node_id, "A per-item recording runs only for an iterated or split item",
+                                    "REPLAY_FIXTURE_REQUIRED")
+        split_id, index, expected_item = branch
+        key = per_item_key(node_type, expected_item)
+        record = record["items"].get(key)
+        if not isinstance(record, dict):
+            raise ContractViolation(node_id, f"No recording for split item {key} ({split_id}#{index})",
+                                    "REPLAY_FIXTURE_REQUIRED", {"split": split_id, "index": index, "key": key})
     if not isinstance(record, dict):
         raise ContractViolation(node_id, "No matching per-item recording", "REPLAY_FIXTURE_REQUIRED")
     if "request" not in record or "as_of" not in record or "item" not in record:
@@ -211,7 +270,7 @@ def external_record(fixture, node_id, node_type, config, context):
         raise ContractViolation(node_id, _mismatch_message(
             "Recording does not match the shared replay clock", ["as_of"]),
             "REPLAY_FIXTURE_MISMATCH", detail)
-    item = context._iteration_item if context._iteration_total else None
+    item = expected_item
     if content_hash(record["item"]) != content_hash(item):
         detail = mismatch_detail(record["item"], item)
         raise ContractViolation(node_id, _mismatch_message(
