@@ -160,6 +160,41 @@ class OverseasStockHistoricalDataNode(BaseNode):
             },
             "expected_output": "value port: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. RSI is computed from time_series.",
         },
+        {
+            "title": "15-minute bars for an intraday RSI",
+            "description": "Fetch the newest 15-minute bars of NVDA (LS g3203, one page of up to 500 bars) and compute RSI on them. Bar dates are YYYYMMDDHHMMSS in exchange local time and include extended-hours bars.",
+            "workflow_snippet": {
+                "id": "overseas_stock_minute_rsi",
+                "name": "Minute-bar RSI Signal",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "split", "type": "SplitNode", "array": [{"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(5, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "15m"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+                    {"id": "split_results", "type": "AggregateNode", "mode": "collect"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "split_results"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value port: {symbol, exchange, time_series: [{date: 'YYYYMMDDHHMMSS', open, high, low, close, volume}, ...]} oldest first. RSI is computed from the 15-minute closes.",
+        },
     ]
     _node_guide: ClassVar[Dict[str, Any]] = {
         "input_handling": (
