@@ -13,9 +13,9 @@ poetry add programgarden-community
 
 요구 사항: Python 3.12+
 
-## 포함 플러그인 (67개)
+## 포함 플러그인 (86개)
 
-### Technical (기술적 분석) - 52개
+### Technical (기술적 분석) - 67개
 
 | 플러그인 | 설명 |
 |----------|------|
@@ -32,7 +32,7 @@ poetry add programgarden-community
 | OBV | OBV 거래량 기반 모멘텀 |
 | IchimokuCloud | 일목균형표 (전환선, 기준선, 구름대) |
 | VWAP | 거래량 가중 평균 가격 |
-| SuperTrend | ATR 기반 추세 추종 |
+| Supertrend | ATR 기반 추세 추종 |
 | WilliamsR | 윌리엄스 %R 오실레이터 |
 | CCI | 상품채널지수 |
 | CMF | 차이킨 자금흐름 |
@@ -58,9 +58,8 @@ poetry add programgarden-community
 | ThreeLineStrike | 쓰리라인스트라이크 패턴 |
 | ContangoBackwardation | 선물 콘탱고/백워데이션 감지 |
 | CalendarSpread | 선물 월물 스프레드 |
-| RollManagement | 선물 롤오버 관리 |
 | PairTrading | 페어트레이딩 (Z-Score 기반) |
-| TSMOM | 시계열 모멘텀 |
+| TimeSeriesMomentum | 시계열 모멘텀 |
 | ConnorsRSI | 복합 RSI (클래식+연속+백분위) |
 | MFI | 자금흐름지수 (거래량 가중 RSI) |
 | CoppockCurve | 코폭 커브 (장기 바닥 감지) |
@@ -68,11 +67,27 @@ poetry add programgarden-community
 | TurtleBreakout | 터틀 돌파 (돈치안 채널 + ATR 손절) |
 | VolatilityBreakout | 변동성 돌파 (래리 윌리엄스) |
 | SeasonalFilter | 계절성 필터 (할로윈 효과) |
-| TAA | 전술적 자산배분 (SMA 필터) |
+| TacticalAssetAllocation | 전술적 자산배분 (SMA 필터) |
 | MagicFormula | 마법공식 (ROC+EY 순위) |
 | SupportResistanceLevels | 지지/저항 레벨 감지 (스윙 기반 클러스터링) |
+| LevelTouch | 레벨 터치/돌파/역할전환 감지 |
+| RSIDivergence | 가격-RSI 괴리 감지 (강세/약세 다이버전스) |
+| UltimateOscillator | Larry Williams 3기간(7,14,28) 가중 오실레이터 |
+| KDJ | K/D/J 라인 (스토캐스틱 확장, 한중일 인기) |
+| Aroon | 아룬 Up/Down 추세 방향+강도 |
+| HeikinAshi | 하이킨아시 캔들 노이즈 제거+추세 신호 |
+| VortexIndicator | +VI/-VI 크로스 추세 방향 판단 |
+| HurstExponent | 허스트 지수 (추세/평균회귀/랜덤워크 분류) |
+| FisherTransform | 피셔 변환 (0선 교차로 전환점 감지) |
+| CMO | 챈드 모멘텀 오실레이터 (-100~100 과매수/과매도) |
+| SchaffTrendCycle | 샤프 트렌드 사이클 (STC, MACD 기반 0~100 전환 신호) |
+| QQE | 평활 RSI와 추적 밴드로 추세 전환 감지 |
+| PiotroskiFScore | 피오트로스키 F-스코어 (재무 건전성 점수, 7개 항목) |
+| GrahamNumber | 그레이엄 넘버 (EPS·BPS 기준 적정가 이하 선별) |
+| DCFFairValue | 현금흐름 할인(DCF) 적정가 대비 저평가 선별 (잉여현금흐름 데이터 별도 필요) |
+| EVEBITDAScreen | EV/EBITDA 배수 기준 저평가 선별 |
 
-### Position (포지션 관리) - 15개
+### Position (포지션 관리) - 19개
 
 | 플러그인 | 설명 |
 |----------|------|
@@ -86,11 +101,15 @@ poetry add programgarden-community
 | VolatilityPositionSizing | 변동성 기반 포지션 사이징 |
 | KellyCriterion | 켈리 기준 최적 포지션 크기 |
 | RiskParity | 리스크 패리티 (동일 위험 배분) |
-| VaRCVaRMonitor | VaR/CVaR 위험 모니터링 |
+| VarCvarMonitor | VaR/CVaR 위험 모니터링 |
 | CorrelationGuard | 상관관계 레짐 감시 |
 | BetaHedge | 베타 헤지 (시장 중립) |
 | DynamicStopLoss | ATR 기반 동적 손절 |
-| LevelTouch | 레벨 터치/돌파/역할전환 감지 |
+| RollManagement | 선물 롤오버 관리 |
+| SharpeRatioMonitor | 연율화 샤프비율 실시간 모니터링 |
+| SortinoRatio | 소르티노 비율 (하방 위험 조정 수익률) |
+| CalmarRatio | 칼마 비율 (CAGR / 최대낙폭) |
+| PortfolioOptimizer | 평균-분산 최적화로 비중 배분 (샤프 최대/변동성 최소) |
 
 ### 커뮤니티 노드 (2개)
 

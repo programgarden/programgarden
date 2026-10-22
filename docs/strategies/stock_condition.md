@@ -62,7 +62,7 @@
 
 ## 전체 플러그인 목록
 
-### 전체 플러그인 (77개)
+### 전체 플러그인 (86개)
 
 | 분류 | 플러그인 | 설명 |
 |------|---------|------|
@@ -77,6 +77,9 @@
 | | MFI | 자금흐름지수 (가격+거래량 기반) |
 | | CoppockCurve | 장기 바닥 탐지 (ROC 평활화) |
 | | TimeSeriesMomentum | 시계열 모멘텀 (절대/상대/위험조정) |
+| | FisherTransform | 피셔 변환 (0선 교차로 전환점 감지) |
+| | CMO | 챈드 모멘텀 오실레이터 (-100~100 과매수/과매도) |
+| | QQE | 평활 RSI와 추적 밴드로 추세 전환 감지 |
 | **추세** | ADX | 추세 강도 측정 |
 | | MovingAverageCross | 이동평균 골든/데드크로스 |
 | | DualMomentum | 듀얼모멘텀 (절대+상대) |
@@ -85,6 +88,7 @@
 | | ParabolicSAR | 파라볼릭 SAR 추세 반전 |
 | | Supertrend | ATR 기반 슈퍼트렌드 |
 | | ElderRay | 엘더레이 (Bull/Bear Power + EMA) |
+| | SchaffTrendCycle | 샤프 트렌드 사이클 (STC, MACD 기반 0~100 전환 신호) |
 | **변동성** | BollingerBands | 볼린저밴드 이탈 |
 | | ATR | ATR 변동성 돌파 |
 | | PriceChannel | 돈치안 채널 돌파 |
@@ -115,6 +119,10 @@
 | | SeasonalFilter | 계절성 패턴 필터 (월별/요일별) |
 | | TacticalAssetAllocation | 전술적 자산배분 (모멘텀+SMA 기반) |
 | **복합 전략** | MagicFormula | 마법공식 (수익률+모멘텀 결합 순위) |
+| **가치 평가** | PiotroskiFScore | 피오트로스키 F-스코어 (재무 건전성 점수, 7개 항목) |
+| | GrahamNumber | 그레이엄 넘버 (EPS·BPS 기준 적정가 이하 선별) |
+| | DCFFairValue | 현금흐름 할인(DCF) 적정가 대비 저평가 선별 (잉여현금흐름 데이터 별도 필요) |
+| | EVEBITDAScreen | EV/EBITDA 배수 기준 저평가 선별 |
 | **멀티타임프레임** | MultiTimeframeConfirmation | 다중 시간프레임 MA 정렬 확인 |
 | **다이버전스** | RSIDivergence | 가격-RSI 괴리 감지 (강세/약세 다이버전스) |
 | **아시아 지표** | KDJ | K/D/J 라인 (스토캐스틱 확장, 한중일 인기) |
@@ -140,6 +148,7 @@
 | | VarCvarMonitor | VaR/CVaR 모니터링 |
 | | CorrelationGuard | 상관관계 가드 (레짐 감시) |
 | | BetaHedge | 베타 헷지 (포트폴리오 베타 관리) |
+| | PortfolioOptimizer | 평균-분산 최적화로 비중 배분 (샤프 최대/변동성 최소) |
 | **성과 비율** | SharpeRatioMonitor | 연율화 샤프비율 실시간 모니터링 |
 | | SortinoRatio | 소르티노 비율 (하방 위험 조정 수익률) |
 | | CalmarRatio | 칼마 비율 (CAGR / 최대낙폭) |
