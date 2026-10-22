@@ -1,0 +1,599 @@
+"""
+ProgramGarden Core - Trigger Nodes
+
+Trigger/filter nodes:
+- ScheduleNode: Cron schedule trigger
+- TradingHoursFilterNode: Trading hours filter
+"""
+
+from typing import Optional, List, Literal, Dict, Any, TYPE_CHECKING, ClassVar
+from datetime import datetime
+import asyncio
+
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.bases.context import BaseExecutionContext
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+)
+
+
+class ScheduleNode(BaseNode):
+    """
+    Cron schedule trigger node
+
+    Emits trigger signal according to specified cron expression
+    """
+
+    type: Literal["ScheduleNode"] = "ScheduleNode"
+    category: NodeCategory = NodeCategory.SCHEDULE
+    description: str = "i18n:nodes.ScheduleNode.description"
+
+    # ScheduleNode specific config
+    # ⑭ cron is REQUIRED — the previous "*/5 * * * *" default let a schedule
+    # with no cron silently run every 5 minutes ("looks fine, behaves
+    # differently"). WorkflowDefinition keeps nodes as raw dicts, so a required
+    # field here never breaks deserialization of stored DSL; missing cron is
+    # surfaced as an explicit error by the executor (no silent fallback) and by
+    # the deep_validate / save chokepoint.
+    cron: str = Field(
+        ...,
+        description="Cron expression (e.g., */5 * * * * = every 5 minutes). Required — there is no default schedule.",
+    )
+    timezone: str = Field(
+        default="America/New_York", description="Timezone (e.g., America/New_York, Asia/Seoul)"
+    )
+    enabled: bool = Field(default=True, description="Schedule enabled")
+    # None (omitted) = unbounded: run until the workflow is stopped. Owner
+    # decision 2026-09-26: when the investor names no duration, the bot keeps
+    # running on its cron until the user stops the workflow. A provided value
+    # is still enforced (> 0) as a cap.
+    max_duration_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "최대 실행 시간 (시간). 생략(None)하면 사용자가 워크플로우를 멈출 때까지 "
+            "계속 실행한다. 값을 지정하면 초과 시 스케줄 자동 종료 (지정 시 반드시 > 0)."
+        ),
+    )
+    # ⑭ count was read by the executor (config.get("count", 1000)) but not
+    # declared on the model — that schema/executor duality meant a canonical
+    # field was invisible to validation. Now declared here. None (omitted) =
+    # unbounded: run until the workflow is stopped (owner 2026-09-26). A
+    # provided value is enforced (>= 1) as a cycle cap.
+    count: Optional[int] = Field(
+        default=None,
+        description=(
+            "Max number of schedule cycles before the scheduler exits. Omit "
+            "(None) to run until the workflow is stopped; set only when the "
+            "investor named a fixed number of cycles (>= 1)."
+        ),
+    )
+    # Owner concern 2026-09-28: many workflows sharing one cron instant (e.g.
+    # "0 9 * * *") all fire at the same second and stampede a shared cloud
+    # egress IP. jitter_seconds staggers the ACTUAL fire by a random 0..jitter
+    # seconds past each cron instant. 0 (default) = fire exactly on the instant
+    # (unchanged). Max 300s. dry_run never applies jitter (it emits one tick and
+    # exits), so it does not affect the build budget or replay semantics.
+    jitter_seconds: int = Field(
+        default=0,
+        ge=0,
+        le=300,
+        description=(
+            "Random 0..N second delay applied to each fire past the cron instant, "
+            "to spread many same-cron workflows across a shared egress IP. "
+            "0 (default) fires exactly on the cron instant; max 300."
+        ),
+    )
+
+    _inputs: List[InputPort] = []
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+            example={"fired_at": "2026-04-14T09:30:00-04:00", "cycle_index": 0},
+        ),
+    ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Run the main flow on a cron schedule (every N minutes, daily at 09:30 ET, weekly market close, …)",
+            "Run indefinitely until the user stops the workflow — omit max_duration_hours and count; set them only when the investor named a duration or cycle count",
+            "Combine with TradingHoursFilterNode to fire only on weekdays within market hours",
+        ],
+        "when_not_to_use": [
+            "Event-driven flows (realtime ticks, order fills) — use Real*Node sources instead",
+            "One-shot workflows — StartNode alone is enough; ScheduleNode would loop forever",
+            "Sub-minute cadence — cron's minimum granularity is 1 minute; use ThrottleNode for sub-minute pacing",
+        ],
+        "typical_scenarios": [
+            "Start → ScheduleNode (0 9 * * 1-5) → trading body (fires 09:00 ET on weekdays)",
+            "Start → ScheduleNode (*/15 * * * *) → TradingHoursFilterNode → signals",
+            "Start → ScheduleNode (0 */4 * * *) → portfolio snapshot → TableDisplayNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Standard 5-field cron expression — minute / hour / day / month / weekday",
+        "Timezone-aware (IANA names) — 'America/New_York', 'Asia/Seoul', 'UTC'",
+        "max_duration_hours and count are optional bounds: omit both and the schedule runs until the workflow is stopped; set one and the scheduler exits cleanly at that limit",
+        "jitter_seconds (optional, 0..300, default 0) delays each fire by a random 0..N seconds past the cron instant, so many workflows sharing one cron ('0 9 * * *') do not all hit a shared egress IP at the same second; the cron cadence anchor is unchanged and the logical replay instant is not affected. Keep jitter well below the interval (do not set 300s jitter on an every-minute cron).",
+        "enabled=False freezes the trigger without removing the node from the DAG",
+        "A tick re-executes the whole main flow: the ScheduleNode returns {trigger: true} without re-registering, so every node downstream of it runs again on each tick",
+        "Startup account and open-order snapshots are not retained across schedule ticks; they are retained only across realtime events",
+        "In replay a schedule_tick must fall on the cron's next firing instant after the previous frame, evaluated in this node's timezone (default America/New_York)",
+        "enabled=false emits no tick; when count / max_duration_hours are set, ticks past them are refused; when both are omitted the schedule is unbounded (runs until stopped); an invalid timezone is rejected at startup",
+        "Emits exactly one subsequent event type: schedule_tick",
+        "Requires exactly one StartNode upstream; the ScheduleNode is never the workflow root",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Configuring the schedule with `mode` / `schedule` (or any key other than `cron`)",
+            "reason": "The ONLY schedule field is `cron` (a 5-field cron expression) with `timezone`. Keys like `mode: 'interval'` or `schedule: {every: '5m'}` are not in this node's schema — they are silently ignored, so the workflow looks scheduled but never fires on the intended cadence.",
+            "alternative": "Express the cadence purely as `cron` — every 5 min = `*/5 * * * *`, 09:30 weekdays = `30 9 * * 1-5`. Set `timezone` to the target market. Do not add `mode` / `schedule` / interval fields.",
+        },
+        {
+            "pattern": "Using ScheduleNode with `* * * * *` (every minute) to poll cheap data",
+            "reason": "Every fire triggers the full main flow — brokers, LS TRs, downstream plugins. Even if cheap per run, it accumulates rate-limit pressure.",
+            "alternative": "Increase the interval (e.g. `*/5 * * * *`) or use a realtime source (Real*Node) with ThrottleNode for downstream pacing.",
+        },
+        {
+            "pattern": "Missing timezone — relying on the server default",
+            "reason": "Different environments / deployments may default to UTC, causing `0 9 * * *` to fire at the wrong hour.",
+            "alternative": "Always set timezone to the intended market tz: 'America/New_York' for US, 'Asia/Seoul' for KRX, 'Asia/Hong_Kong' for HKEX.",
+        },
+        {
+            "pattern": "No TradingHoursFilterNode downstream for time-sensitive trading",
+            "reason": "Cron fires exactly at the cron cadence, including weekends and holidays; orders may slip onto a closed market.",
+            "alternative": "Use SessionGateNode → IfNode for immediate off-hours refusal, or TradingHoursFilterNode to wait until the window opens. Neither supplies an exchange holiday calendar.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "9:30 ET weekday open trigger",
+            "description": "Runs the trading body once at 09:30 America/New_York, Monday through Friday.",
+            "workflow_snippet": {
+                "id": "schedule-us-open",
+                "name": "US market-open schedule",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "30 9 * * 1-5", "timezone": "America/New_York"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Every weekday at 09:30 ET, broker session opens and the account is queried. Off-schedule cycles are skipped.",
+        },
+        {
+            "title": "Every 15 minutes intraday, trading-hours gated",
+            "description": "ScheduleNode fires every 15 minutes; TradingHoursFilterNode only forwards during 09:30–16:00 ET; downstream runs signals and displays the result.",
+            "workflow_snippet": {
+                "id": "schedule-intraday",
+                "name": "Intraday 15-min schedule",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "*/15 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "watchlist", "type": "WatchlistNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}]},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbol": "{{ item }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "watchlist"},
+                    {"from": "watchlist", "to": "market"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Every 15 minutes the cron fires; trading-hours gate passes only 09:30–16:00 weekdays; SPY quote fetched on passing cycles.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "No data inputs. All behavior is configured via `cron`, `timezone`, `enabled`, the optional bounds `max_duration_hours` / `count` (omit both to run until the workflow is stopped), and the optional `jitter_seconds` (0..300, default 0) which staggers each fire a random 0..N seconds past the cron instant to avoid a shared-IP stampede.",
+        "output_consumption": "`trigger` output carries `{fired_at, cycle_index}`. Downstream nodes usually just need an incoming edge; explicit binding is optional.",
+        "common_combinations": [
+            "StartNode → ScheduleNode → trading body (plain cron workflow)",
+            "StartNode → ScheduleNode → TradingHoursFilterNode → body (market-hours gate)",
+            "StartNode → ScheduleNode → RealMarketDataNode (subscribe once per cycle)",
+        ],
+        "pitfalls": [
+            "Always set `timezone` explicitly — server defaults are not portable",
+            "Pair with TradingHoursFilterNode when the cron expression does not already encode market hours",
+            "For a bot that should run until the user stops it, omit max_duration_hours and count; set them only when the investor named a duration (max_duration_hours > 0) or a cycle count (count >= 1)",
+        ],
+    }
+
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "Added optional jitter_seconds (0..300) to stagger fires past the cron instant"
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        return {
+            # === PARAMETERS: 핵심 스케줄 설정 ===
+            # ⑭ required with NO default — the only way to set the cadence is
+            # `cron`. A default here re-introduced the "generation may omit it"
+            # signal that produced the silent 5-minute fallback.
+            "cron": FieldSchema(
+                name="cron",
+                type=FieldType.STRING,
+                description="Cron expression. Format: minute hour day month weekday. Examples: */5 * * * * (every 5 min), 0 9 * * 1-5 (9am weekdays). Required — there is no default schedule.",
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example="*/5 * * * *",
+                expected_type="str",
+            ),
+            "timezone": FieldSchema(
+                name="timezone",
+                type=FieldType.STRING,
+                description="Timezone for cron schedule. Use IANA timezone names.",
+                default="America/New_York",
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example="America/New_York",
+                expected_type="str",
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "enabled": FieldSchema(
+                name="enabled",
+                type=FieldType.BOOLEAN,
+                description="Enable/disable the schedule. When disabled, trigger will not fire.",
+                default=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                example=True,
+            ),
+            "max_duration_hours": FieldSchema(
+                name="max_duration_hours",
+                type=FieldType.NUMBER,
+                description="i18n:fields.ScheduleNode.max_duration_hours",
+                # No default and NO max_value: omit for an unbounded schedule
+                # that runs until the workflow is stopped (owner 2026-09-26).
+                # Only a provided value is bounded (> 0).
+                default=None,
+                min_value=0.1,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="float",
+                example=24.0,
+            ),
+            "count": FieldSchema(
+                name="count",
+                type=FieldType.INTEGER,
+                description="Max number of schedule cycles before the scheduler exits. Omit for an unbounded schedule that runs until the workflow is stopped; set only when a fixed number of cycles is intended.",
+                # No default: omitted = unbounded (owner 2026-09-26).
+                default=None,
+                min_value=1,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="int",
+                example=1000,
+            ),
+            "jitter_seconds": FieldSchema(
+                name="jitter_seconds",
+                type=FieldType.INTEGER,
+                description="Random 0..N second delay applied to each fire past the cron instant, to spread many same-cron workflows across a shared egress IP. 0 (default) fires exactly on the cron instant; max 300.",
+                default=0,
+                min_value=0,
+                max_value=300,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="int",
+                example=30,
+            ),
+        }
+
+
+class TradingHoursFilterNode(BaseNode):
+    """
+    Trading hours filter node
+
+    Passes signals only within specified trading hours
+    """
+
+    type: Literal["TradingHoursFilterNode"] = "TradingHoursFilterNode"
+    category: NodeCategory = NodeCategory.SCHEDULE
+    description: str = "i18n:nodes.TradingHoursFilterNode.description"
+
+    # TradingHoursFilterNode specific config
+    start: str = Field(default="09:30", description="Start time (HH:MM)")
+    end: str = Field(default="16:00", description="End time (HH:MM)")
+    timezone: str = Field(
+        default="America/New_York", description="Timezone (e.g., America/New_York)"
+    )
+    days: List[str] = Field(
+        default=["mon", "tue", "wed", "thu", "fri"],
+        description="Active days (mon, tue, wed, thu, fri, sat, sun)",
+    )
+    max_wait_hours: float = Field(
+        default=24.0,
+        description="최대 대기 시간 (시간). 초과 시 timeout으로 처리.",
+    )
+
+    _inputs: List[InputPort] = [
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger"),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="passed",
+            type="signal",
+            description="i18n:ports.passed",
+            example={"passed": True, "reason": "within_trading_hours"},
+        ),
+        OutputPort(
+            name="blocked",
+            type="signal",
+            description="i18n:ports.blocked",
+            example={"passed": False, "reason": "outside_trading_hours"},
+        ),
+    ]
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Gate a scheduled or realtime flow so it only acts during market hours",
+            "Separate weekday / weekend logic without hard-coding the cron expression",
+            "Enforce a start-of-day / end-of-day window around a fixed trading body",
+        ],
+        "when_not_to_use": [
+            "Actual exchange status (holidays, circuit breakers) — no static time filter knows these; rely on realtime market-data nodes, which stop delivering ticks when the exchange is closed",
+            "Strict cron cadence without time windowing — ScheduleNode alone is enough",
+            "Realtime-only workflows that naturally stop outside market hours (no ticks arrive) — filter adds no value",
+        ],
+        "typical_scenarios": [
+            "ScheduleNode → TradingHoursFilterNode → trading body (passed branch)",
+            "TradingHoursFilterNode blocked port → IfNode for timeout handling",
+            "Start → TradingHoursFilterNode → long-running realtime subscription (cleanup at close)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Configurable start / end in HH:MM form and IANA timezone",
+        "`days` whitelist supports weekend-only or weekday-only flows",
+        "Outside the window this node waits; `passed` activates on entry and `blocked` activates only on timeout/shutdown",
+        "max_wait_hours safeguards long waits — the node timeouts instead of stalling forever",
+        "In replay an instant outside the window is refused (REPLAY_TIME_WAIT_BLOCKED); only in-window instants are replayable and the node then emits passed=true, so it cannot express an after-hours branch in a suite",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using TradingHoursFilterNode as a holiday / circuit-breaker check",
+            "reason": "The node only knows HH:MM windows + day-of-week; it has no knowledge of US federal holidays or KRX short-sale suspensions.",
+            "alternative": "Rely on realtime market-data nodes (they only fire while the exchange is actually trading) rather than a static HH:MM filter for holiday / circuit-breaker awareness.",
+        },
+        {
+            "pattern": "Missing timezone — defaulting to server time",
+            "reason": "A 'start=09:30' window interpreted in UTC would open 4–5 hours off US market open, causing workflows to gate incorrectly.",
+            "alternative": "Always set timezone to the target market's IANA name (America/New_York, Asia/Seoul, Asia/Hong_Kong, Asia/Tokyo).",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Pass signals only during US market hours",
+            "description": "Schedule fires every 5 minutes; TradingHoursFilter passes only 09:30–16:00 on weekdays; downstream trading body runs only during hours.",
+            "workflow_snippet": {
+                "id": "hours-filter-us",
+                "name": "Schedule + trading hours",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "*/5 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "account"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Account query runs after the trading window opens. Outside the window the node waits up to max_wait_hours; timeout skips the trading branch.",
+        },
+        {
+            "title": "Branch on blocked path for after-hours notification",
+            "description": "TradingHoursFilterNode waits for the window: passed runs the trading body; blocked handles timeout. Use SessionGateNode plus IfNode for an immediate closed-window decision.",
+            "workflow_snippet": {
+                "id": "hours-filter-notify",
+                "name": "Trading hours fork",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "cron", "type": "ScheduleNode", "cron": "0 * * * *", "timezone": "America/New_York"},
+                    {"id": "hours", "type": "TradingHoursFilterNode", "start": "09:30", "end": "16:00", "timezone": "America/New_York", "days": ["mon", "tue", "wed", "thu", "fri"]},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "closed_notice", "type": "SummaryDisplayNode", "title": "Market closed", "data": {"reason": "outside_hours"}},
+                ],
+                "edges": [
+                    {"from": "start", "to": "cron"},
+                    {"from": "cron", "to": "hours"},
+                    {"from": "hours", "to": "broker", "from_port": "passed"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "hours", "to": "closed_notice", "from_port": "blocked"},
+                ],
+                "credentials": [
+                    {"credential_id": "broker_cred", "type": "broker_ls_overseas_stock", "data": [{"key": "appkey", "value": "", "type": "password", "label": "App Key"}, {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}]},
+                ],
+            },
+            "expected_output": "Within hours → account query; outside hours → wait; on timeout → SummaryDisplay renders the blocked notice.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Trigger edge from upstream (ScheduleNode or StartNode). Window is configured via start / end / timezone / days.",
+        "output_consumption": "`passed` and default edges run after entering the window; explicit `blocked` edges run on timeout. Outside the window the node waits first.",
+        "common_combinations": [
+            "ScheduleNode → TradingHoursFilterNode → trading body",
+            "TradingHoursFilterNode → OverseasStockRealMarketDataNode (start realtime only in-hours)",
+            "TradingHoursFilterNode → IfNode on `reason` field for per-state branching",
+        ],
+        "pitfalls": [
+            "Always specify `timezone` — server default is not portable",
+            "For holidays / CB / actual market status, rely on realtime market-data nodes (no ticks arrive when the exchange is closed) rather than this static time filter",
+            "`days` names are lowercase 3-letter: mon / tue / wed / thu / fri / sat / sun",
+        ],
+    }
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        return {
+            # === PARAMETERS: 핵심 거래시간 설정 ===
+            "start": FieldSchema(
+                name="start",
+                type=FieldType.STRING,
+                description="Start time in HH:MM format (24-hour). Wait until the window opens, bounded by max_wait_hours.",
+                default="09:30",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="09:30",
+                expected_type="str",
+            ),
+            "end": FieldSchema(
+                name="end",
+                type=FieldType.STRING,
+                description="Inclusive end minute in HH:MM format (24-hour). Afterward wait for the next configured window, bounded by max_wait_hours.",
+                default="16:00",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="16:00",
+                expected_type="str",
+            ),
+            "days": FieldSchema(
+                name="days",
+                type=FieldType.ARRAY,
+                description="Active trading days. Options: mon, tue, wed, thu, fri, sat, sun",
+                default=["mon", "tue", "wed", "thu", "fri"],
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=["mon", "tue", "wed", "thu", "fri"],
+                expected_type="list[str]",
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "timezone": FieldSchema(
+                name="timezone",
+                type=FieldType.STRING,
+                description="Timezone for time comparison. Use IANA timezone names.",
+                default="America/New_York",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="America/New_York",
+                expected_type="str",
+            ),
+            "max_wait_hours": FieldSchema(
+                name="max_wait_hours",
+                type=FieldType.NUMBER,
+                description="i18n:fields.TradingHoursFilterNode.max_wait_hours",
+                default=24.0,
+                min_value=0.1,
+                max_value=168.0,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                expected_type="float",
+                example=24.0,
+            ),
+        }
+
+    def _is_trading_hours(self, *, as_of: Optional[datetime] = None) -> bool:
+        """Use the live window predicate with an optional aware replay instant."""
+        if as_of is not None and (as_of.tzinfo is None or as_of.utcoffset() is None):
+            raise ValueError("Trading-hours instant must include a timezone")
+        try:
+            import pytz
+        except ImportError:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self.timezone)
+        else:
+            tz = pytz.timezone(self.timezone)
+        now = as_of.astimezone(tz) if as_of is not None else datetime.now(tz)
+        
+        # 요일 체크
+        day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+        if not self.days or any(d.lower() not in day_map for d in self.days):
+            raise ValueError("Trading days must use explicit weekday names")
+        active_weekdays = [day_map[d.lower()] for d in self.days]
+        # Reject malformed windows even on an inactive weekday.
+        import re
+        # H:MM and HH:MM are both unambiguous ("9:30" was accepted before 2.1.0).
+        if any(not isinstance(value, str) or not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", value)
+               for value in (self.start, self.end)):
+            raise ValueError("Trading-hours window requires HH:MM times")
+        start_h, start_m = map(int, self.start.split(":"))
+        end_h, end_m = map(int, self.end.split(":"))
+        if (end_h, end_m) < (start_h, start_m):
+            raise ValueError("Use SessionGateNode for an overnight window")
+        if now.weekday() not in active_weekdays:
+            return False
+        
+        current_minutes = now.hour * 60 + now.minute
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+        
+        return start_minutes <= current_minutes <= end_minutes
+
+    async def execute(self, context: "BaseExecutionContext") -> Dict[str, Any]:
+        """
+        Wait until trading hours, then pass through.
+
+        - 거래시간 내: 즉시 통과
+        - 거래시간 외: 거래시간이 될 때까지 대기
+        - max_wait_hours 초과 시: timeout 반환
+        - 워크플로우 종료 시: graceful shutdown
+        """
+        import time as _time
+        # dry_run: 거래시간 대기 없이 즉시 통과
+        if getattr(context, "is_dry_run", False):
+            context.log("info", "[dry_run] TradingHoursFilter bypassed", self.id)
+            return {"passed": True, "blocked": False, "reason": "dry_run_bypass"}
+
+        check_interval = 60  # 1분마다 체크
+        wait_start = _time.monotonic()
+        max_wait_sec = self.max_wait_hours * 3600
+
+        while not self._is_trading_hours():
+            # graceful shutdown 체크
+            if hasattr(context, 'is_running') and not context.is_running:
+                context.log("info", "Shutdown requested, exiting trading hours wait", self.id)
+                return {"passed": False, "blocked": True, "reason": "shutdown"}
+
+            # M-7: max_wait_hours 초과 체크
+            if (_time.monotonic() - wait_start) >= max_wait_sec:
+                context.log(
+                    "warning",
+                    f"거래시간 대기 timeout: max_wait_hours={self.max_wait_hours}h 초과",
+                    self.id,
+                )
+                return {"passed": False, "blocked": True, "reason": "timeout"}
+
+            context.log("debug", f"Outside trading hours, waiting... (next check in {check_interval}s)", self.id)
+            await asyncio.sleep(check_interval)
+
+        context.log("info", "Trading hours active, passing through", self.id)
+        return {"passed": True, "blocked": False}

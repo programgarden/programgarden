@@ -1,0 +1,544 @@
+"""
+TrailingStop (HWM 트레일링 스탑) 플러그인 테스트
+
+v2.1.0: trail_percent 고정 % 모드 + data close 기반 HWM 자가 갱신 검증
+"""
+
+from decimal import Decimal
+
+import pytest
+from programgarden_community.plugins.trailing_stop import (
+    trailing_stop_condition,
+    TRAILING_STOP_SCHEMA,
+    risk_features,
+)
+
+
+class MockHWM:
+    def __init__(self, hwm_price, current_price, position_avg_price, drawdown_pct,
+                 position_qty=0):
+        self.hwm_price = Decimal(str(hwm_price))
+        self.current_price = Decimal(str(current_price))
+        self.position_avg_price = Decimal(str(position_avg_price))
+        self.drawdown_pct = Decimal(str(drawdown_pct))
+        self.position_qty = position_qty
+
+
+class MockRiskTracker:
+    """update_price 가 실제 WorkflowRiskTracker 와 동일한 HWM 전진/드로다운 갱신을 수행"""
+
+    def __init__(self, hwm_data=None):
+        self._hwm_data = hwm_data or {}
+        self.update_calls = []
+
+    def get_hwm(self, symbol):
+        return self._hwm_data.get(symbol)
+
+    def update_price(self, symbol, exchange, price, timestamp=None):
+        self.update_calls.append((symbol, exchange, price))
+        state = self._hwm_data.get(symbol)
+        if state is None:
+            return None  # 미등록 심볼 — 실제 tracker 와 동일
+        dec_price = Decimal(str(price))
+        state.current_price = dec_price
+        if dec_price > state.hwm_price:
+            state.hwm_price = dec_price
+            state.drawdown_pct = Decimal("0")
+        elif state.hwm_price > 0:
+            state.drawdown_pct = (state.hwm_price - dec_price) / state.hwm_price * 100
+        return state
+
+
+class MockContext:
+    def __init__(self, risk_tracker=None):
+        self.risk_tracker = risk_tracker
+
+
+class TestSchema:
+    def test_schema_id(self):
+        assert TRAILING_STOP_SCHEMA.id == "TrailingStop"
+
+    def test_schema_version_bumped(self):
+        assert TRAILING_STOP_SCHEMA.version == "2.1.0"
+
+    def test_trail_percent_field_exists(self):
+        assert "trail_percent" in TRAILING_STOP_SCHEMA.fields_schema
+        assert TRAILING_STOP_SCHEMA.fields_schema["trail_percent"]["default"] == 0.0
+
+    def test_risk_features(self):
+        assert "hwm" in risk_features
+
+
+class TestFixedTrailPercent:
+    """trail_percent 고정 % 모드"""
+
+    @pytest.mark.asyncio
+    async def test_sell_when_drawdown_reaches_trail_percent(self):
+        # 고점 100 → 현재가 94 (drawdown 6%) → 5% 고정 트레일링 발동
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=100.0, current_price=94.0,
+                            position_avg_price=90.0, drawdown_pct=6.0,
+                            position_qty=7),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 94.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["result"] is True
+        # E3: passed_symbols 는 symbol/exchange 외에 청산 수량·방향을 실어야 한다
+        assert result["passed_symbols"] == [
+            {"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 7, "close_side": "sell"}
+        ]
+        sr = result["symbol_results"][0]
+        assert sr["signal"] == "sell"
+        assert sr["threshold_pct"] == 5.0
+
+    @pytest.mark.asyncio
+    async def test_sell_at_exact_trail_percent_boundary(self):
+        # 고정 모드는 경계 포함(>=): 정확히 -5% 도달 시 매도
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=100.0, current_price=95.0,
+                            position_avg_price=90.0, drawdown_pct=5.0),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 95.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["result"] is True
+        assert result["symbol_results"][0]["signal"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_hold_below_trail_percent(self):
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=100.0, current_price=97.0,
+                            position_avg_price=90.0, drawdown_pct=3.0),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 97.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["result"] is False
+        assert result["symbol_results"][0]["signal"] == "hold"
+
+    @pytest.mark.asyncio
+    async def test_fixed_mode_ignores_profit_scaling(self):
+        # 수익이 작아도(스케일링이면 1% 바닥) 고정 5% 전까지는 hold 유지
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=101.0, current_price=98.0,
+                            position_avg_price=100.0, drawdown_pct=2.97),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 98.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        # 스케일링 모드였다면 threshold=max(1%*0.3, 1.0)=1.0 < 2.97 → sell
+        # 고정 모드는 threshold=5.0 > 2.97 → hold
+        assert result["symbol_results"][0]["signal"] == "hold"
+        assert result["symbol_results"][0]["threshold_pct"] == 5.0
+
+
+class TestHwmSelfUpdate:
+    """data close 기반 HWM 자가 갱신"""
+
+    @pytest.mark.asyncio
+    async def test_close_advances_hwm_before_evaluation(self):
+        # 트래커 HWM 이 stale(100)이어도 close=110 이면 HWM 110 으로 전진 → drawdown 0 → hold
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=100.0, current_price=100.0,
+                            position_avg_price=90.0, drawdown_pct=0.0),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 110.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert tracker.update_calls == [("AAPL", "NASDAQ", 110.0)]
+        assert result["symbol_results"][0]["signal"] == "hold"
+        assert float(tracker.get_hwm("AAPL").hwm_price) == 110.0
+
+    @pytest.mark.asyncio
+    async def test_drop_after_advance_triggers_from_new_hwm(self):
+        # 고점 120 등록 후 close=113 → drawdown 5.83% >= 5% → sell
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=120.0,
+                            position_avg_price=100.0, drawdown_pct=0.0),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["symbol_results"][0]["signal"] == "sell"
+        assert result["symbol_results"][0]["hwm_price"] == 120.0
+
+    @pytest.mark.asyncio
+    async def test_unregistered_symbol_holds(self):
+        # HWM 미등록(이 워크플로우가 매수하지 않은 종목) → hold + 사유
+        tracker = MockRiskTracker({})
+        result = await trailing_stop_condition(
+            data=[{"symbol": "TSLA", "exchange": "NASDAQ", "date": "20260610", "close": 200.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "TSLA", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["result"] is False
+        assert result["symbol_results"][0]["reason"] == "HWM 데이터 없음"
+        # 미등록 심볼은 update_price 호출 자체가 없어야 함 (price window 오염 방지)
+        assert tracker.update_calls == []
+
+    @pytest.mark.asyncio
+    async def test_invalid_close_values_skipped(self):
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=100.0, current_price=97.0,
+                            position_avg_price=90.0, drawdown_pct=3.0),
+        })
+        result = await trailing_stop_condition(
+            data=[
+                {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": "n/a"},
+                {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": None},
+                {"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 0},
+            ],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        # 유효한 close 가 없으므로 update_price 호출 없음 — 기존 tracker 상태로 평가
+        assert tracker.update_calls == []
+        assert result["symbol_results"][0]["signal"] == "hold"
+
+
+class TestRatioModeBackwardCompat:
+    """trail_ratio 스케일링 모드 회귀 (trail_percent 미지정/0)"""
+
+    @pytest.mark.asyncio
+    async def test_ratio_mode_unchanged(self):
+        # 수익 20%, ratio 0.3 → threshold 6%; drawdown 7% > 6% → sell
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=111.6,
+                            position_avg_price=100.0, drawdown_pct=7.0),
+        })
+        result = await trailing_stop_condition(
+            fields={"trail_ratio": 0.3},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["symbol_results"][0]["signal"] == "sell"
+        assert result["symbol_results"][0]["threshold_pct"] == 6.0
+
+    @pytest.mark.asyncio
+    async def test_ratio_mode_boundary_excluded(self):
+        # 스케일링 모드는 기존 동작(>) 유지: drawdown == threshold 면 hold
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=112.8,
+                            position_avg_price=100.0, drawdown_pct=6.0),
+        })
+        result = await trailing_stop_condition(
+            fields={"trail_ratio": 0.3},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["symbol_results"][0]["signal"] == "hold"
+
+    @pytest.mark.asyncio
+    async def test_no_risk_tracker_falls_back_to_legacy(self):
+        result = await trailing_stop_condition(
+            fields={"price_gap_percent": 0.5},
+            target_orders=[{"order_id": "1", "symbol": "AAPL", "side": "buy", "price": 100.0}],
+            ohlcv_data={"AAPL": {"close": 100.0}},
+            context=None,
+        )
+        assert "modified_orders" in result
+        assert result["total_count"] == 1
+
+
+class TestSellQuantityWiring:
+    """E3+MINOR2: passed_symbols 에 청산 수량(quantity)/방향(close_side) 탑재.
+
+    수량 우선순위: sym_info(symbols 포트).quantity > data 행(라이브 스냅샷).quantity
+    > HWM 트래커 기억값(position_qty).
+    """
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_hwm_qty_when_no_live_quantity(self):
+        # data/symbols 에 수량이 없으면 HWM 트래커 기억값(position_qty)으로 폴백
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=15),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["result"] is True
+        ps = result["passed_symbols"][0]
+        assert ps["quantity"] == 15  # 라이브 수량 없음 → hwm.position_qty 폴백
+        assert ps["close_side"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_live_data_quantity_overrides_hwm_qty(self):
+        # data 행(라이브 포지션 스냅샷)의 quantity 가 hwm.position_qty 기억값보다 우선
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=15),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": 8}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == 8  # 라이브 권위값 우선
+
+    @pytest.mark.asyncio
+    async def test_symbols_quantity_is_top_priority(self):
+        # sym_info(symbols 포트)의 quantity 가 data/hwm 보다 최우선
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=15),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": 8}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ", "quantity": 5}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == 5
+
+    @pytest.mark.asyncio
+    async def test_missing_position_qty_defaults_to_zero_without_crash(self):
+        # position_qty 속성이 없는 HWM 이라도 크래시 없이 quantity=0
+        class _NoQtyHWM:
+            hwm_price = Decimal("120")
+            current_price = Decimal("113")
+            position_avg_price = Decimal("100")
+            drawdown_pct = Decimal("5.83")
+
+        tracker = MockRiskTracker({"AAPL": _NoQtyHWM()})
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["quantity"] == 0
+        assert ps["close_side"] == "sell"
+
+
+class TestFractionalSellQuantity:
+    """소수점(fractional) 청산 수량이 플러그인에서 절단되지 않아야 한다.
+
+    LS 는 해외주식 소수점 주식을 지원한다(출처: 오너 진술 2026-09-12).
+    WorkflowRiskTracker.position_qty 는 소수 잔량을 Decimal 로 보존하는데,
+    플러그인이 int() 로 자르면 0.532주 포지션의 청산 수량이 0 으로 실려
+    주문이 조용히 사라진다. 정수화는 주문 송신부(_normalize_order)의 명시적
+    규약이다 — 정수부만 주문하고 잔량은 fractional_remainder 로 남기며,
+    정수부가 0 이면 FRACTIONAL_ONLY 로 사유를 밝힌다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hwm_fallback_preserves_fractional_qty(self):
+        # 라이브 수량이 없어 HWM 기억값(Decimal)으로 폴백하는 경로
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=Decimal("0.532")),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        ps = result["passed_symbols"][0]
+        assert ps["quantity"] == pytest.approx(0.532)  # int 절단이면 0
+        assert ps["close_side"] == "sell"
+
+    @pytest.mark.asyncio
+    async def test_hwm_fallback_mixed_fractional_qty(self):
+        # 정수부가 있는 소수 수량(9.5)도 잔량을 잃지 않는다
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=Decimal("9.5")),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(9.5)  # int 절단이면 9
+
+    @pytest.mark.asyncio
+    async def test_live_data_fractional_qty_preserved(self):
+        # data 행(라이브 포지션 스냅샷)의 소수 수량도 절단되지 않는다
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=15),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": 0.847972}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(0.847972)
+
+    @pytest.mark.asyncio
+    async def test_symbols_fractional_qty_preserved(self):
+        # symbols 포트의 소수 수량(최우선 권위값)도 절단되지 않는다
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=15),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": 8}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ", "quantity": Decimal("2.25")}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(2.25)
+
+    @pytest.mark.asyncio
+    async def test_integer_qty_stays_int(self):
+        # 정수 수량은 종전과 동일하게 int 로 실린다(직렬화 모양 유지)
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=Decimal("15")),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610", "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        qty = result["passed_symbols"][0]["quantity"]
+        assert qty == 15
+        assert isinstance(qty, int)
+
+    @pytest.mark.asyncio
+    async def test_unreadable_live_qty_falls_back_to_hwm(self):
+        # 읽을 수 없는 수량('abc')은 '0' 이 아니라 '없음'으로 취급 → HWM 폴백
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=Decimal("0.532")),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": "abc"}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(0.532)
+
+    @pytest.mark.asyncio
+    async def test_explicit_zero_live_qty_is_not_overridden(self):
+        # 실제로 0 인 라이브 수량은 폴백하지 않고 0 그대로 (종전 동작 유지)
+        tracker = MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=Decimal("0.532")),
+        })
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": 0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(tracker),
+        )
+        assert result["passed_symbols"][0]["quantity"] == 0
+
+
+class TestNonFiniteQuantity:
+    """NaN/Inf 수량은 '0' 이 아니라 '못 읽음'으로 취급해 HWM 폴백으로 내려가야 한다.
+
+    _position_qty.preserve_qty 의 비유한수 분기 회귀 테스트다. NaN 을 그대로 실으면 주문 수량이
+    NaN 으로 흘러가고(비교 연산이 전부 False 라 조용히 버려짐), 0 으로 접으면
+    '실제 보유 0' 과 구분되지 않아 폴백이 막힌다.
+    """
+
+    @staticmethod
+    def _tracker(position_qty=Decimal("0.532")):
+        return MockRiskTracker({
+            "AAPL": MockHWM(hwm_price=120.0, current_price=113.0,
+                            position_avg_price=100.0, drawdown_pct=5.83,
+                            position_qty=position_qty),
+        })
+
+    @pytest.mark.asyncio
+    async def test_nan_live_data_qty_falls_back_to_hwm(self):
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": float("nan")}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(self._tracker()),
+        )
+        qty = result["passed_symbols"][0]["quantity"]
+        assert qty == pytest.approx(0.532)  # NaN 을 싣지 않고 HWM 기억값으로 폴백
+        assert qty == qty  # NaN 이면 False
+
+    @pytest.mark.asyncio
+    async def test_nan_symbols_qty_falls_back_to_hwm(self):
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ",
+                      "quantity": Decimal("NaN")}],
+            context=MockContext(self._tracker()),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(0.532)
+
+    @pytest.mark.asyncio
+    async def test_infinite_live_qty_falls_back_to_hwm(self):
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0, "quantity": float("inf")}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(self._tracker()),
+        )
+        assert result["passed_symbols"][0]["quantity"] == pytest.approx(0.532)
+
+    @pytest.mark.asyncio
+    async def test_nan_hwm_qty_becomes_zero_without_crash(self):
+        """마지막 폴백(HWM 기억값)마저 NaN 이면 0 으로 실어 하류가 사유를 남기게 한다."""
+        result = await trailing_stop_condition(
+            data=[{"symbol": "AAPL", "exchange": "NASDAQ", "date": "20260610",
+                   "close": 113.0}],
+            fields={"trail_percent": 5.0},
+            symbols=[{"symbol": "AAPL", "exchange": "NASDAQ"}],
+            context=MockContext(self._tracker(position_qty=float("nan"))),
+        )
+        qty = result["passed_symbols"][0]["quantity"]
+        assert qty == 0
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

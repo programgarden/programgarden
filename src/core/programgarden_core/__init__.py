@@ -1,0 +1,174 @@
+"""
+ProgramGarden Core - 노드 기반 DSL 핵심 타입 정의
+
+5-Layer Architecture:
+    1. Registry Layer - 노드/플러그인 메타데이터
+    2. Credential Layer - 인증/보안
+    3. Definition Layer - 워크플로우 정의
+    4. Job Layer - 실행 인스턴스
+    5. Event Layer - 이벤트 히스토리
+
+Finance 패키지 지원:
+    - korea_alias: 한글 별칭 강제 유틸리티
+    - bases: Finance 베이스 클래스들
+    - exceptions: Finance 전용 예외들
+"""
+
+from programgarden_core.nodes import *
+from programgarden_core.nodes.base import BaseMessagingNode
+from programgarden_core.models import *
+from programgarden_core.registry import *
+from programgarden_core.exceptions import *
+
+# Finance 패키지용 모듈들
+from programgarden_core import korea_alias
+from programgarden_core import bases
+
+# 배포 metadata 에서 파생한다. 손으로 적으면 릴리스 때마다 잊혀 **패키지가 스스로 거짓
+# 버전을 말한다** — 실제로 pyproject 가 1.24.0 인 동안 여기는 1.12.4 였다.
+# (programgarden 메인 패키지가 같은 이유로 먼저 이 패턴으로 옮겼고, 그때 core 는
+#  "core 릴리스가 필요하다" 며 미뤄졌다. 이번이 그 릴리스다.)
+try:  # 설치된 배포판
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("programgarden-core")
+except Exception:  # 소스 트리에서 직접 import (미설치)
+    __version__ = "0.0.0+source"
+__all__ = [
+    # Nodes - Base
+    "BaseNode",
+    "BaseMessagingNode",  # 커뮤니티 메시징 노드용 베이스
+    # Nodes - Infra
+    "StartNode",
+    "ThrottleNode",
+    # Nodes - Broker (상품별 분리)
+    "OverseasStockBrokerNode",
+    "OverseasFuturesBrokerNode",
+    "OverseasFuturesOrderableQuantityNode",
+    "KoreaStockBrokerNode",
+    # Nodes - Market (해외주식)
+    "OverseasStockMarketDataNode",
+    "OverseasStockHistoricalDataNode",
+    "OverseasStockRealMarketDataNode",
+    "OverseasStockSymbolQueryNode",
+    "OverseasStockRankingNode",
+    # Nodes - Market (해외선물)
+    "OverseasFuturesMarketDataNode",
+    "OverseasFuturesHistoricalDataNode",
+    "OverseasFuturesRealMarketDataNode",
+    "OverseasFuturesSymbolQueryNode",
+    "FuturesContractNode",
+    "OverseasFuturesContractInfoNode",
+    # Nodes - Market (국내주식)
+    "KoreaStockMarketDataNode",
+    "KoreaStockHistoricalDataNode",
+    "KoreaStockRealMarketDataNode",
+    "KoreaStockSymbolQueryNode",
+    "KoreaStockRankingNode",
+    "KoreaStockFundamentalNode",
+    # Nodes - Account (해외주식)
+    "OverseasStockAccountNode",
+    "OverseasStockRealAccountNode",
+    "OverseasStockRealOrderEventNode",
+    # Nodes - Account (해외선물)
+    "OverseasFuturesAccountNode",
+    "OverseasFuturesRealAccountNode",
+    "OverseasFuturesRealOrderEventNode",
+    # Nodes - Account (국내주식)
+    "KoreaStockAccountNode",
+    "KoreaStockOpenOrdersNode",
+    "KoreaStockRealAccountNode",
+    "KoreaStockRealOrderEventNode",
+    # Nodes - Symbol (상품 무관)
+    "WatchlistNode",
+    "MarketUniverseNode",
+    "ScreenerNode",
+    "SymbolFilterNode",
+    # Nodes - Data (상품 무관)
+    "SQLiteNode",
+    "HTTPRequestNode",
+    "FieldMappingNode",
+    # Nodes - Trigger
+    "ScheduleNode",
+    "TradingHoursFilterNode",
+    "SessionGateNode",
+    # Nodes - Condition
+    "ConditionNode",
+    "LogicNode",
+    # Nodes - Risk
+    "PositionSizingNode",
+    "PortfolioNode",
+    # Nodes - Order (해외주식)
+    "OverseasStockNewOrderNode",
+    "OverseasStockModifyOrderNode",
+    "OverseasStockCancelOrderNode",
+    # Nodes - Order (해외선물)
+    "OverseasFuturesNewOrderNode",
+    "OverseasFuturesModifyOrderNode",
+    "OverseasFuturesCancelOrderNode",
+    # Nodes - Order (국내주식)
+    "KoreaStockNewOrderNode",
+    "KoreaStockModifyOrderNode",
+    "KoreaStockCancelOrderNode",
+    # Nodes - Display (6개)
+    "TableDisplayNode",
+    "LineChartNode",
+    "MultiLineChartNode",
+    "CandlestickChartNode",
+    "BarChartNode",
+    "SummaryDisplayNode",
+    # Nodes - Backtest/Analysis
+    "BacktestEngineNode",
+    "BenchmarkCompareNode",
+    # Models
+    "Edge",
+    "WorkflowDefinition",
+    "WorkflowJob",
+    "JobState",
+    "BrokerCredential",
+    "Event",
+    # Validation (structured errors + recommendations)
+    "ErrorSeverity",
+    "ErrorCode",
+    "ErrorLocation",
+    "ErrorInfo",
+    "RecommendationCategory",
+    "Recommendation",
+    "ValidationLimits",
+    "ResultSummary",
+    "ValidationResult",
+    "CASCADE_SUPPRESSION_RULES",
+    "default_severity_for",
+    "suggest_close_match",
+    "build_error",
+    # Order Diagnostics (runtime order reject + empty-order reason)
+    "OrderRejectInfo",
+    "RetryAdvice",
+    "EmptyOrderReason",
+    "map_reject_code",
+    "diagnose_missing_order_no",
+    "ORDER_ACCEPTED_RSP_CDS",
+    "OVERSEAS_STOCK_REJECT_CODES",
+    "OVERSEAS_FUTURES_REJECT_CODES",
+    "KOREA_STOCK_REJECT_CODES",
+    # Registry
+    "NodeTypeRegistry",
+    "PluginRegistry",
+    # Exceptions (DSL)
+    "ProgramGardenError",
+    "ValidationError",
+    "ExecutionError",
+    "BalanceUnavailableError",
+    "ConditionEvaluationError",
+    "MissingDependencyError",
+    # Exceptions (Finance)
+    "FinanceError",
+    "AppKeyException",
+    "LoginException",
+    "TokenException",
+    "TokenNotFoundException",
+    "TrRequestDataNotFoundException",
+    # Finance modules
+    "korea_alias",
+    "bases",
+]

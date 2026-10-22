@@ -1,0 +1,242 @@
+"""
+ProgramGarden Core - Stock Fundamental Node
+
+해외주식 종목정보(펀더멘털) 조회:
+- OverseasStockFundamentalNode: g3104 API 기반 종목정보 조회
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 펀더멘털 데이터)
+"""
+
+from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    FUNDAMENTAL_DATA_FIELDS,
+)
+
+
+class OverseasStockFundamentalNode(BaseNode):
+    """
+    해외주식 종목정보(펀더멘털) 조회 노드 (단일 종목)
+
+    PER, EPS, 시가총액, 발행주식수, 52주 고/저가, 업종 등
+    종목의 기본적 분석 데이터를 조회합니다.
+    거래소: NYSE, NASDAQ, AMEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 펀더멘털 데이터)
+    """
+
+    type: Literal["OverseasStockFundamentalNode"] = "OverseasStockFundamentalNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.OverseasStockFundamentalNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
+    )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols")). 선언 누락으로
+    # R5(unknown_node_field)가 정상 워크플로우를 오탐하던 이원화 정리 (⑭ count 동형).
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual list or list binding; upstream array input takes precedence",
+    )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Retrieve LS security-detail data (PER, EPS, market cap, 52w high/low, industry) for a US-listed stock using the existing broker connection",
+            "Screen or rank stocks by fundamental criteria — pair with ConditionNode or FieldMappingNode for filtering",
+            "Give an AI Agent context about a stock's valuation alongside price data for investment thesis generation",
+        ],
+        "when_not_to_use": [
+            "For Korean domestic stock fundamentals — use KoreaStockFundamentalNode",
+            "When you only need price/volume data — use OverseasStockMarketDataNode",
+            "For real-time earnings or news events — fundamental data is updated daily, not tick-by-tick",
+            "For financial-statement history, free cash flow, ROE or PBR — these are not returned by this node; use a separately verified data source",
+        ],
+        "typical_scenarios": [
+            "SplitNode.item → OverseasStockFundamentalNode → ConditionNode (filter by PER < 20)",
+            "OverseasStockSymbolQueryNode → SplitNode → OverseasStockFundamentalNode → FieldMappingNode (build fundamental table)",
+            "OverseasStockFundamentalNode → AIAgentNode (fundamental analysis tool for LLM)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns per, eps, market_cap, shares_outstanding, high_52w, low_52w and industry fields",
+        "Uses the LS overseas-stock broker credential; no separate financial-data subscription key is required",
+        "Item-based execution: pair with SplitNode to fetch fundamentals for each symbol in a universe",
+        "is_tool_enabled=True — AI Agent can call this node to analyze stock valuation autonomously",
+        "Broker connection is auto-injected via DAG traversal from OverseasStockBrokerNode",
+        "Data sourced from LS Securities g3104 API — updated daily, not real-time",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Treating PER/EPS fields as real-time — comparing against intraday price moves",
+            "reason": "Fundamental data is updated daily. Using it for intraday decisions creates stale-data risk.",
+            "alternative": "Combine OverseasStockMarketDataNode (current price) with OverseasStockFundamentalNode (daily fundamentals) for hybrid screening.",
+        },
+        {
+            "pattern": "Passing a list of symbols directly to the symbol field",
+            "reason": "The symbol field expects a single {exchange, symbol} dict. Lists cause a runtime type error.",
+            "alternative": "Use SplitNode upstream so each item is passed one at a time.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch fundamentals for a single stock",
+            "description": "Query PER, EPS, market cap for AAPL and display the result.",
+            "workflow_snippet": {
+                "id": "overseas_stock_fundamental_basic",
+                "name": "Stock Fundamentals",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}]},
+                    {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "fundamental"},
+                    {"from": "broker", "to": "fundamental"},
+                    {"from": "fundamental", "to": "display"},
+                {'from': 'display', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value port: {symbol, exchange, per, eps, market_cap, shares_outstanding, high_52w, low_52w, industry}.",
+        },
+        {
+            "title": "Fundamental screening — filter low-PER stocks",
+            "description": "Query fundamentals for a watchlist and filter to stocks with PER under 20 using ConditionNode.",
+            "workflow_snippet": {
+                "id": "overseas_stock_fundamental_screen",
+                "name": "PER Screening",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}, {'symbol': 'MSFT', 'exchange': 'NASDAQ'}]},
+                    {"id": "fundamental", "type": "OverseasStockFundamentalNode", "symbol": "{{ nodes.split.item }}"},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.fundamental.value }}"},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "fundamental"},
+                    {"from": "broker", "to": "fundamental"},
+                    {"from": "fundamental", "to": "display"},
+                {'from': 'display', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "fundamental.value emitted per symbol; downstream ConditionNode can filter by per < 20.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbol` field takes a single {exchange, symbol} dict. Bind to `{{ nodes.split.item }}` when iterating. "
+            "Supported exchanges: NYSE, NASDAQ, AMEX. Broker connection is auto-injected."
+        ),
+        "output_consumption": (
+            "The `value` port emits: {symbol, exchange, per, eps, market_cap, shares_outstanding, high_52w, low_52w, industry}. "
+            "Access individual fields via `{{ nodes.fundamental.value.per }}`."
+        ),
+        "common_combinations": [
+            "SplitNode.item → OverseasStockFundamentalNode → FieldMappingNode (reshape for display)",
+            "OverseasStockFundamentalNode.value → AIAgentNode (fundamental analysis tool)",
+            "OverseasStockFundamentalNode.value → TableDisplayNode (fundamental table display)",
+        ],
+        "pitfalls": [
+            "Fundamental data is updated daily — do not use it as a real-time signal",
+            "Missing broker fields can be empty or zero. For a positive-PER screen require a finite numeric per > 0 before comparing the upper bound; missing/zero/negative data must not create a buy signal",
+            "LS does not document the PER computation basis or the market-cap currency unit here. Do not claim TTM equivalence or compare cross-provider values without confirming the contract",
+            "The symbol field expects a single dict; use SplitNode for multi-symbol fundamental queries",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="value", type="fundamental_data", description="i18n:ports.fundamental_data_value", fields=FUNDAMENTAL_DATA_FIELDS),
+        OutputPort(name="values", type="array", description="Array of per-symbol fundamental records"),
+    ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasStockFundamentalNode.symbol",
+                description="i18n:fields.OverseasStockFundamentalNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "NASDAQ", "symbol": "AAPL"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasStockFundamentalNode.symbol.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasStockFundamentalNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockFundamentalNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual list or list binding, used when no upstream array input is wired (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
+            ),
+        }

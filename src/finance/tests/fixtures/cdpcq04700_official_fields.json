@@ -1,0 +1,491 @@
+{
+  "source": "https://openapi.ls-sec.co.kr/guide/api/047x41xg-k554-3j5w-834d-1qml538oh06m?type=rest&api=37d22d4d-83cd-40a4-a375-81b010a4a627",
+  "reviewed_at": "2026-09-21",
+  "tr_code": "CDPCQ04700",
+  "request": {
+    "QryTp": {
+      "type": "String",
+      "length": "1"
+    },
+    "QrySrtDt": {
+      "type": "String",
+      "length": "8"
+    },
+    "QryEndDt": {
+      "type": "String",
+      "length": "8"
+    },
+    "SrtNo": {
+      "type": "Number",
+      "length": "10"
+    },
+    "PdptnCode": {
+      "type": "String",
+      "length": "2"
+    },
+    "IsuLgclssCode": {
+      "type": "String",
+      "length": "2"
+    },
+    "IsuNo": {
+      "type": "String",
+      "length": "12"
+    }
+  },
+  "response": {
+    "CDPCQ04700OutBlock1": {
+      "RecCnt": {
+        "type": "Number",
+        "length": "5"
+      },
+      "QryTp": {
+        "type": "String",
+        "length": "1"
+      },
+      "AcntNo": {
+        "type": "String",
+        "length": "20"
+      },
+      "Pwd": {
+        "type": "String",
+        "length": "8"
+      },
+      "QrySrtDt": {
+        "type": "String",
+        "length": "8"
+      },
+      "QryEndDt": {
+        "type": "String",
+        "length": "8"
+      },
+      "SrtNo": {
+        "type": "Number",
+        "length": "10"
+      },
+      "PdptnCode": {
+        "type": "String",
+        "length": "2"
+      },
+      "IsuLgclssCode": {
+        "type": "String",
+        "length": "2"
+      },
+      "IsuNo": {
+        "type": "String",
+        "length": "12"
+      }
+    },
+    "CDPCQ04700OutBlock2": {
+      "RecCnt": {
+        "type": "Number",
+        "length": "5"
+      },
+      "AcntNm": {
+        "type": "String",
+        "length": "40"
+      }
+    },
+    "CDPCQ04700OutBlock3": {
+      "AcntNo": {
+        "type": "String",
+        "length": "20"
+      },
+      "TrdDt": {
+        "type": "String",
+        "length": "8"
+      },
+      "TrdNo": {
+        "type": "Number",
+        "length": "10"
+      },
+      "TpCodeNm": {
+        "type": "String",
+        "length": "50"
+      },
+      "SmryNo": {
+        "type": "String",
+        "length": "4"
+      },
+      "SmryNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "CancTpNm": {
+        "type": "String",
+        "length": "20"
+      },
+      "TrdQty": {
+        "type": "Number",
+        "length": "16"
+      },
+      "Trtax": {
+        "type": "Number",
+        "length": "16"
+      },
+      "FcurrAdjstAmt": {
+        "type": "Number",
+        "length": "25.4"
+      },
+      "AdjstAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "OvdSum": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DpsBfbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SellPldgRfundAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DpspdgLoanBfbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "TrdmdaNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "OrgTrdNo": {
+        "type": "Number",
+        "length": "10"
+      },
+      "IsuNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "TrdUprc": {
+        "type": "Number",
+        "length": "13.2"
+      },
+      "CmsnAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "FcurrCmsnAmt": {
+        "type": "Number",
+        "length": "15.2"
+      },
+      "RfundDiffAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "RepayAmtSum": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SecCrbalQty": {
+        "type": "Number",
+        "length": "16"
+      },
+      "CslLoanRfundIntrstAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DpspdgLoanCrbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "TrxTime": {
+        "type": "String",
+        "length": "9"
+      },
+      "Inouno": {
+        "type": "Number",
+        "length": "10"
+      },
+      "IsuNo": {
+        "type": "String",
+        "length": "12"
+      },
+      "TrdAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "ChckAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "TaxSumAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "FcurrTaxSumAmt": {
+        "type": "Number",
+        "length": "26.6"
+      },
+      "IntrstUtlfee": {
+        "type": "Number",
+        "length": "16"
+      },
+      "MnyDvdAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "RcvblOcrAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "TrxBrnNo": {
+        "type": "String",
+        "length": "3"
+      },
+      "TrxBrnNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "DpspdgLoanAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DpspdgLoanRfundAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BasePrc": {
+        "type": "Number",
+        "length": "13.2"
+      },
+      "DpsCrbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BoaAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "MnyoutAbleAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BcrLoanOcrAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BcrLoanBfbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BnsBasePrc": {
+        "type": "Number",
+        "length": "20.1"
+      },
+      "TaxchrBasePrc": {
+        "type": "Number",
+        "length": "20.1"
+      },
+      "TrdUnit": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BalUnit": {
+        "type": "Number",
+        "length": "16"
+      },
+      "EvrTax": {
+        "type": "Number",
+        "length": "16"
+      },
+      "EvalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BcrLoanRfundAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BcrLoanCrbalAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "AddMgnOcrTotamt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "AddMnyMgnOcrAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "AddMgnDfryTotamt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "AddMnyMgnDfryAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BnsplAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "Ictax": {
+        "type": "Number",
+        "length": "16"
+      },
+      "Ihtax": {
+        "type": "Number",
+        "length": "16"
+      },
+      "LoanDt": {
+        "type": "String",
+        "length": "8"
+      },
+      "CrcyCode": {
+        "type": "String",
+        "length": "3"
+      },
+      "FcurrAmt": {
+        "type": "Number",
+        "length": "24.4"
+      },
+      "FcurrTrdAmt": {
+        "type": "Number",
+        "length": "24.4"
+      },
+      "FcurrDps": {
+        "type": "Number",
+        "length": "21.4"
+      },
+      "FcurrDpsBfbalAmt": {
+        "type": "Number",
+        "length": "21.4"
+      },
+      "OppAcntNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "OppAcntNo": {
+        "type": "String",
+        "length": "20"
+      },
+      "LoanRfundAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "LoanIntrstAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "AskpsnNm": {
+        "type": "String",
+        "length": "40"
+      },
+      "OrdDt": {
+        "type": "String",
+        "length": "8"
+      },
+      "TrdXchrat": {
+        "type": "Number",
+        "length": "15.4"
+      },
+      "RdctCmsn": {
+        "type": "Number",
+        "length": "21.4"
+      },
+      "FcurrStmpTx": {
+        "type": "Number",
+        "length": "21.4"
+      },
+      "FcurrElecfnTrtax": {
+        "type": "Number",
+        "length": "21.4"
+      },
+      "FcstckTrtax": {
+        "type": "Number",
+        "length": "21.4"
+      }
+    },
+    "CDPCQ04700OutBlock4": {
+      "RecCnt": {
+        "type": "Number",
+        "length": "5"
+      },
+      "PnlSumAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "CtrctAsm": {
+        "type": "Number",
+        "length": "16"
+      },
+      "CmsnAmtSumAmt": {
+        "type": "Number",
+        "length": "16"
+      }
+    },
+    "CDPCQ04700OutBlock5": {
+      "RecCnt": {
+        "type": "Number",
+        "length": "5"
+      },
+      "MnyinAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SecinAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "MnyoutAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SecoutAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DiffAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "DiffAmt0": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SellQty": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SellAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "SellCmsn": {
+        "type": "Number",
+        "length": "16"
+      },
+      "EvrTax": {
+        "type": "Number",
+        "length": "19"
+      },
+      "FcurrSellAdjstAmt": {
+        "type": "Number",
+        "length": "25.4"
+      },
+      "BuyQty": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BuyAmt": {
+        "type": "Number",
+        "length": "16"
+      },
+      "BuyCmsn": {
+        "type": "Number",
+        "length": "16"
+      },
+      "ExecTax": {
+        "type": "Number",
+        "length": "16"
+      },
+      "FcurrBuyAdjstAmt": {
+        "type": "Number",
+        "length": "25.4"
+      }
+    }
+  }
+}

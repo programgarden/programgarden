@@ -1,0 +1,233 @@
+# 자동 반복 처리 (Auto-Iterate)
+
+하나의 노드가 여러 종목의 데이터를 출력하면, 다음 노드가 **각 종목마다 자동으로 반복 실행**됩니다. 이것을 **Auto-Iterate**라고 합니다.
+
+***
+
+## 기본 동작
+
+```mermaid
+flowchart LR
+    A["AccountNode<br/>positions:<br/>[{AAPL}, {NVDA}, {TSM}]"] -->|각 item마다 실행| B["ConditionNode<br/>(3번 실행)"] --> C["NewOrderNode<br/>(3번 실행)"]
+```
+
+이전 노드의 출력이 **배열**이면, 다음 노드는 배열의 각 항목에 대해 자동으로 실행됩니다.
+
+***
+
+## 반복 키워드
+
+반복 실행 중에 사용할 수 있는 특수 키워드입니다.
+
+| 키워드     | 설명          | 예시                             |
+| ------- | ----------- | ------------------------------ |
+| `item`  | 현재 반복 항목    | `{{ item.symbol }}` → `"AAPL"` |
+| `index` | 현재 순번 (0부터) | `{{ index }}` → `0`            |
+| `total` | 전체 항목 수     | `{{ total }}` → `3`            |
+
+**사용 예시:**
+
+```json
+{
+  "id": "history",
+  "type": "OverseasStockHistoricalDataNode",
+  "symbol": "{{ item }}"
+}
+```
+
+WatchlistNode이 3개 종목을 출력하면, HistoricalDataNode은 각 종목에 대해 3번 실행됩니다.
+
+> **트리거 조건**: 반복은 입력이 **비어있지 않은 배열**이고 노드 타입이 제외 목록에 없을 때 일어납니다.
+> 설정에 `{{ item }}` 이 **없어도** N번 반복됩니다(계좌 노드는 암묵적 반복 소스로 쓰이지 않습니다).
+> `item` 은 **반복 중에만** 정의됩니다 — 반복 밖에서 `{{ item }}` 을 쓰면 오류입니다. 반면
+> `index`/`total` 은 반복 밖에서도 오류 없이 `0` 입니다. 반복 대상 키(`{{ item ... }}` 를 담은 값)는
+> 반복 시작 전까지 평가가 지연됩니다.
+
+***
+
+## ⚠️ Broker 명시적 엣지 주의사항
+
+**Broker → product-scoped 노드(HistoricalData/MarketData/Account/Order 등)로의 연결은 절대 명시하지 마세요.**
+
+### 왜 문제인가
+
+- `OverseasStockBrokerNode.connection`은 Executor가 `product_scope` 기반 DAG 순회로 **자동 주입**합니다. 명시적 엣지는 불필요할 뿐만 아니라 **auto-iterate 컨텍스트를 덮어쓰는 부작용**이 있습니다.
+- 상위 노드(Screener/Watchlist/Split 등)의 배열 출력이 하위 HistoricalData로 흘러들어가 auto-iterate가 동작하던 상태에서, `broker → historical` 엣지를 추가하면 broker의 non-array `connection` 출력이 iteration 소스로 경합되어 **"No symbols provided"** 같은 오류로 종료됩니다.
+
+### 실제 관찰된 증상
+
+| 구성 | 결과 |
+|------|------|
+| `screener → candHist` 만 연결 | 21개 symbol auto-iterate 정상 동작 |
+| `screener → candHist` + `broker → candHist` 추가 | "No symbols provided" 로 실패 |
+
+### 올바른 패턴
+
+```json
+{
+  "nodes": [
+    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "my-cred", "paper_trading": false},
+    {"id": "screener", "type": "ScreenerNode", "filters": [...]},
+    {"id": "candHist", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ item }}"}
+  ],
+  "edges": [
+    {"from": "screener", "to": "candHist"}
+  ]
+}
+```
+
+> **요약**: Broker 연결은 엣지로 표현하지 마세요. `product_scope`가 같은 broker가 워크플로우에 존재하면 Executor가 자동으로 `connection`을 주입합니다. 엣지는 **데이터 의존 관계 + 실행 순서**를 표현하는 용도로만 쓰고, broker는 제외하세요.
+
+***
+
+## SplitNode을 사용한 명시적 분리
+
+Auto-Iterate가 자동으로 동작하지만, **SplitNode**을 사용하면 더 명확하게 제어할 수 있습니다.
+
+```json
+{
+  "nodes": [
+    {
+      "id": "watchlist",
+      "type": "WatchlistNode",
+      "symbols": [
+        {"exchange": "NASDAQ", "symbol": "AAPL"},
+        {"exchange": "NASDAQ", "symbol": "NVDA"},
+        {"exchange": "NYSE", "symbol": "TSM"}
+      ]
+    },
+    {
+      "id": "split",
+      "type": "SplitNode"
+    },
+    {
+      "id": "history",
+      "type": "OverseasStockHistoricalDataNode",
+      "symbol": "{{ item }}",
+      "interval": "1d"
+    },
+    {
+      "id": "rsi",
+      "type": "ConditionNode",
+      "plugin": "RSI",
+      "fields": { "period": 14, "threshold": 30, "direction": "below" }
+    },
+    {
+      "id": "aggregate",
+      "type": "AggregateNode",
+      "mode": "filter",
+      "filter_field": "passed"
+    }
+  ],
+  "edges": [
+    {"from": "watchlist", "to": "split"},
+    {"from": "split", "to": "history"},
+    {"from": "history", "to": "rsi"},
+    {"from": "rsi", "to": "aggregate"}
+  ]
+}
+```
+
+**흐름:**
+
+1. WatchlistNode → 3개 종목 출력
+2. SplitNode → 1개씩 분리
+3. HistoricalDataNode → 각 종목의 차트 데이터 조회 (3번)
+4. ConditionNode → RSI 조건 평가 (3번)
+5. AggregateNode → 조건 통과한 종목만 모음
+
+***
+
+## 메서드 체이닝
+
+표현식에서 노드 출력에 메서드를 체이닝할 수 있습니다.
+
+| 메서드             | 설명       | 예시                                      |
+| --------------- | -------- | --------------------------------------- |
+| `.all()`        | 전체 배열    | `{{ nodes.account.all() }}`             |
+| `.first()`      | 첫 번째 항목  | `{{ nodes.account.first() }}`           |
+| `.filter('조건')` | 조건 필터링   | `{{ nodes.account.filter('pnl > 0') }}` |
+| `.map('필드')`    | 특정 필드 추출 | `{{ nodes.account.map('symbol') }}`     |
+| `.sum('필드')`    | 합계       | `{{ nodes.account.sum('quantity') }}`   |
+| `.avg('필드')`    | 평균       | `{{ nodes.account.avg('pnl') }}`        |
+| `.count()`      | 개수       | `{{ nodes.account.count() }}`           |
+
+**체이닝 예시:**
+
+```json
+{
+  "profit_count": "{{ nodes.account.filter('pnl > 0').count() }}",
+  "loss_symbols": "{{ nodes.account.filter('pnl < 0').map('symbol') }}",
+  "total_qty": "{{ nodes.account.sum('quantity') }}"
+}
+```
+
+> **주의 (프록시 함정)**: 이 프록시(NodeOutputProxy)는 `len()`/반복/`__bool__` 을 지원하지 않습니다.
+> - 개수는 `len(...)` 이 아니라 **`.count()`** (`len(proxy)` 는 오류).
+> - 비어있는지 확인은 `{{ nodes.x.positions.count() == 0 }}` (빈데도 프록시는 항상 truthy).
+> - `x in proxy`, `sorted(proxy)`, `list(proxy)` 는 **멈춥니다** — 먼저 `.all()` 로 리스트로 바꾸세요.
+> - `.filter()` 는 **비교 하나**만 받습니다(`and`/`or` 불가) — 두 번 체이닝하세요.
+> - 헬퍼와 같은 이름의 출력 포트가 있으면 맨 속성은 포트값, **호출**(`.count()`)은 헬퍼입니다.
+
+***
+
+## 함수 네임스페이스
+
+표현식에서 사용할 수 있는 내장 함수들입니다.
+
+### date - 날짜
+
+| 함수                   | 설명       | 예시                                      |
+| -------------------- | -------- | --------------------------------------- |
+| `date.today()`       | 오늘 날짜    | `{{ date.today(format='yyyymmdd') }}`   |
+| `date.ago(n)`        | N일 전     | `{{ date.ago(30, format='yyyymmdd') }}` |
+| `date.later(n)`      | N일 후     | `{{ date.later(7) }}`                   |
+| `date.months_ago(n)` | N개월 전    | `{{ date.months_ago(3) }}`              |
+| `date.year_start()`  | 올해 1월 1일 | `{{ date.year_start() }}`               |
+| `date.month_start()` | 이번달 1일   | `{{ date.month_start() }}`              |
+
+### finance - 금융 계산
+
+| 함수                             | 설명      | 예시                                            |
+| ------------------------------ | ------- | --------------------------------------------- |
+| `finance.pct_change(old, new)` | 변화율 (%) | `{{ finance.pct_change(100, 110) }}` → `10.0` |
+| `finance.pct(part, total)`     | **part 가 total 의 몇 %인지** `(part/total*100)` | `{{ finance.pct(50, 200) }}` → `25.0` |
+| `finance.discount(price, pct)` | 할인가     | `{{ finance.discount(100, 5) }}` → `95.0`     |
+| `finance.markup(price, pct)`   | 할증가     | `{{ finance.markup(100, 5) }}` → `105.0`      |
+
+> **⚠️ `finance.pct` 오해 주의**: "값의 몇 %"가 아니라 **part ÷ total × 100** 입니다.
+> `finance.pct(1000, 10)` 은 `100` 이 아니라 **`10000.0`** 입니다. "잔고의 10%"를 원하면
+> `finance.pct` 대신 곱셈을 쓰세요: `{{ nodes.account.balance.orderable_amount * 0.1 }}`.
+
+### stats - 통계
+
+| 함수                  | 설명   | 예시                                    |
+| ------------------- | ---- | ------------------------------------- |
+| `stats.mean(arr)`   | 평균   | `{{ stats.mean([1,2,3]) }}` → `2.0`   |
+| `stats.median(arr)` | 중앙값  | `{{ stats.median([1,2,3]) }}` → `2.0` |
+| `stats.stdev(arr)`  | 표준편차 | `{{ stats.stdev([1,2,3]) }}`          |
+
+### format - 포맷팅
+
+| 함수                   | 설명    | 예시                                              |
+| -------------------- | ----- | ----------------------------------------------- |
+| `format.pct(n)`      | % 표시  | `{{ format.pct(12.34) }}` → `"12.34%"`          |
+| `format.currency(n)` | 통화 표시 | `{{ format.currency(1234.5) }}` → `"$1,234.50"` |
+| `format.number(n)`   | 숫자 포맷 | `{{ format.number(1234567) }}` → `"1,234,567"`  |
+
+### lst - 리스트
+
+| 함수                    | 설명    | 예시                               |
+| --------------------- | ----- | -------------------------------- |
+| `lst.first(arr)`      | 첫 번째  | `{{ lst.first(items) }}`         |
+| `lst.last(arr)`       | 마지막   | `{{ lst.last(items) }}`          |
+| `lst.count(arr)`      | 개수    | `{{ lst.count(items) }}`         |
+| `lst.pluck(arr, key)` | 필드 추출 | `{{ lst.pluck(items, 'name') }}` |
+| `lst.flatten(arr, key)` | 중첩 배열 평탄화(부모 필드 유지, **key 필수**) | `{{ lst.flatten(items, 'bars') }}` |
+
+> **⚠️ `lst.flatten` 인자**: `key`(중첩 배열 필드명)는 **필수**입니다. `lst.flatten(items)` 처럼
+> 하나만 주면 "필수 인자 누락" 오류입니다. 항상 `lst.flatten(items, '중첩키')`.
+
+> `date.*` 의 `format` 은 `'yyyymmdd'`/`'iso'` 프리셋 또는 실제 strftime 패턴만 받습니다.
+> `'yyyy-mm-dd'` 같은 자리표시자는 그 글자 그대로 돌아옵니다. 전체 규칙·함정은
+> [expression_guide.md](./expression_guide.md) 참고.

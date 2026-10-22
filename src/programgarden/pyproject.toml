@@ -1,0 +1,54 @@
+[project]
+authors = [
+    {"name" = "프로그램동산", "email" = "coding@programgarden.com"}
+]
+homepage = "https://programgarden.com"
+requires-python = ">=3.12"
+name = "programgarden"
+version = "3.0.0"
+license = "AGPL-3.0-or-later"
+description = "ProgramGarden - 노드 기반 자동매매 DSL 실행 엔진"
+readme = "README.md"
+
+[tool.poetry]
+packages = [
+    { include = "programgarden" }
+]
+exclude = ["examples", "tests", "**/__pycache__"]
+
+[tool.poetry.dependencies]
+pydantic = ">=2.0.1,<3.0.0"
+croniter = "^6.0.0"
+python-dotenv = "^1.1.0"
+tzdata = "^2025.2"
+psycopg2-binary = "^2.9.11"
+psutil = "^6.0.0"
+yfinance = "^0.2.0"
+aiohttp = "^3.9.0"
+lxml = "^6.0.2"
+pytickersymbols = {version = ">=1.17.5", python = ">=3.12,<4.0"}
+aiosqlite = "^0.20.0"
+litellm = ">=1.40.0"
+# 🔴 core 하한은 1.28.0 이어야 한다 — 이 엔진은 import 시점에 context.py 가
+# `from programgarden_core.bases.listener import OrderFillEvent` 를 eager import
+# 한다(C24). OrderFillEvent 는 core 1.28.0 에서 신설됐으므로, 하한을 낮게 두면
+# 구 core(≤1.27.0)로 resolve 된 환경에서 `import programgarden` 자체가 ImportError
+# 로 통째 실패한다(1.35.1 의 조용한 TypeError 보다 강한 모듈 로드 실패).
+# (1.26.0 이후로도 context.py 는 WorkflowPnLEvent(**event_data) 에 personal_metrics
+#  를 무조건 실으므로 그 하한 근거도 이 상한에 포함된다.)
+programgarden-core = "==3.0.0"
+programgarden-finance = "==3.0.0"
+programgarden-community = "==3.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.21.0"
+mypy = "^1.0.0"
+ruff = "^0.1.0"
+fastapi = "^0.128.0"
+uvicorn = "^0.40.0"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.1,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

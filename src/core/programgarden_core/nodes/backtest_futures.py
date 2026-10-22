@@ -1,0 +1,336 @@
+"""
+ProgramGarden Core - Futures Historical Data Node
+
+해외선물 과거 데이터 조회:
+- OverseasFuturesHistoricalDataNode: 해외선물 과거 OHLCV 데이터 조회 (CME, EUREX, SGX, HKEX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
+"""
+
+from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from pydantic import Field, field_validator
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    HISTORICAL_DATA_FIELDS,
+    HISTORICAL_VALUE_FIELDS,
+)
+
+
+class OverseasFuturesHistoricalDataNode(BaseNode):
+    """
+    해외선물 과거 데이터 조회 노드 (단일 종목)
+
+    SplitNode와 함께 사용하여 개별 종목의 과거 OHLCV 데이터를 조회합니다.
+    거래소: CME, EUREX, SGX, HKEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 과거 OHLCV 데이터)
+    """
+
+    type: Literal["OverseasFuturesHistoricalDataNode"] = "OverseasFuturesHistoricalDataNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.OverseasFuturesHistoricalDataNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
+    )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols"), 단수 symbol/입력 부재 시).
+    # 선언 누락 + executor 미소비로 리터럴 목록 예제가 빈 ohlcv 로 조용히 죽던 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual literal list; symbol (single) and upstream input take precedence",
+    )
+    start_date: str = Field(
+        default="{{ date.months_ago(3, format='yyyymmdd') }}",
+        description="Requested start date (YYYYMMDD or expression); not sent for minute periods.",
+    )
+    end_date: str = Field(
+        default="{{ date.today(format='yyyymmdd') }}",
+        description="Requested end date (YYYYMMDD or expression); not sent for minute periods.",
+    )
+    interval: Literal["30s", "1m", "5m", "15m", "30m", "1d", "1w", "1M"] = Field(
+        default="1d",
+        description="Implemented chart periods: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M; hourly and unknown periods are rejected.",
+    )
+    adjust: Literal[False] = Field(
+        default=False,
+        description="Must remain false; only exact-contract prices are implemented, without rollover adjustment.",
+    )
+
+    @field_validator("interval", mode="before")
+    @classmethod
+    def normalize_legacy_interval(cls, value):
+        aliases = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m"}
+        return aliases.get(value, value) if isinstance(value, str) else value
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Retrieve daily (or intraday) OHLCV history for an overseas futures contract (CME, EUREX, SGX, HKEX) for technical analysis or backtesting",
+            "Feed historical candles into ConditionNode plugins (MACD, Bollinger, etc.) that operate on futures price series",
+            "Use date expressions for daily/weekly/monthly request dates; minute requests do not send dates or guarantee a lookback window",
+        ],
+        "when_not_to_use": [
+            "For overseas stock historical data — use OverseasStockHistoricalDataNode",
+            "For Korean domestic stock history — use KoreaStockHistoricalDataNode",
+            "When you only need the current quote snapshot — use OverseasFuturesMarketDataNode",
+        ],
+        "typical_scenarios": [
+            "SplitNode.item → OverseasFuturesHistoricalDataNode → ConditionNode (Bollinger strategy on futures)",
+            "OverseasFuturesHistoricalDataNode.value → BacktestEngineNode (futures strategy backtest)",
+            "OverseasFuturesHistoricalDataNode.value → BenchmarkCompareNode (performance vs benchmark)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns time_series list of OHLCV candles: [{date, open, high, low, close, volume}, ...] ordered oldest-first",
+        "Supports implemented periods: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M; legacy minute aliases are accepted; 1h and unknown periods are rejected",
+        "start_date / end_date accept YYYYMMDD strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions",
+        "adjust must remain false: exact-contract prices only, without rollover adjustment or month stitching",
+        "Minute history returns the available initial o3103 page (200 rows requested), not a complete requested range or a guaranteed latest-N set",
+        "Minute start/end dates are not sent to o3103; period echoes requested dates, not actual coverage. Bar finality, time zone, retention and sufficient lookback require separate evidence",
+        "is_tool_enabled=True — AI Agent can fetch futures history for technical analysis autonomously",
+        "Item-based execution: pair with SplitNode to fetch OHLCV for multiple contracts",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "The value port is one row object whose time_series lists bars of exactly {date, open, high, low, close, volume}; the values port is the array of such rows",
+        "This ohlcv_data is not the realtime shape: a *RealMarketDataNode records ohlcv_data as a symbol-keyed object of bar lists, although both are typed ohlcv_data",
+        "A previous close is the close of the corresponding bar in time_series; a change cannot be computed from a single bar",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Binding `{{ nodes.historical.value }}` directly to ConditionNode data instead of `.time_series`",
+            "reason": "The value port is a dict containing a `time_series` key — plugins expect a plain list of candle dicts.",
+            "alternative": "Bind `{{ nodes.historical.value.time_series }}` to the ConditionNode data field.",
+        },
+        {
+            "pattern": "Treating exact-contract observations as continuous or rollover-adjusted data",
+            "reason": "Rollover adjustment and cross-contract stitching are not implemented.",
+            "alternative": "Keep adjust=False and verify this contract has the needed data; do not substitute internal history.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "60-day daily history for Bollinger strategy on E-mini S&P",
+            "description": "Fetch 60 days of ESH26 daily OHLCV and compute Bollinger Bands for a mean-reversion signal.",
+            "workflow_snippet": {
+                "id": "overseas_futures_historical_bollinger",
+                "name": "Futures Bollinger Strategy",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'ESH26', 'exchange': 'CME'}]},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": False},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 20, "std": 2.0, "direction": "below_lower"}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                {'from': 'condition', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value.time_series: [{date, open, high, low, close, volume}, ...]. ConditionNode computes upper/lower bands and emits signal.",
+        },
+        {
+            "title": "HKEX mini-futures intraday scan",
+            "description": "Request the available initial 30-minute page for HKEX mini-futures; verify completed bars and lookback before MACD.",
+            "workflow_snippet": {
+                "id": "overseas_futures_historical_hkex_macd",
+                "name": "HKEX Intraday MACD",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'MHIH26', 'exchange': 'HKEX'}]},
+                    {"id": "historical", "type": "OverseasFuturesHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(10, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "30m", "adjust": False},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "MACD", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"fast": 12, "slow": 26, "signal": 9, "direction": "bullish_cross"}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                {'from': 'condition', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Available 30-minute observations only; complete range, finality and sufficient lookback are not certified.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` for multi-contract iteration. "
+            "Exchange values: CME, EUREX, SGX, HKEX. Symbol includes contract month code (e.g., ESH26). "
+            "start_date / end_date: use `{{ date.ago(N, format='yyyymmdd') }}` for rolling lookback. "
+            "interval options: 30s, 1m, 5m, 15m, 30m, 1d, 1w, 1M. Minute queries return one available page, not a complete requested date range."
+        ),
+        "output_consumption": (
+            "The `value` port emits {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
+            "Access via `{{ nodes.historical.value.time_series }}` for ConditionNode plugins."
+        ),
+        "common_combinations": [
+            "SplitNode.item → OverseasFuturesHistoricalDataNode → ConditionNode (technical signal on futures history)",
+            "OverseasFuturesHistoricalDataNode.value → BacktestEngineNode (futures backtest)",
+            "OverseasFuturesHistoricalDataNode.value → LineChartNode (price history display)",
+        ],
+        "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
+            "Bind `.time_series` not `.value` to ConditionNode data — the value port wraps the list in a dict",
+            "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) upstream",
+            "Contract month codes change every quarter — update symbol (e.g., ESH26 → ESM26) when rolling",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_VALUE_FIELDS),
+    ]
+
+    _version: ClassVar[str] = "1.1.0"
+    _updated_at: ClassVar[str] = "2026-10-14"
+    _change_note: ClassVar[Optional[str]] = "Align minute aliases with one-page chart routing; reject unsupported periods and rollover adjustment."
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.symbol",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "CME", "symbol": "ESH26"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.symbol.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesHistoricalDataNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual literal list, used only when symbol (single) and upstream input are absent (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "CME", "symbol": "ESH26"}],
+                example_binding="{{ nodes.contract.symbols }}",
+                bindable_sources=["FuturesContractNode.symbols", "WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
+            ),
+            "start_date": FieldSchema(
+                name="start_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.start_date",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.start_date",
+                default="{{ date.months_ago(3, format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-01-01",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.start_date.help_text",
+            ),
+            "end_date": FieldSchema(
+                name="end_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.end_date",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.end_date",
+                default="{{ date.today(format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-12-31",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.end_date.help_text",
+            ),
+            "interval": FieldSchema(
+                name="interval",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.interval",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.interval",
+                default="1d",
+                required=True,
+                enum_values=["30s", "1m", "5m", "15m", "30m", "1d", "1w", "1M"],
+                enum_labels={
+                    "30s": "i18n:enums.interval.30s",
+                    "1m": "i18n:enums.interval.1m",
+                    "5m": "i18n:enums.interval.5m",
+                    "15m": "i18n:enums.interval.15m",
+                    "30m": "i18n:enums.interval.30m",
+                    "1d": "i18n:enums.interval.1d",
+                    "1w": "i18n:enums.interval.1w",
+                    "1M": "i18n:enums.interval.1M"
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="1d",
+                expected_type="str",
+            ),
+            "adjust": FieldSchema(
+                name="adjust",
+                type=FieldType.BOOLEAN,
+                display_name="i18n:fieldNames.OverseasFuturesHistoricalDataNode.adjust",
+                description="i18n:fields.OverseasFuturesHistoricalDataNode.adjust.short",
+                help_text="i18n:fields.OverseasFuturesHistoricalDataNode.adjust.detail",
+                default=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.CHECKBOX,
+                example=False,
+                expected_type="bool",
+            ),
+        }

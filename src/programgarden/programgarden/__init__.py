@@ -1,0 +1,176 @@
+"""
+ProgramGarden - Node-based DSL Execution Engine
+
+5-Layer Architecture:
+    1. Registry Layer - Node/Plugin metadata
+    2. Credential Layer - Authentication/Security
+    3. Definition Layer - Workflow definitions
+    4. Job Layer - Execution instances
+    5. Event Layer - Event history
+"""
+
+from programgarden.resolver import WorkflowResolver, ValidationResult
+from programgarden.executor import WorkflowExecutor
+from programgarden.context import ExecutionContext
+from programgarden.client import ProgramGarden
+from programgarden.node_runner import NodeRunner
+from programgarden.semantic_rules import (
+    analyze_workflow_semantics,
+    normalize_severities,
+    DEFAULT_SEMANTIC_SEVERITIES,
+    STRICT_SEMANTIC_SEVERITIES,
+    ALL_RULES,
+    RULE_ORDER_QTY_FROM_AI,
+    RULE_STRUCTURED_OUTPUT_NO_SCHEMA,
+    RULE_HARDCODED_ORDER_QTY,
+    RULE_ORDER_IGNORED_FIELD,
+)
+from programgarden_core.bases.listener import (
+    NodeState,
+    EdgeState,
+    NodeStateEvent,
+    EdgeStateEvent,
+    LogEvent,
+    JobStateEvent,
+    DisplayDataEvent,
+    WorkflowPnLEvent,
+    RiskEvent,
+    NotificationCategory,
+    NotificationSeverity,
+    NotificationEvent,
+    LLMStreamEvent,
+    TokenUsageEvent,
+    AIToolCallEvent,
+    RestartEvent,
+    RetryEvent,
+    ExecutionListener,
+    BaseExecutionListener,
+)
+from programgarden.tools import (
+    # Registry Tools
+    list_node_types,
+    get_node_schema,
+    list_plugins,
+    get_plugin_schema,
+    list_categories,
+    # Credential Tools
+    list_credentials,
+    create_credential,
+    delete_credential,
+    # Definition Tools
+    create_workflow,
+    validate_workflow,
+    get_workflow,
+    list_workflows,
+    update_workflow,
+    delete_workflow,
+    # Job Tools
+    start_job,
+    get_job,
+    list_jobs,
+    pause_job,
+    resume_job,
+    cancel_job,
+    get_job_state,
+    emergency_close_all,
+    cancel_all_orders,
+    restore_job,
+    has_checkpoint,
+    get_checkpoint_info,
+    # Event Tools
+    get_events,
+    get_job_summary,
+    analyze_performance,
+)
+
+# Auto-load community plugins on import
+try:
+    from programgarden_community import register_all_plugins
+    register_all_plugins()
+except ImportError:
+    # Community package not installed
+    pass
+
+# 배포 metadata 에서 파생한다. 손으로 적으면 릴리스 때마다 잊혀 **패키지가 스스로 거짓
+# 버전을 말한다** — 실제로 1.31.2 를 출하하는 동안 여기는 1.29.3 이었다.
+try:  # 설치된 배포판
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("programgarden")
+except Exception:  # 소스 트리에서 직접 import (미설치)
+    __version__ = "0.0.0+source"
+
+from programgarden._build_info import build_info  # noqa: E402
+
+__all__ = [
+    # Build provenance
+    "build_info",
+    # Core
+    "ProgramGarden",
+    "WorkflowResolver",
+    "WorkflowExecutor",
+    "ExecutionContext",
+    "ValidationResult",
+    "NodeRunner",
+    # Listener
+    "NodeState",
+    "EdgeState",
+    "NodeStateEvent",
+    "EdgeStateEvent",
+    "LogEvent",
+    "JobStateEvent",
+    "DisplayDataEvent",
+    "WorkflowPnLEvent",
+    "RiskEvent",
+    "LLMStreamEvent",
+    "TokenUsageEvent",
+    "AIToolCallEvent",
+    "RestartEvent",
+    "RetryEvent",
+    "ExecutionListener",
+    "BaseExecutionListener",
+    # Registry Tools
+    "list_node_types",
+    "get_node_schema",
+    "list_plugins",
+    "get_plugin_schema",
+    "list_categories",
+    # Credential Tools
+    "list_credentials",
+    "create_credential",
+    "delete_credential",
+    # Definition Tools
+    "create_workflow",
+    "validate_workflow",
+    "get_workflow",
+    "list_workflows",
+    "update_workflow",
+    "delete_workflow",
+    # Job Tools
+    "start_job",
+    "get_job",
+    "list_jobs",
+    "pause_job",
+    "resume_job",
+    "cancel_job",
+    "get_job_state",
+    "emergency_close_all",
+    "cancel_all_orders",
+    "restore_job",
+    "has_checkpoint",
+    "get_checkpoint_info",
+    # Event Tools
+    "get_events",
+    "get_job_summary",
+    "analyze_performance",
+    # Semantic / safety layer (deep_validate R1~R4)
+    "analyze_workflow_semantics",
+    "normalize_severities",
+    "DEFAULT_SEMANTIC_SEVERITIES",
+    "STRICT_SEMANTIC_SEVERITIES",
+    "ALL_RULES",
+    "RULE_ORDER_QTY_FROM_AI",
+    "RULE_STRUCTURED_OUTPUT_NO_SCHEMA",
+    "RULE_HARDCODED_ORDER_QTY",
+    "RULE_ORDER_IGNORED_FIELD",
+]

@@ -1,0 +1,375 @@
+"""
+ProgramGarden Core - Stock Historical Data Node
+
+해외주식 과거 데이터 조회:
+- OverseasStockHistoricalDataNode: 해외주식 과거 OHLCV 데이터 조회 (NYSE, NASDAQ, AMEX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
+"""
+
+from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    HISTORICAL_DATA_FIELDS,
+    HISTORICAL_VALUE_FIELDS,
+)
+
+
+class OverseasStockHistoricalDataNode(BaseNode):
+    """
+    해외주식 과거 데이터 조회 노드 (단일 종목)
+
+    SplitNode와 함께 사용하여 개별 종목의 과거 OHLCV 데이터를 조회합니다.
+    거래소: NYSE, NASDAQ, AMEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 과거 OHLCV 데이터)
+    """
+
+    type: Literal["OverseasStockHistoricalDataNode"] = "OverseasStockHistoricalDataNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.OverseasStockHistoricalDataNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
+    )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols"), 단수 symbol/입력 부재 시).
+    # 선언 누락 + executor 미소비로 리터럴 목록 예제가 빈 ohlcv 로 조용히 죽던 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual literal list; symbol (single) and upstream input take precedence",
+    )
+    start_date: str = Field(
+        default="{{ date.months_ago(3, format='yyyymmdd') }}",
+        description="Start date (YYYY-MM-DD or {{ date.months_ago(N, format='yyyymmdd') }})",
+    )
+    end_date: str = Field(
+        default="{{ date.today(format='yyyymmdd') }}",
+        description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
+    )
+    interval: Literal["1d", "1w", "1M", "1Y", "1m", "5m", "10m", "15m", "30m", "60m"] = Field(
+        default="1d",
+        description=("Bar size: 1d, 1w, 1M, 1Y read LS g3204; 1m, 5m, 10m, 15m, 30m, 60m read LS g3203 "
+                     "minute bars (one page, newest up to 500 bars)."),
+    )
+    adjust: bool = Field(
+        default=False,
+        description="Apply adjusted prices",
+    )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Retrieve daily, weekly, monthly or yearly OHLCV history for a US-listed stock to compute technical indicators or run backtests",
+            "Retrieve 1/5/10/15/30/60-minute bars of a US-listed stock for an intraday indicator (one page of the newest bars)",
+            "Feed time-series data into ConditionNode plugins (RSI, MACD, Bollinger, etc.) that require a `data` list of candles",
+            "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to get a rolling lookback window without hardcoding dates",
+        ],
+        "when_not_to_use": [
+            "For overseas futures historical data — use OverseasFuturesHistoricalDataNode",
+            "For Korean domestic stock history — use KoreaStockHistoricalDataNode",
+            "When you only need the latest quote snapshot — use OverseasStockMarketDataNode",
+        ],
+        "typical_scenarios": [
+            "SplitNode.item → OverseasStockHistoricalDataNode → ConditionNode (RSI/MACD on time-series)",
+            "OverseasStockHistoricalDataNode.value → BacktestEngineNode (strategy backtesting)",
+            "WatchlistNode → SplitNode → OverseasStockHistoricalDataNode → ConditionNode → OverseasStockNewOrderNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns a list of OHLCV candles in `value.time_series`: [{date, open, high, low, close, volume}, ...]",
+        "Supports intervals: 1d, 1w, 1M, 1Y through LS g3204 and 1m, 5m, 10m, 15m, 30m, 60m through LS g3203",
+        "A minute interval reads ONE g3203 page: the newest up to 500 bars at or before end_date within start_date..end_date; a longer range is not completed by paging",
+        "A minute bar's date is YYYYMMDDHHMMSS in the exchange's local time as LS labels it; pre-market, after-hours and overnight-session bars are included as LS returns them",
+        "start_date / end_date accept YYYYMMDD strings or expression namespace calls: `{{ date.ago(30, format='yyyymmdd') }}`",
+        "adjust=True applies split/dividend-adjusted prices for accurate long-term backtesting",
+        "is_tool_enabled=True — AI Agent can fetch historical data autonomously for technical analysis",
+        "Item-based execution: pair with SplitNode to fetch history for each symbol in a watchlist",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "The value port is one row object whose time_series lists bars of exactly {date, open, high, low, close, volume}; the values port is the array of such rows",
+        "This ohlcv_data is not the realtime shape: a *RealMarketDataNode records ohlcv_data as a symbol-keyed object of bar lists, although both are typed ohlcv_data",
+        "A previous close is the close of the corresponding bar in time_series; a change cannot be computed from a single bar",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using a fixed hardcoded start_date string like '20200101' without using the date namespace",
+            "reason": "The lookback window becomes stale over time and will fetch unnecessarily large datasets as time passes.",
+            "alternative": "Use `{{ date.ago(90, format='yyyymmdd') }}` for a rolling 90-day window that stays current.",
+        },
+        {
+            "pattern": "Binding the full value output to a ConditionNode `data` field without accessing `.time_series`",
+            "reason": "Most plugins expect a flat list of OHLCV dicts. The value port is a dict with a `time_series` key.",
+            "alternative": "Bind `{{ nodes.historical.value.time_series }}` to the ConditionNode's data field.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "30-day daily history for RSI signal",
+            "description": "Fetch 30 days of AAPL daily OHLCV data and pass the time_series to RSI ConditionNode.",
+            "workflow_snippet": {
+                "id": "overseas_stock_historical_rsi",
+                "name": "Historical RSI Signal",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': 'AAPL', 'exchange': 'NASDAQ'}]},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(30, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": False},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                {'from': 'condition', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value port: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. RSI is computed from time_series.",
+        },
+        {
+            "title": "15-minute bars for an intraday RSI",
+            "description": "Fetch the newest 15-minute bars of NVDA (LS g3203, one page of up to 500 bars) and compute RSI on them. Bar dates are YYYYMMDDHHMMSS in exchange local time and include extended-hours bars.",
+            "workflow_snippet": {
+                "id": "overseas_stock_minute_rsi",
+                "name": "Minute-bar RSI Signal",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "split", "type": "SplitNode", "array": [{"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(5, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "15m"},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+                    {"id": "split_results", "type": "AggregateNode", "mode": "collect"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "split_results"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value port: {symbol, exchange, time_series: [{date: 'YYYYMMDDHHMMSS', open, high, low, close, volume}, ...]} oldest first. RSI is computed from the 15-minute closes.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbol` field takes a single {exchange, symbol} dict — bind to `{{ nodes.split.item }}` in a per-symbol loop. "
+            "start_date / end_date accept 'YYYYMMDD' strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions. "
+            "Supported intervals: 1d, 1w, 1M, 1Y through LS g3204; 1m, 5m, 10m, 15m, 30m, 60m through LS g3203 "
+            "(one page of the newest up to 500 bars, date = YYYYMMDDHHMMSS exchange local time)."
+        ),
+        "output_consumption": (
+            "The `value` port emits a dict: {symbol, exchange, time_series: [{date, open, high, low, close, volume}, ...]}. "
+            "Bind `{{ nodes.historical.value.time_series }}` to ConditionNode's `data` field. "
+            "The list is ordered oldest-first (ascending by date)."
+        ),
+        "common_combinations": [
+            "SplitNode.item → OverseasStockHistoricalDataNode → ConditionNode (technical indicator on history)",
+            "OverseasStockHistoricalDataNode.value → BacktestEngineNode (strategy simulation)",
+            "OverseasStockHistoricalDataNode.value → BenchmarkCompareNode (benchmark comparison)",
+            "OverseasStockHistoricalDataNode.value → LineChartNode (price chart display)",
+        ],
+        "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
+            "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port is a dict, not a plain list",
+            "Minute intervals are 1m, 5m, 10m, 15m, 30m and 60m (not 1h or 1min); daily bars are never a substitute for an intraday strategy",
+            "Minute bars include every session LS returns: pre-market, after-hours and the overnight session from 20:00 local time of the previous day (a Sunday date can appear); the regular session is 09:30-16:00 exchange local time, so filter by the time part of `date` when a strategy needs the regular session only",
+            "`adjust` has no effect on minute intervals: LS g3203 has no adjusted-price option, minute bars are the prices as traded",
+            "adjust=False (default) returns unadjusted prices; set True when comparing long-term price levels across splits",
+            "The executor requests one g3204 or g3203 page; it does not expose response-time, continuation-completion or candle-finality evidence (the newest minute bar may still be forming)",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="value",
+            type="ohlcv_data",
+            description="i18n:ports.ohlcv_value",
+            fields=HISTORICAL_VALUE_FIELDS,
+            example=[
+                {
+                    "symbol": "AAPL",
+                    "exchange": "NASDAQ",
+                    "time_series": [
+                        {"date": "20260413", "open": 186.10, "high": 188.20, "low": 185.50, "close": 187.45, "volume": 12_345_678},
+                        {"date": "20260412", "open": 184.50, "high": 187.00, "low": 184.00, "close": 186.10, "volume": 11_222_333},
+                    ],
+                },
+            ],
+        ),
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array form of all fetched series — [{symbol, exchange, time_series: [...]}, ...]",
+        ),
+        OutputPort(
+            name="symbols",
+            type="array",
+            description="Flat list of fetched symbol strings",
+        ),
+        OutputPort(
+            name="period",
+            type="string",
+            description="Date range string formatted as 'YYYYMMDD~YYYYMMDD'",
+        ),
+        OutputPort(
+            name="interval",
+            type="string",
+            description="Candle interval (D / W / M)",
+        ),
+    ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.symbol",
+                description="i18n:fields.OverseasStockHistoricalDataNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "NASDAQ", "symbol": "AAPL"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.symbol.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasStockHistoricalDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockHistoricalDataNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual literal list, used only when symbol (single) and upstream input are absent (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
+            ),
+            "start_date": FieldSchema(
+                name="start_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.start_date",
+                description="i18n:fields.OverseasStockHistoricalDataNode.start_date",
+                default="{{ date.months_ago(3, format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-01-01",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.start_date.help_text",
+            ),
+            "end_date": FieldSchema(
+                name="end_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.end_date",
+                description="i18n:fields.OverseasStockHistoricalDataNode.end_date",
+                default="{{ date.today(format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-12-31",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.end_date.help_text",
+            ),
+            "interval": FieldSchema(
+                name="interval",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.interval",
+                description="i18n:fields.OverseasStockHistoricalDataNode.interval",
+                default="1d",
+                required=True,
+                enum_values=["1d", "1w", "1M", "1Y", "1m", "5m", "10m", "15m", "30m", "60m"],
+                enum_labels={
+                    "1d": "i18n:enums.interval.1d",
+                    "1w": "i18n:enums.interval.1w",
+                    "1M": "i18n:enums.interval.1M",
+                    "1Y": "i18n:enums.interval.1Y",
+                    "1m": "i18n:enums.interval.1m",
+                    "5m": "i18n:enums.interval.5m",
+                    "10m": "i18n:enums.interval.10m",
+                    "15m": "i18n:enums.interval.15m",
+                    "30m": "i18n:enums.interval.30m",
+                    "60m": "i18n:enums.interval.60m",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="1d",
+                expected_type="str",
+            ),
+            "adjust": FieldSchema(
+                name="adjust",
+                type=FieldType.BOOLEAN,
+                display_name="i18n:fieldNames.OverseasStockHistoricalDataNode.adjust",
+                description="i18n:fields.OverseasStockHistoricalDataNode.adjust.short",
+                help_text="i18n:fields.OverseasStockHistoricalDataNode.adjust.detail",
+                default=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CHECKBOX,
+                example=True,
+            ),
+        }

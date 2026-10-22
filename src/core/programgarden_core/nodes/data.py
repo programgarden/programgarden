@@ -1,0 +1,1531 @@
+"""
+ProgramGarden Core - Data Nodes
+
+Data query/storage nodes:
+- SQLiteNode: Local SQLite database
+- HTTPRequestNode: External REST API request
+- FieldMappingNode: Field name mapping
+
+MarketDataNode는 상품별 분리됨:
+- data_stock.py → OverseasStockMarketDataNode
+- data_futures.py → OverseasFuturesMarketDataNode
+
+계좌 조회는 account_stock/account_futures 참조
+"""
+
+from typing import Optional, List, Literal, Dict, Any, ClassVar, Tuple, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    RetryableError,
+)
+from programgarden_core.models.resilience import (
+    ResilienceConfig,
+    RetryConfig,
+    FallbackConfig,
+    FallbackMode,
+)
+from programgarden_core.models.connection_rule import (
+    ConnectionRule,
+    ConnectionSeverity,
+    RateLimitConfig,
+    REALTIME_SOURCE_NODE_TYPES,
+)
+
+
+# HTTP 요청 재시도용 커스텀 예외 클래스
+class HTTPServerError(Exception):
+    """HTTP 5xx 서버 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPRateLimitError(Exception):
+    """HTTP 429 Rate Limit 에러 - 재시도 가능.
+
+    `Retry-After` 헤더가 있으면 그 값을 `retry_after`(초, float)에 실어 RetryExecutor 가
+    지수 백오프 대신(또는 그와 함께) 서버가 요구한 대기 시간을 존중하게 한다.
+    """
+
+    def __init__(self, message: str, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class HTTPNetworkError(Exception):
+    """네트워크 연결 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPTimeoutError(Exception):
+    """요청 타임아웃 에러 - 재시도 가능"""
+    pass
+
+
+class HTTPCredentialError(Exception):
+    """An authenticated HTTP node has no injected credential; no request was sent."""
+
+
+# ── HTTP 외부 API 보호 (오너 우려 2026-09-28: 클라우드 공유 IP 로 종목마다 요청이 동시에
+#    나가면 외부 API 사가 차단할 수 있다) ─────────────────────────────────────────────
+# 호스트별 동시 요청 상한. auto-iterate 반복은 원래 순차 실행 + rate_limit_interval 간격이라
+# 안전하지만, 실시간/병렬(fan-out) 경로에서 같은 호스트로 요청이 몰리는 것을 막는 프로세스
+# 전역 가드다. 기본 1 = 한 호스트에 한 번에 한 요청. 상수는 여기 한 곳에서만 정의한다.
+HTTP_MAX_CONCURRENCY_PER_HOST: int = 1
+
+# (event-loop id, host) → Semaphore. asyncio.Semaphore 는 생성된 이벤트 루프에 묶이므로
+# 루프별로 따로 만든다(워커는 보통 루프 하나지만, 다른 루프에서 재사용 시 RuntimeError 회피).
+_HOST_SEMAPHORES: Dict[Tuple[int, str], "object"] = {}
+
+
+def _host_semaphore(url: str):
+    """이 URL 호스트의 프로세스 전역 동시성 세마포어(현재 이벤트 루프 기준)."""
+    import asyncio
+    from urllib.parse import urlparse
+
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = 0
+    key = (loop_id, host)
+    sem = _HOST_SEMAPHORES.get(key)
+    if sem is None:
+        sem = asyncio.Semaphore(HTTP_MAX_CONCURRENCY_PER_HOST)
+        _HOST_SEMAPHORES[key] = sem
+    return sem
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """HTTP `Retry-After` 헤더 → 대기 초. delta-seconds(정수) 또는 HTTP-date 지원.
+
+    음수/파싱 실패는 None (그러면 RetryExecutor 가 순수 지수 백오프로 되돌아간다).
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # delta-seconds (가장 흔한 형태)
+    try:
+        secs = float(value)
+        return secs if secs >= 0 else None
+    except (TypeError, ValueError):
+        pass
+    # HTTP-date (RFC 7231)
+    try:
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+
+        dt = parsedate_to_datetime(value)
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        return None
+
+
+class SQLiteNode(BaseNode):
+    """
+    로컬 SQLite 데이터베이스 노드 (단순 DB)
+
+    AI Tool로 사용 시 R/W 양용이므로 write로 분류 (안전 우선).
+
+    /app/data/ 폴더에 SQLite DB를 생성하고,
+    두 가지 모드로 데이터를 조회/저장합니다.
+    
+    운영 모드:
+    - execute_query: 직접 SQL 쿼리 실행 (고급 사용자용)
+    - simple: GUI 기반 간단 조작 (select, insert, update, delete, upsert)
+    
+    주요 용도:
+    - 트레일링스탑 High Water Mark (최고점) 추적
+    - 전략 상태 저장/복구 (Graceful Restart)
+    - 로컬 데이터 캐싱
+    
+    Example config (simple 모드 - select):
+        {
+            "db_name": "my_strategy.db",
+            "operation": "simple",
+            "table": "peak_tracker",
+            "action": "select",
+            "columns": ["symbol", "peak_price"],
+            "where_clause": "symbol = :symbol"
+        }
+    
+    Example config (execute_query 모드):
+        {
+            "db_name": "my_strategy.db",
+            "operation": "execute_query",
+            "query": "SELECT * FROM peak_tracker WHERE symbol = :symbol",
+            "parameters": {"symbol": "AAPL"}
+        }
+    """
+
+    type: Literal["SQLiteNode"] = "SQLiteNode"
+    category: NodeCategory = NodeCategory.DATA
+    description: str = "i18n:nodes.SQLiteNode.description"
+    _img_url: ClassVar[str] = ""
+
+    # === 기본 설정 ===
+    storage_scope: Literal['shared', 'execution'] = Field(
+        default='shared', description='i18n:fields.SQLiteNode.storage_scope',
+    )
+    db_name: str = Field(
+        default="default.db",
+        description="데이터베이스 파일명 (/app/data/ 폴더 내)",
+    )
+    
+    # 운영 모드
+    operation: Literal["execute_query", "simple"] = Field(
+        default="simple",
+        description="운영 모드: execute_query(직접 SQL) 또는 simple(GUI 기반)",
+    )
+    
+    # === execute_query 모드 전용 ===
+    query: Optional[str] = Field(
+        default=None,
+        description="실행할 SQL 쿼리 (execute_query 모드)",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="쿼리 파라미터 (SQL 인젝션 방지용 바인딩)",
+    )
+    
+    # === simple 모드 전용 ===
+    table: Optional[str] = Field(
+        default=None,
+        description="테이블 이름 (simple 모드)",
+    )
+    action: Optional[Literal["select", "insert", "update", "delete", "upsert"]] = Field(
+        default="select",
+        description="수행할 액션 (simple 모드)",
+    )
+    columns: Optional[List[str]] = Field(
+        default=None,
+        description="조회/삽입할 컬럼 목록 (select, insert용)",
+    )
+    where_clause: Optional[str] = Field(
+        default=None,
+        description="WHERE 조건절 (select, update, delete용). 예: 'symbol = :symbol'",
+    )
+    values: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="삽입/수정할 값 (insert, update, upsert용)",
+    )
+    on_conflict: Optional[str] = Field(
+        default=None,
+        description="충돌 시 기준 컬럼 (upsert용). 예: 'symbol'",
+    )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Persist strategy state between workflow cycles (e.g. high-water-mark, trailing stop level, position entry price)",
+            "Log trade signals or risk events to a local SQLite database for later review",
+            "Cache external API responses locally to avoid redundant HTTP calls across cycles",
+            "Read stored configuration or parameter tables that change infrequently",
+        ],
+        "when_not_to_use": [
+            "For temporary within-cycle data passing — use expression bindings between nodes instead",
+            "For shared multi-process or multi-host state — SQLite is local/single-process only",
+            "For large time-series storage (thousands of rows per cycle) — prefer a dedicated database",
+        ],
+        "typical_scenarios": [
+            "StartNode → SQLiteNode (select peak_price) → ConditionNode → SQLiteNode (upsert peak_price)",
+            "OverseasStockNewOrderNode → SQLiteNode (insert order log with symbol/price/quantity)",
+            "SQLiteNode (select strategy params) → ConditionNode (use params in signal logic)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Two operating modes: 'simple' (GUI-driven select/insert/update/delete/upsert) and 'execute_query' (raw SQL with parameter binding)",
+        "Named parameter binding (`:symbol` syntax) prevents SQL injection in execute_query mode",
+        "Upsert support via 'on_conflict' column in simple mode — ideal for idempotent state updates",
+        "Outputs rows (list), affected_count (int), and last_insert_id (int) to cover all read/write patterns",
+        "is_tool_enabled=True — AI Agent can use SQLiteNode as a tool to read or write local state",
+        "The host injects storage_dir (default /app/data); db_name selects the file. storage_scope=execution prefixes a stable host execution identity (or workflow ID for standalone use), survives process restarts, and separates managed account executions. Default shared preserves existing filenames. Keep the host directory on durable storage and do not reset reservations on startup.",
+        "Has a dedicated replay adapter (execute_sqlite) and takes no external recording; it runs against a file-backed database rooted at the run's storage directory",
+        "State written on one tick or event frame persists to that database and stays visible on later frames within the run, so a durable duplicate guard can be built on it",
+        "Each execution runs exactly ONE SQL statement (execute_query and every simple-mode action call db.execute once); 'CREATE TABLE …; INSERT …' in one query fails with 'You can only execute one statement at a time'",
+        "Neither mode creates a table: an insert/select into a missing table fails with 'no such table'; create it first with a separate execute_query SQLiteNode (CREATE TABLE IF NOT EXISTS …) placed upstream, then read/write it here",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using execute_query mode with string interpolation instead of parameter binding",
+            "reason": "String interpolation is vulnerable to SQL injection when field values come from expressions. Always use :param placeholders.",
+            "alternative": "Use 'parameters' field with named placeholders: query='WHERE symbol = :symbol', parameters={'symbol': '{{ item.symbol }}'}.",
+        },
+        {
+            "pattern": "Storing the entire OHLCV time series (thousands of rows) in SQLite every cycle",
+            "reason": "Repeated bulk writes slow down the workflow cycle and bloat the database file unnecessarily.",
+            "alternative": "Only persist the scalar state values you need (e.g. peak_price, last_signal) and let the workflow re-fetch raw data each cycle.",
+        },
+        {
+            "pattern": "Using SQLiteNode as a message queue between concurrent nodes",
+            "reason": "SQLite has limited concurrency support; simultaneous writes from AggregateNode branches can cause lock contention.",
+            "alternative": "Use AggregateNode to collect results first, then write to SQLiteNode in a single sequential step.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Persist high-water-mark for trailing stop",
+            "description": "After each market data fetch, upsert the highest price seen so far into SQLite. A subsequent ConditionNode reads the stored level to decide whether to sell.",
+            "workflow_snippet": {
+                "id": "sqlite_hwm_trail",
+                "name": "SQLite High Water Mark",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}]},
+                    {
+                        "id": "upsert_hwm",
+                        "type": "SQLiteNode",
+                        "db_name": "strategy.db",
+                        "operation": "simple",
+                        "table": "hwm",
+                        "action": "upsert",
+                        "values": {"symbol": "{{ nodes.market.values[0].symbol }}", "peak": '{{ nodes.market.values[0].price }}'},
+                        "on_conflict": "symbol",
+                    },
+                    {
+                        "id": "read_hwm",
+                        "type": "SQLiteNode",
+                        "db_name": "strategy.db",
+                        "operation": "simple",
+                        "table": "hwm",
+                        "action": "select",
+                        "where_clause": "symbol = :symbol",
+                        "parameters": {"symbol": "AAPL"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.read_hwm.rows }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "upsert_hwm"},
+                    {"from": "upsert_hwm", "to": "read_hwm"},
+                    {"from": "read_hwm", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "rows from hwm table showing the latest peak price for AAPL.",
+        },
+        {
+            "title": "Log order signals to SQLite for audit trail",
+            "description": "After a ConditionNode generates a buy signal, insert a record into an order_log table with symbol, signal, and timestamp.",
+            "workflow_snippet": {
+                "id": "sqlite_order_log",
+                "name": "SQLite Order Log",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "MSFT", "exchange": "NASDAQ"}], "period": "1m", "count": 60},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold": 30, "overbought": 70}},
+                    {
+                        "id": "log_signal",
+                        "type": "SQLiteNode",
+                        "db_name": "audit.db",
+                        "operation": "simple",
+                        "table": "signal_log",
+                        "action": "insert",
+                        "values": {"symbol": "MSFT", "signal": "{{ nodes.condition.is_condition_met }}", "passed": "{{ nodes.condition.passed_symbols }}"},
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.log_signal.rows }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "log_signal"},
+                    {"from": "log_signal", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "affected_count=1 confirming the signal row was inserted; rows=[{symbol, signal, rsi}].",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "Trigger and data inputs are optional. Provide 'data' when the values to write come from a previous node's output (e.g. the whole market value dict). For simple mode, use the 'values' field to specify column→expression mappings directly.",
+        "output_consumption": "For SELECT queries, consume 'rows' (list[dict]) as the primary output — pipe to TableDisplayNode or ConditionNode. For INSERT/UPDATE/DELETE, check 'affected_count' to verify the write succeeded. 'last_insert_id' is useful for relational record linking.",
+        "common_combinations": [
+            "OverseasStockMarketDataNode → SQLiteNode (upsert) → SQLiteNode (select) → ConditionNode",
+            "ConditionNode → SQLiteNode (insert signal log) → TableDisplayNode",
+            "StartNode → SQLiteNode (select config) → ConditionNode (use stored params)",
+        ],
+        "pitfalls": [
+            "SQLite files persist between restarts — always use upsert (not insert) for state tracking to avoid duplicate rows.",
+            "WHERE clause uses named binding (:param) not Python f-string %s style. Use 'parameters' dict to supply values.",
+            "execute_query mode can run any SQL including DROP TABLE — validate queries carefully before deploying.",
+        ],
+    }
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+            required=False,
+        ),
+        InputPort(
+            name="data",
+            type="any",
+            description="i18n:ports.sql_input_data",
+            required=False,
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="rows",
+            type="array",
+            description="i18n:ports.storage_rows",
+        ),
+        OutputPort(
+            name="affected_count",
+            type="integer",
+            description="i18n:ports.storage_affected_count",
+        ),
+        OutputPort(
+            name="last_insert_id",
+            type="integer",
+            description="i18n:ports.sql_last_insert_id",
+        ),
+    ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode, UIComponent
+        return {
+            "storage_scope": FieldSchema(
+                name="storage_scope", type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.storage_scope", default="shared",
+                enum_values=["shared", "execution"], category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+            # === PARAMETERS: 기본 설정 ===
+            "db_name": FieldSchema(
+                name="db_name",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.db_name",
+                default="default.db",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.CUSTOM_CREATABLE_SELECT,
+                ui_options={
+                    "source": "programgarden_data",
+                    "file_extension": ".db",
+                    "create_label": "i18n:ui.create_new_database",
+                    "deletable": True,
+                    "delete_confirm": "i18n:ui.confirm_delete_database",
+                },
+                example="my_strategy.db",
+                expected_type="str",
+            ),
+            "operation": FieldSchema(
+                name="operation",
+                type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.operation",
+                default="simple",
+                required=True,
+                enum_values=["execute_query", "simple"],
+                enum_labels={
+                    "execute_query": "i18n:enums.sqlite_operation.execute_query",
+                    "simple": "i18n:enums.sqlite_operation.simple",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+            ),
+
+            # === execute_query 모드 전용 ===
+            "query": FieldSchema(
+                name="query",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.query",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CUSTOM_CODE_EDITOR,
+                ui_options={"language": "sql"},
+                visible_when={"operation": "execute_query"},
+                example="SELECT * FROM peak_tracker WHERE symbol = :symbol",
+                expected_type="str",
+            ),
+            "parameters": FieldSchema(
+                name="parameters",
+                type=FieldType.KEY_VALUE_PAIRS,
+                description="i18n:fields.SQLiteNode.parameters",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
+                visible_when={"operation": "execute_query"},
+                example={"symbol": "AAPL"},
+                expected_type="dict[str, any]",
+            ),
+            
+            # === simple 모드 전용 ===
+            "table": FieldSchema(
+                name="table",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.table",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.CUSTOM_CREATABLE_SELECT,
+                ui_options={
+                    "source_api": "/api/sqlite/{db_name}/tables",
+                    "depends_on": "db_name",
+                    "create_label": "i18n:ui.create_new_table",
+                    "empty_message": "i18n:ui.no_tables_create_first",
+                },
+                visible_when={"operation": "simple"},
+                example="peak_tracker",
+                expected_type="str",
+            ),
+            "action": FieldSchema(
+                name="action",
+                type=FieldType.ENUM,
+                description="i18n:fields.SQLiteNode.action",
+                default="select",
+                required=False,
+                enum_values=["select", "insert", "update", "delete", "upsert"],
+                enum_labels={
+                    "select": "i18n:enums.sqlite_action.select",
+                    "insert": "i18n:enums.sqlite_action.insert",
+                    "update": "i18n:enums.sqlite_action.update",
+                    "delete": "i18n:enums.sqlite_action.delete",
+                    "upsert": "i18n:enums.sqlite_action.upsert",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                visible_when={"operation": "simple"},
+            ),
+            "columns": FieldSchema(
+                name="columns",
+                type=FieldType.ARRAY,
+                description="i18n:fields.SQLiteNode.columns",
+                required=False,
+                array_item_type=FieldType.STRING,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_options={
+                    "multiple": True,
+                    "source_api": "/api/sqlite/{db_name}/tables/{table}/columns",
+                    "depends_on": ["db_name", "table"],
+                    "empty_message": "i18n:ui.select_table_first",
+                },
+                visible_when={"operation": "simple", "action": ["select", "insert"]},
+                example=["symbol", "peak_price", "updated_at"],
+                expected_type="list[str]",
+                help_text="i18n:fields.SQLiteNode.columns_help",
+            ),
+            "where_clause": FieldSchema(
+                name="where_clause",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.where_clause_detailed",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                visible_when={"operation": "simple", "action": ["select", "update", "delete"]},
+                example="symbol = :symbol",
+                expected_type="str",
+            ),
+            "values": FieldSchema(
+                name="values",
+                type=FieldType.KEY_VALUE_PAIRS,
+                description="i18n:fields.SQLiteNode.values",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
+                visible_when={"operation": "simple", "action": ["insert", "update", "upsert"]},
+                example={"symbol": "AAPL", "peak_price": 195.50},
+                expected_type="dict[str, any]",
+            ),
+            "on_conflict": FieldSchema(
+                name="on_conflict",
+                type=FieldType.STRING,
+                description="i18n:fields.SQLiteNode.on_conflict",
+                required=False,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                visible_when={"operation": "simple", "action": "upsert"},
+                example="symbol",
+                expected_type="str",
+                help_text="i18n:fields.SQLiteNode.on_conflict_help",
+            ),
+        }
+
+
+class HTTPRequestNode(BaseNode):
+    """
+    HTTP/HTTPS REST API 요청 노드
+    
+    외부 REST API를 호출하고 응답을 다음 노드에 전달합니다.
+    
+    Headers 설정:
+        UI에서 + 버튼으로 헤더 추가 (Content-Type, Authorization 등)
+        headers는 JSON DSL에 노출되지 않습니다.
+    
+    Example DSL:
+        {
+            "id": "api_call",
+            "type": "HTTPRequestNode",
+            "method": "POST",
+            "url": "https://api.example.com/data",
+            "body": {"name": "test"}
+        }
+    """
+
+    type: Literal["HTTPRequestNode"] = "HTTPRequestNode"
+    category: NodeCategory = NodeCategory.DATA
+    description: str = "i18n:nodes.HTTPRequestNode.description"
+    _img_url: ClassVar[str] = ""
+
+    # 실시간 노드에서 직접 연결 차단 (ThrottleNode 경유 필수, M-12: ERROR로 강화)
+    _connection_rules: ClassVar[List[ConnectionRule]] = [
+        ConnectionRule(
+            deny_direct_from=REALTIME_SOURCE_NODE_TYPES,
+            required_intermediate="ThrottleNode",
+            severity=ConnectionSeverity.ERROR,
+            reason="i18n:connection_rules.realtime_to_http.reason",
+            suggestion="i18n:connection_rules.realtime_to_http.suggestion",
+        ),
+    ]
+
+    # 런타임 rate limit: 최소 1초 간격, 동시 3개까지 (M-12: skip으로 강화)
+    _rate_limit: ClassVar[Optional[RateLimitConfig]] = RateLimitConfig(
+        min_interval_sec=1,
+        max_concurrent=3,
+        on_throttle="skip",
+    )
+
+    # 연결(자격증명) 선언 — 챗봇/편집기/검증기 공용. HTTP 는 인증형 API 일 때만 키가
+    # 필요(when=auth_required, auth_required 설정 참조)하고, 실제 응답 검증에도 필요해
+    # need=validate 다. FMP/Finnhub 는 http_query 프리셋으로 param_name 을 잡아준다.
+    _connection: ClassVar[Dict[str, Any]] = {
+        "purpose": "data",
+        "need": "validate",
+        "when": "auth_required",
+        "label_key": "connection.HTTPRequestNode.label",
+        "presets": [
+            {"id": "fmp", "label": "FMP", "type": "http_query",
+             "fields": {"param_name": "apikey"}},
+            {"id": "finnhub", "label": "Finnhub", "type": "http_query",
+             "fields": {"param_name": "token"}},
+        ],
+        "missing": "draft",
+    }
+
+
+    # === PARAMETERS: 핵심 HTTP 요청 설정 ===
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
+        default="GET",
+        description="HTTP method",
+    )
+    url: str = Field(..., description="Request URL ({{ }} 표현식 지원)")
+    query_params: Optional[Dict[str, Any]] = Field(default=None, description="Query parameters")
+    body: Optional[Dict[str, Any]] = Field(default=None, description="Request body (POST/PUT/PATCH)")
+
+    # === Credential: 인증 정보 참조 ===
+    credential_id: Optional[str] = Field(
+        default=None, 
+        description="Credential ID (credentials 섹션에서 참조)"
+    )
+    credential_preset: Optional[Literal["fmp", "finnhub"]] = Field(
+        default=None,
+        description="Non-secret provider preset for the credential registration form; never selects a stored key.",
+    )
+
+    # === Headers: UI에서 동적 추가 ===
+    headers: Optional[Dict[str, str]] = Field(default=None, description="HTTP headers")
+
+    # === SETTINGS: 부가 설정 ===
+    timeout_seconds: int = Field(default=30, description="Request timeout (seconds)")
+
+    # 이 API 가 인증이 필요한가(비공개 키). None = 챗봇이 판단(기본) — 문맥으로 결정한다.
+    # True = 인증 필요(credential 없으면 검증/실행 불가), False = 공개 API(credential 불필요).
+    # 기본값을 False 로 두면 비공개 API 에 위험하므로 None(미지정)으로 둔다.
+    # `connection.when="auth_required"` 가 이 값을 참조한다.
+    auth_required: Optional[bool] = Field(
+        default=None,
+        description="Does this API require authentication? None = chatbot decides (default), True = auth required, False = public.",
+    )
+
+    # === Resilience: 재시도/실패 처리 (H-21: HTTP 요청은 기본 재시도 활성화) ===
+    resilience: ResilienceConfig = Field(
+        default_factory=lambda: ResilienceConfig(
+            retry=RetryConfig(enabled=True, max_retries=3),
+        ),
+        description="재시도 및 실패 처리 설정",
+    )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Fetch data from an external REST API (market data, news, economic indicators, webhooks)",
+            "POST trade signals or alerts to an external system (Slack, webhook, custom backend)",
+            "Call authentication-protected APIs using HTTP credentials (Bearer token, Basic auth, API key in header)",
+            "Integrate any HTTP/HTTPS endpoint that is not covered by built-in ProgramGarden nodes",
+        ],
+        "when_not_to_use": [
+            "For LS Securities brokerage operations — use the dedicated broker/market/account/order nodes instead",
+            "For Telegram notifications — use TelegramNode which handles the Telegram Bot API correctly",
+            "For real-time streaming data — HTTPRequestNode is request/response only, not a streaming client",
+        ],
+        "typical_scenarios": [
+            "StartNode → HTTPRequestNode (GET economic calendar API) → ConditionNode (check today's events)",
+            "ConditionNode (buy signal) → HTTPRequestNode (POST webhook alert) → OverseasStockNewOrderNode",
+            "StartNode → HTTPRequestNode (GET fear & greed index) → FieldMappingNode → ConditionNode",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Supports all HTTP methods: GET, POST, PUT, PATCH, DELETE with optional query params and request body",
+        "Built-in resilience: retry on 5xx and 429 with exponential backoff (enabled by default, max_retries=3). Retry-After is a minimum wait. When it exceeds max_delay or the 5-second validation wait budget, retrying stops with the original failure; the server's wait is never shortened. Existing fallback and per-item error handling apply.",
+        "Per-host concurrency cap (default 1): the engine lets only one request per host run at a time process-wide, so many parallel/fan-out requests to the same external API (shared cloud egress IP) queue instead of stampeding. Auto-iterate is already sequential and paced by rate_limit_interval.",
+        "Credential integration for Bearer token, HTTP Basic, custom header, and query-param auth patterns",
+        "Rate-limited: minimum 1-second interval and max 3 concurrent calls; real-time node connections blocked",
+        "is_tool_enabled=True — AI Agent can invoke HTTPRequestNode as a tool to fetch live external data",
+        "Outputs response (parsed JSON or raw text), status_code, success flag, and error string for downstream branching",
+        "Runs once per upstream list element when the config references {{ item… }}/{{ index }}/{{ total }} (e.g. one request per watchlist symbol); the per-item outcomes are exposed on the `results` array port while response/status_code/success/error hold the last item's values. A config without an item reference runs once (unchanged).",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Connecting a real-time node (e.g. OverseasStockRealMarketDataNode) directly to HTTPRequestNode",
+            "reason": "Real-time nodes fire on every tick, causing HTTPRequestNode to flood the external API. The workflow validator blocks this with an ERROR.",
+            "alternative": "Insert a ThrottleNode between the real-time node and HTTPRequestNode to limit the call rate.",
+        },
+        {
+            "pattern": "Embedding secrets (API keys, passwords) directly in the url or body fields",
+            "reason": "Hardcoded secrets are visible in the workflow JSON and logs, creating a security risk.",
+            "alternative": "Use the credential_id field with an appropriate HTTP credential type (http_bearer, http_header, etc.).",
+        },
+        {
+            "pattern": "Setting timeout_seconds to 1 for external APIs",
+            "reason": "External APIs can legitimately take several seconds; a 1-second timeout causes spurious failures and retries.",
+            "alternative": "Keep timeout_seconds at 30 (default) or increase it for known slow endpoints.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch fear-and-greed index from external API",
+            "description": "GET the CNN Fear & Greed Index value and feed it into a ConditionNode to gate trading decisions.",
+            "workflow_snippet": {
+                "id": "http_fear_greed",
+                "name": "Fear-Greed HTTP Fetch",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "fg_api",
+                        "type": "HTTPRequestNode",
+                        "method": "GET",
+                        "url": "https://fear-and-greed-index.p.rapidapi.com/v1/fgi",
+                        "headers": {"X-RapidAPI-Host": "fear-and-greed-index.p.rapidapi.com"},
+                        "timeout_seconds": 15,
+                    },
+                    {"id": "display", "type": "SummaryDisplayNode", "data": "{{ nodes.fg_api.response }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "fg_api"},
+                    {"from": "fg_api", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "response={fgi: {value: 42, valueText: 'Fear', ...}}, status_code=200, success=true.",
+        },
+        {
+            "title": "POST webhook alert on buy signal",
+            "description": "When ConditionNode generates a buy signal, send a JSON payload to a Slack-compatible webhook URL.",
+            "workflow_snippet": {
+                "id": "http_webhook_alert",
+                "name": "Webhook Buy Alert",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}], "period": "1m", "count": 60},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "oversold": 30, "overbought": 70}},
+                    {
+                        "id": "webhook",
+                        "type": "HTTPRequestNode",
+                        "method": "POST",
+                        "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+                        "body": {"text": "Buy signal for {{ nodes.condition.passed_symbols }} (met={{ nodes.condition.is_condition_met }})"},
+                        "timeout_seconds": 10,
+                    },
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                    {"from": "condition", "to": "webhook"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "status_code=200, success=true confirming the webhook POST was accepted.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'url' field is the only required config. Use 'body' for POST/PUT/PATCH payloads (auto-serialized to JSON). Use 'query_params' for GET parameters. The 'data' input port can supply dynamic values from upstream nodes via expression.",
+        "output_consumption": "Check 'success' (boolean) before consuming 'response'. On failure, 'error' contains the HTTP status string. 'response' is auto-parsed JSON when the Content-Type is application/json, otherwise raw text. When the config references {{ item… }} the node runs once per upstream item: read the 'results' array (one {item, response, status_code, success, error} entry per item, in order) for per-item outcomes; 'response'/'status_code'/'success'/'error' then reflect the LAST item, and top-level 'success' is the AND of all items while top-level 'error' is set only when every item failed.",
+        "common_combinations": [
+            "StartNode → HTTPRequestNode (GET) → FieldMappingNode → ConditionNode",
+            "ConditionNode → HTTPRequestNode (POST webhook) → SummaryDisplayNode",
+            "HTTPRequestNode → SQLiteNode (cache response) → ConditionNode",
+        ],
+        "pitfalls": [
+            "response can be a string (non-JSON) or a dict — always validate the type before using nested expressions like {{ nodes.http.response.data }}.",
+            "The retry mechanism retries on 5xx and 429 but NOT on 4xx. A 401 Unauthorized will not be retried — fix the credential.",
+            "Real-time node connections are blocked at the validator level — always use ThrottleNode as an intermediary.",
+        ],
+    }
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _inputs: List[InputPort] = [
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
+        InputPort(name="data", type="any", description="i18n:ports.http_request_data", required=False),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="response", type="any", description="i18n:ports.http_response"),
+        OutputPort(name="status_code", type="number", description="i18n:ports.http_status_code"),
+        OutputPort(name="success", type="boolean", description="i18n:ports.http_success"),
+        OutputPort(name="error", type="string", description="i18n:ports.http_error"),
+        # Per-item results when the node auto-iterates over an upstream list
+        # (config references {{ item… }}/{{ index }}/{{ total }}). One entry per
+        # item, in order: {item, response, status_code, success, error}. A node
+        # that does not reference an iteration item runs once and this array holds
+        # that single execution. `response`/`status_code`/`success`/`error` above
+        # stay as the LAST item's scalar values (backward compatible with
+        # {{ nodes.x.response }}).
+        OutputPort(
+            name="results", type="array",
+            description="i18n:ports.http_results",
+            example=[
+                {"item": {"symbol": "AAPL", "exchange": "NASDAQ"},
+                 "response": {"price": 189.2}, "status_code": 200,
+                 "success": True, "error": None},
+            ],
+        ),
+    ]
+
+    _field_schema: ClassVar[Dict[str, "FieldSchema"]] = {}
+
+    _version: ClassVar[str] = "1.2.0"
+    _updated_at: ClassVar[str] = "2026-09-28"
+    _change_note: ClassVar[Optional[str]] = (
+        "429 honours Retry-After + per-host concurrency cap (1) for shared-IP safety"
+    )
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """노드의 설정 가능한 필드 스키마 반환"""
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        
+        return {
+            # PARAMETERS
+            "method": FieldSchema(
+                name="method", type=FieldType.ENUM, required=False,
+                enum_values=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                description="i18n:fields.HTTPRequestNode.method",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="POST",
+                expected_type="str",
+            ),
+            "url": FieldSchema(
+                name="url", type=FieldType.STRING, required=True,
+                description="i18n:fields.HTTPRequestNode.url",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="https://api.example.com/v1/data",
+                example_binding="{{ nodes.config.api_endpoint }}",
+                expected_type="str",
+                placeholder="https://api.example.com/v1/data",
+            ),
+            "query_params": FieldSchema(
+                name="query_params", type=FieldType.KEY_VALUE_PAIRS, required=False,
+                description="i18n:fields.HTTPRequestNode.query_params",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example={"symbol": "AAPL", "limit": "100"},
+                expected_type="dict[str, str]",
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
+                object_schema=[
+                    {"name": "key", "type": "STRING", "description": "파라미터 이름"},
+                    {"name": "value", "type": "STRING", "description": "파라미터 값"},
+                ],
+            ),
+            "body": FieldSchema(
+                name="body", type=FieldType.OBJECT, required=False,
+                description="i18n:fields.HTTPRequestNode.body",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example={"action": "buy", "symbol": "AAPL", "quantity": 10},
+                example_binding="{{ nodes.order.request_body }}",
+                expected_type="dict[str, Any]",
+                ui_options={"maxLines": 5},
+                placeholder='{"action": "buy", "symbol": "AAPL", "quantity": 10}',
+            ),
+            "credential_id": FieldSchema(
+                name="credential_id", type=FieldType.CREDENTIAL, required=False,
+                description="i18n:fields.HTTPRequestNode.credential_id",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                credential_types=["http_bearer", "http_header", "http_basic", "http_query"],
+                ui_component=UIComponent.CUSTOM_CREDENTIAL_SELECT,
+            ),
+            "credential_preset": FieldSchema(
+                name="credential_preset", type=FieldType.ENUM, required=False,
+                description="Non-secret provider preset for credential registration",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                enum_values=[p["id"] for p in cls._connection["presets"]],
+                group="advanced",
+            ),
+            "headers": FieldSchema(
+                name="headers", type=FieldType.KEY_VALUE_PAIRS, required=False,
+                description="i18n:fields.HTTPRequestNode.headers",
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example={"Content-Type": "application/json", "X-Custom-Header": "value"},
+                expected_type="dict[str, str]",
+                ui_component=UIComponent.CUSTOM_KEY_VALUE_EDITOR,
+                object_schema=[
+                    {"name": "key", "type": "STRING", "description": "헤더 이름"},
+                    {"name": "value", "type": "STRING", "description": "헤더 값"},
+                ],
+                group="advanced",
+            ),
+            # SETTINGS
+            "timeout_seconds": FieldSchema(
+                name="timeout_seconds", type=FieldType.INTEGER, required=False,
+                default=30,
+                description="i18n:fields.HTTPRequestNode.timeout_seconds",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=30,
+                expected_type="int",
+                min_value=1,
+                max_value=300,
+                group="advanced",
+            ),
+            "auth_required": FieldSchema(
+                name="auth_required", type=FieldType.BOOLEAN, required=False,
+                description="i18n:fields.HTTPRequestNode.auth_required",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example=True,
+                expected_type="bool",
+                group="advanced",
+            ),
+
+            # === RESILIENCE: 재시도/실패 처리 (단순화된 UI) ===
+            "resilience": FieldSchema(
+                name="resilience", type=FieldType.OBJECT, required=False,
+                description="i18n:fields.HTTPRequestNode.resilience",
+                category=FieldCategory.SETTINGS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                ui_component=UIComponent.CUSTOM_RESILIENCE_EDITOR,
+                object_schema=[
+                    {
+                        "name": "retry.enabled",
+                        "type": "BOOLEAN",
+                        "default": False,
+                        "description": "자동 재시도 활성화 (서버 오류, 네트워크 문제 시 자동 재시도)",
+                    },
+                    {
+                        "name": "retry.max_retries",
+                        "type": "INTEGER",
+                        "default": 3,
+                        "min_value": 1,
+                        "max_value": 10,
+                        "description": "최대 재시도 횟수",
+                    },
+                    {
+                        "name": "retry.base_delay",
+                        "type": "FLOAT",
+                        "default": 1.0,
+                        "min_value": 0.1,
+                        "max_value": 60.0,
+                        "description": "재시도 대기 시간 (초)",
+                    },
+                    {
+                        "name": "fallback.mode",
+                        "type": "ENUM",
+                        "default": "error",
+                        "enum_values": ["error", "skip", "default_value"],
+                        "description": "모든 재시도 실패 시 동작",
+                        "enum_labels": {
+                            "error": "i18n:enums.fallback_mode.error",
+                            "skip": "i18n:enums.fallback_mode.skip",
+                            "default_value": "i18n:enums.fallback_mode.default_value",
+                        },
+                    },
+                ],
+                group="resilience",
+            ),
+        }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        HTTP 요청 실행
+
+        credential_id가 있으면 GenericNodeExecutor에서 credential data가
+        노드 필드로 주입됩니다. credential type에 따라 헤더/쿼리에 적용:
+
+        - http_bearer: Authorization: Bearer <token>
+        - http_header: <header_name>: <header_value>
+        - http_basic: Authorization: Basic <base64(username:password)>
+        - http_query: ?<param_name>=<param_value>
+
+        재시도 동작:
+        - resilience.retry.enabled=True 설정 시 RetryExecutor가 자동 재시도
+        - 5xx 서버 에러, 네트워크 에러, 타임아웃 → Exception raise → 재시도
+        - 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
+        """
+        if self.auth_required is True and not (
+            getattr(self, "token", None)
+            or (getattr(self, "header_name", None) and getattr(self, "header_value", None))
+            or (getattr(self, "username", None) and getattr(self, "password", None))
+            or (getattr(self, "param_name", None) and getattr(self, "param_value", None))
+        ):
+            raise HTTPCredentialError(
+                "CREDENTIAL_REQUIRED_TO_RUN: register and bind this HTTP node's API credential"
+            )
+
+        import aiohttp
+        import asyncio
+        import json
+        import base64
+
+        # Credential 데이터 → 헤더/쿼리 적용
+        headers = dict(self.headers) if self.headers else {}
+        query_params = dict(self.query_params) if self.query_params else {}
+
+        # credential에서 주입된 필드들 처리 (GenericNodeExecutor가 주입)
+        # http_bearer: token 필드
+        if hasattr(self, 'token') and self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        # http_header: header_name, header_value 필드
+        if hasattr(self, 'header_name') and hasattr(self, 'header_value'):
+            if self.header_name and self.header_value:
+                headers[self.header_name] = self.header_value
+
+        # http_basic: username, password 필드
+        if hasattr(self, 'username') and hasattr(self, 'password'):
+            if self.username and self.password:
+                credentials = f"{self.username}:{self.password}"
+                encoded = base64.b64encode(credentials.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+
+        # http_query: param_name, param_value 필드
+        if hasattr(self, 'param_name') and hasattr(self, 'param_value'):
+            if self.param_name and self.param_value:
+                query_params[self.param_name] = self.param_value
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                request_kwargs: Dict[str, Any] = {
+                    "method": self.method,
+                    "url": self.url,
+                    "headers": headers if headers else None,
+                    "params": query_params if query_params else None,
+                }
+
+                # Body 처리 (dict면 JSON 직렬화, 아니면 그대로)
+                if self.body and self.method in ["POST", "PUT", "PATCH"]:
+                    if isinstance(self.body, dict):
+                        request_kwargs["data"] = json.dumps(self.body)
+                        # Content-Type 자동 설정
+                        if "Content-Type" not in headers:
+                            request_kwargs["headers"] = request_kwargs.get("headers") or {}
+                            request_kwargs["headers"]["Content-Type"] = "application/json"
+                    else:
+                        request_kwargs["data"] = self.body
+
+                # 호스트별 동시성 상한(기본 1) — 같은 호스트로 요청이 병렬로 몰리는 것을
+                # 프로세스 전역에서 막는다(공유 IP 보호). 반복은 어차피 순차라 무영향.
+                async with _host_semaphore(self.url):
+                    async with session.request(**request_kwargs) as resp:
+                        status_code = resp.status
+                        # Retry-After 는 응답 컨텍스트를 벗어나기 전에 읽어둔다.
+                        retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+
+                        # 응답 파싱 (JSON 시도 → 실패하면 text)
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            data = await resp.text()
+
+                # 5xx 서버 에러 → Exception raise (RetryExecutor가 재시도)
+                if status_code >= 500:
+                    error_msg = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)[:200]
+                    raise HTTPServerError(f"HTTP {status_code}: {error_msg}")
+
+                # 429 Rate Limit → Exception raise (RetryExecutor가 지수 백오프 재시도).
+                # Retry-After 헤더가 있으면 그 대기 시간을 예외에 실어 존중하게 한다.
+                if status_code == 429:
+                    raise HTTPRateLimitError(
+                        "HTTP 429: Rate limit exceeded", retry_after=retry_after
+                    )
+
+                # 4xx 클라이언트 에러 → 재시도 불가, 결과 반환
+                if status_code >= 400:
+                    return {
+                        "response": data,
+                        "status_code": status_code,
+                        "success": False,
+                        "error": f"HTTP {status_code}",
+                    }
+
+                # 성공 (2xx, 3xx)
+                return {
+                    "response": data,
+                    "status_code": status_code,
+                    "success": True,
+                    "error": None,
+                }
+
+        except aiohttp.ClientError as e:
+            # 네트워크 에러 → RetryExecutor가 재시도
+            raise HTTPNetworkError(f"Network error: {e}")
+        except asyncio.TimeoutError as e:
+            # 타임아웃 → RetryExecutor가 재시도
+            raise HTTPTimeoutError(f"Request timeout after {self.timeout_seconds}s")
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """
+        HTTP 에러가 재시도 가능한지 판단.
+
+        Args:
+            error: 발생한 예외
+
+        Returns:
+            RetryableError 유형, 또는 None (재시도 불가)
+        """
+        error_str = str(error).lower()
+
+        # 타임아웃
+        if "timeout" in error_str or "timed out" in error_str:
+            return RetryableError.TIMEOUT
+
+        # Rate limit (429)
+        if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+            return RetryableError.RATE_LIMIT
+
+        # 네트워크 에러
+        if "connection" in error_str or "network" in error_str or "unreachable" in error_str:
+            return RetryableError.NETWORK_ERROR
+
+        # 서버 에러 (5xx)
+        if any(code in error_str for code in ["500", "502", "503", "504"]):
+            return RetryableError.SERVER_ERROR
+
+        return None
+
+
+class FieldMappingNode(BaseNode):
+    """
+    필드명 매핑 노드
+    
+    데이터의 필드명을 표준 형식으로 변환합니다.
+    외부 API, 다양한 데이터 소스의 필드명을 ProgramGarden 표준 형식으로 통일합니다.
+    
+    주요 용도:
+    - 외부 API 응답의 필드명을 표준 OHLCV 형식으로 변환
+    - HTTPRequestNode → ConditionNode 사이에서 데이터 정규화
+    - AI 에이전트가 description을 참고하여 자동 매핑 제안
+    
+    지원 데이터 타입:
+    - list[dict]: 각 dict의 키 이름 변환
+    - dict: dict의 키 이름 변환
+    - dict[str, dict]: 중첩 dict의 키 이름 변환
+    
+    Example DSL:
+        {
+            "id": "mapper",
+            "type": "FieldMappingNode",
+            "data": "{{ nodes.api.response.data }}",
+            "mappings": [
+                {"from": "lastPrice", "to": "close", "description": "마지막 체결가 → 종가"},
+                {"from": "vol", "to": "volume", "description": "당일 누적 거래량"}
+            ],
+            "preserve_unmapped": true
+        }
+    """
+
+    type: Literal["FieldMappingNode"] = "FieldMappingNode"
+    category: NodeCategory = NodeCategory.DATA
+    description: str = "i18n:nodes.FieldMappingNode.description"
+    _img_url: ClassVar[str] = ""
+
+    # 입력 데이터 (바인딩 지원)
+    data: Optional[Any] = Field(
+        default=None,
+        description="Input data to transform (list[dict], dict, or dict[str, dict])",
+    )
+
+    # 필드명 매핑 테이블
+    mappings: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Field name mapping rules [{from, to, description}, ...]",
+        json_schema_extra={
+            "ui_component": "field_mapping_editor",
+            "help_text": "i18n:fields.FieldMappingNode.mappings",
+        },
+    )
+
+    # 매핑되지 않은 필드 유지 여부
+    preserve_unmapped: bool = Field(
+        default=True,
+        description="Whether to keep unmapped fields in output",
+    )
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Rename fields from an external API response to match ProgramGarden standard field names (e.g. 'lastPrice' → 'close')",
+            "Normalize data between nodes with incompatible field naming conventions",
+            "Prepare data for ConditionNode or BacktestEngineNode which expect specific field names (date, open, high, low, close, volume)",
+            "Bridge HTTPRequestNode responses to downstream analytics nodes without writing custom code",
+        ],
+        "when_not_to_use": [
+            "For computing new derived fields (e.g. pct_change, ratio) — use expression bindings or ConditionNode plugin logic instead",
+            "When field names already match the expected format — unnecessary FieldMappingNode adds latency with no benefit",
+            "For filtering rows or selecting a subset of the data — use ConditionNode or SQLiteNode query instead",
+        ],
+        "typical_scenarios": [
+            "HTTPRequestNode (GET external price API) → FieldMappingNode (rename fields) → ConditionNode (RSI on standardized data)",
+            "OverseasStockHistoricalDataNode → FieldMappingNode (add exchange alias field) → BacktestEngineNode",
+            "HTTPRequestNode → FieldMappingNode → TableDisplayNode (clean column names for display)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Handles three data shapes: list[dict] (renames each row), plain dict (renames top-level keys), and dict[str, dict] (renames nested dicts)",
+        "preserve_unmapped=True (default) keeps fields that have no mapping rule, preventing data loss",
+        "Outputs original_fields and mapped_fields lists so downstream logic can verify the transformation",
+        "Mappings are configured as [{from, to}] pairs in the UI's visual mapping editor — no code required",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Chaining multiple FieldMappingNodes in sequence to perform simple renames one-by-one",
+            "reason": "A single FieldMappingNode accepts an unlimited mapping list. Chaining nodes adds overhead.",
+            "alternative": "Put all rename rules in one FieldMappingNode's mappings list.",
+        },
+        {
+            "pattern": "Using FieldMappingNode to compute derived values (e.g. pct_change = (close - open) / open)",
+            "reason": "FieldMappingNode only renames keys — it cannot compute new values. Expressions in the 'to' field are not evaluated.",
+            "alternative": "Use expression bindings like {{ finance.pct_change(row.open, row.close) }} in a ConditionNode or downstream node field.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Rename external API fields to OHLCV standard",
+            "description": "An external price API returns 'lastPrice', 'dailyVolume', 'tradeDate'. FieldMappingNode renames them so ConditionNode plugins receive the expected 'close', 'volume', 'date' keys.",
+            "workflow_snippet": {
+                "id": "fieldmap_rename_ohlcv",
+                "name": "Field Rename OHLCV",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {
+                        "id": "api",
+                        "type": "HTTPRequestNode",
+                        "method": "GET",
+                        "url": "https://api.example.com/v1/price?symbol=AAPL",
+                        "timeout_seconds": 15,
+                    },
+                    {
+                        "id": "mapper",
+                        "type": "FieldMappingNode",
+                        "data": "{{ nodes.api.response }}",
+                        "mappings": [
+                            {"from": "lastPrice", "to": "close"},
+                            {"from": "dailyVolume", "to": "volume"},
+                            {"from": "tradeDate", "to": "date"},
+                        ],
+                        "preserve_unmapped": True,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.mapper.mapped_data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "api"},
+                    {"from": "api", "to": "mapper"},
+                    {"from": "mapper", "to": "display"},
+                ],
+                "credentials": [],
+            },
+            "expected_output": "mapped_data with keys 'close', 'volume', 'date' instead of the original external names.",
+        },
+        {
+            "title": "Normalize historical data before BacktestEngineNode",
+            "description": "Historical data from a third-party source uses 'adjClose' instead of 'close'. FieldMappingNode fixes this before BacktestEngineNode processes it.",
+            "workflow_snippet": {
+                "id": "fieldmap_backtest_prep",
+                "name": "Field Map Backtest Prep",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "historical", "type": "OverseasStockHistoricalDataNode", "symbols": [{"symbol": "SPY", "exchange": "NYSE"}], "period": "1d", "count": 252},
+                    {
+                        "id": "mapper",
+                        "type": "FieldMappingNode",
+                        "data": "{{ nodes.historical.values }}",
+                        "mappings": [
+                            {"from": "adjClose", "to": "close"},
+                        ],
+                        "preserve_unmapped": True,
+                    },
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.mapper.mapped_data }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "mapper"},
+                    {"from": "mapper", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "mapped_data list where each row has 'close' key (renamed from 'adjClose') plus all original OHLCV fields preserved.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": "The 'data' field must be an expression binding (expression_only mode) pointing to a list[dict], dict, or dict[str, dict]. Configure 'mappings' as a list of {from, to} pairs. Set preserve_unmapped=False only when you want to drop all non-mapped fields.",
+        "output_consumption": "Consume 'mapped_data' — its shape mirrors the input shape (list stays list, dict stays dict). Use 'original_fields' and 'mapped_fields' outputs for debugging or AI tool schema validation.",
+        "common_combinations": [
+            "HTTPRequestNode → FieldMappingNode → ConditionNode",
+            "OverseasStockHistoricalDataNode → FieldMappingNode → BacktestEngineNode",
+            "FieldMappingNode → TableDisplayNode (clean column display)",
+        ],
+        "pitfalls": [
+            "If 'from' key does not exist in the data, that mapping rule is silently skipped — verify field names against the actual API response.",
+            "FieldMappingNode does not recurse into nested objects within a row. Only top-level keys are renamed.",
+            "Using preserve_unmapped=False will drop ALL unmapped fields including symbol and exchange — only use when you explicitly want projection.",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="data",
+            type="any",
+            description="i18n:ports.data",
+        ),
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="i18n:ports.trigger",
+            required=False,
+        ),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="mapped_data",
+            type="any",
+            description="i18n:ports.mapped_data",
+        ),
+        OutputPort(
+            name="data",
+            type="any",
+            description="Alias of mapped_data — convenient when chaining into nodes that expect 'data'",
+        ),
+        OutputPort(
+            name="original_fields",
+            type="array",
+            description="i18n:ports.original_fields",
+        ),
+        OutputPort(
+            name="mapped_fields",
+            type="array",
+            description="i18n:ports.mapped_fields",
+        ),
+    ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            # === PARAMETERS: 입력 데이터 ===
+            "data": FieldSchema(
+                name="data",
+                type=FieldType.OBJECT,  # ANY 대신 OBJECT 사용 (list/dict/nested dict 모두 수용)
+                description="i18n:fields.FieldMappingNode.data",
+                required=True,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                category=FieldCategory.PARAMETERS,
+                example=[{"lastPrice": 150, "vol": 1000000}],
+                example_binding="{{ nodes.api.response.data }}",
+                bindable_sources=["HTTPRequestNode.response"],
+                expected_type="list[dict] | dict | dict[str, dict]",
+            ),
+            # === PARAMETERS: 매핑 테이블 (data의 하위 필드) ===
+            "mappings": FieldSchema(
+                name="mappings",
+                type=FieldType.ARRAY,
+                array_item_type=FieldType.OBJECT,
+                description="i18n:fields.FieldMappingNode.mappings",
+                required=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.PARAMETERS,
+                ui_component=UIComponent.CUSTOM_FIELD_MAPPING_EDITOR,
+                child_of="data",  # data 필드 아래 들여쓰기되어 표시
+                default=[],
+                example=[
+                    {"from": "lastPrice", "to": "close"},
+                    {"from": "vol", "to": "volume"},
+                    {"from": "tradeDate", "to": "date"},
+                ],
+                expected_type="list[dict]",
+                object_schema=[
+                    {
+                        "name": "from",
+                        "type": "STRING",
+                        "required": True,
+                        "description": "i18n:fields.FieldMappingNode.mappings.from",
+                        "placeholder": "원본 필드명 (예: lastPrice)",
+                        "ui_width": "50%",
+                    },
+                    {
+                        "name": "to",
+                        "type": "STRING",
+                        "required": True,
+                        "description": "i18n:fields.FieldMappingNode.mappings.to",
+                        "placeholder": "표준 필드명 (예: close)",
+                        "ui_width": "50%",
+                        "suggestions": ["symbol", "exchange", "date", "open", "high", "low", "close", "volume"],
+                    },
+                ],
+                help_text="(+) 버튼으로 매핑 규칙 추가",
+            ),
+            # === SETTINGS: 부가 설정 ===
+            "preserve_unmapped": FieldSchema(
+                name="preserve_unmapped",
+                type=FieldType.BOOLEAN,
+                description="i18n:fields.FieldMappingNode.preserve_unmapped",
+                default=True,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                category=FieldCategory.SETTINGS,
+                ui_component=UIComponent.CHECKBOX,
+                example=True,
+                expected_type="bool",
+            ),
+        }
+
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        필드명 매핑 실행
+        
+        Returns:
+            {
+                "mapped_data": 변환된 데이터,
+                "original_fields": 원본 필드명 목록,
+                "mapped_fields": 매핑된 필드명 목록
+            }
+        """
+        data = self.data
+        if data is None:
+            return {
+                "mapped_data": None,
+                "original_fields": [],
+                "mapped_fields": [],
+            }
+
+        # 매핑 딕셔너리 생성 (from -> to)
+        mapping_dict = {m["from"]: m["to"] for m in self.mappings if "from" in m and "to" in m}
+        
+        original_fields: set = set()
+        mapped_fields: set = set()
+
+        def transform_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+            """단일 dict 변환"""
+            result = {}
+            for key, value in d.items():
+                original_fields.add(key)
+                if key in mapping_dict:
+                    new_key = mapping_dict[key]
+                    mapped_fields.add(new_key)
+                    result[new_key] = value
+                elif self.preserve_unmapped:
+                    result[key] = value
+            return result
+
+        # 데이터 타입별 처리
+        if isinstance(data, list):
+            # list[dict] 처리
+            mapped_data = [transform_dict(item) if isinstance(item, dict) else item for item in data]
+        elif isinstance(data, dict):
+            # dict 또는 dict[str, dict] 처리
+            first_value = next(iter(data.values()), None) if data else None
+            if isinstance(first_value, dict):
+                # dict[str, dict] (중첩 dict)
+                mapped_data = {key: transform_dict(val) if isinstance(val, dict) else val for key, val in data.items()}
+            else:
+                # 일반 dict
+                mapped_data = transform_dict(data)
+        else:
+            # 변환 불가능한 타입은 그대로 반환
+            mapped_data = data
+
+        return {
+            "mapped_data": mapped_data,
+            "data": mapped_data,  # alias declared in _outputs — downstream nodes that expect 'data'
+            "original_fields": sorted(list(original_fields)),
+            "mapped_fields": sorted(list(mapped_fields)),
+        }

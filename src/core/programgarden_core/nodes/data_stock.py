@@ -1,0 +1,252 @@
+"""
+ProgramGarden Core - Stock Market Data Node
+
+해외주식 시세 조회:
+- OverseasStockMarketDataNode: 해외주식 REST API 시세 조회 (NYSE, NASDAQ, AMEX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 시세)
+"""
+
+from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    PRICE_DATA_FIELDS,
+)
+
+
+class OverseasStockMarketDataNode(BaseNode):
+    """
+    해외주식 REST API 시세 조회 노드 (단일 종목)
+
+    SplitNode와 함께 사용하여 개별 종목의 시세를 조회합니다.
+    거래소: NYSE, NASDAQ, AMEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 시세 데이터)
+    """
+
+    type: Literal["OverseasStockMarketDataNode"] = "OverseasStockMarketDataNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.OverseasStockMarketDataNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
+    )
+    # symbols (복수) — executor 가 실제 소비하는 폴백 입력(config.get("symbols"):
+    # 상류 배열 입력이 없을 때 수동 목록/watchlist 바인딩). _node_guide/_examples 가
+    # 줄곧 가르쳐 온 정본 사용법인데 모델/스키마에 선언이 없어 R5(unknown_node_field)
+    # 가 정상 워크플로우를 오탐했다 — ⑭ count 와 같은 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual list or list binding; upstream array input takes precedence",
+    )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Fetch the latest quote (price, volume, change) for a single US-listed stock (NYSE, NASDAQ, AMEX) via REST API",
+            "Use after a SplitNode to query each symbol's current price in a per-item iteration loop",
+            "Feed live pricing into PositionSizingNode or ConditionNode without needing a WebSocket connection",
+        ],
+        "when_not_to_use": [
+            "For overseas futures price data — use OverseasFuturesMarketDataNode",
+            "For Korean domestic stocks — use KoreaStockMarketDataNode",
+            "When you need tick-level streaming data — use OverseasStockRealMarketDataNode (WebSocket) instead",
+            "When querying historical OHLCV series — use OverseasStockHistoricalDataNode",
+        ],
+        "typical_scenarios": [
+            "WatchlistNode → SplitNode → OverseasStockMarketDataNode → ConditionNode (price-based filter)",
+            "OverseasStockSymbolQueryNode → SplitNode → OverseasStockMarketDataNode → FieldMappingNode",
+            "SplitNode.item → OverseasStockMarketDataNode → PositionSizingNode (price input for sizing)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns a single symbol's snapshot: symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps",
+        "Item-based execution: receives one {exchange, symbol} dict per call and emits one value dict — pair with SplitNode for multi-symbol queries",
+        "is_tool_enabled=True — AI Agent can call this node to look up live prices autonomously",
+        "Broker connection is auto-injected via DAG traversal — no explicit binding needed",
+        "REST-based polling; for continuous streaming use OverseasStockRealMarketDataNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "In replay the one-shot quote records its `values` port as a flat row list at nodes.<id>.output.values; this is not the realtime symbol-keyed ohlcv_data shape",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Passing a list of symbols directly to the symbol field instead of using SplitNode",
+            "reason": "The symbol field expects a single {exchange, symbol} dict. Passing a list will cause a runtime type error.",
+            "alternative": "Place a SplitNode upstream to iterate over the list; each item is then passed one at a time to OverseasStockMarketDataNode.",
+        },
+        {
+            "pattern": "Using {\"AAPL\": {...}} dict-keyed format for the symbol field",
+            "reason": "ProgramGarden requires {symbol, exchange} format for all symbol inputs. Dict-keyed symbols will fail validation.",
+            "alternative": "Use {\"symbol\": \"AAPL\", \"exchange\": \"NASDAQ\"} format.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch current price for a single stock",
+            "description": "Broker connects, then OverseasStockMarketDataNode fetches the latest quote for AAPL passed via SplitNode.",
+            "workflow_snippet": {
+                "id": "overseas_stock_market_data_basic",
+                "name": "Stock Quote Fetch",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}, {"symbol": "MSFT", "exchange": "NASDAQ"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "values port: array of {symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps} for each symbol.",
+        },
+        {
+            "title": "Price lookup feeding PositionSizingNode",
+            "description": "Fetch current price for a watchlist symbol and pass it to PositionSizingNode for risk-adjusted order sizing.",
+            "workflow_snippet": {
+                "id": "overseas_stock_market_data_sizing",
+                "name": "Price to Sizing",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasStockBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "account", "type": "OverseasStockAccountNode"},
+                    {"id": "market", "type": "OverseasStockMarketDataNode", "symbols": [{"symbol": "NVDA", "exchange": "NASDAQ"}]},
+                    {"id": "sizing", "type": "PositionSizingNode", "method": "fixed_percent", "max_percent": 5, "balance": "{{ nodes.account.balance }}", "market_data": "{{ nodes.market.values }}", "symbols": "{{ nodes.market.values }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "account"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "sizing"},
+                    {"from": "account", "to": "sizing"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "market.values (per-symbol price array) fed into PositionSizingNode.market_data to compute risk-adjusted order quantity (orders port).",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbols` field takes an array of {exchange, symbol} dicts (e.g. [{\"symbol\": \"AAPL\", \"exchange\": \"NASDAQ\"}]) "
+            "— or bind a list source `{{ nodes.watchlist.symbols }}` / `{{ nodes.split_symbol.items }}`. Exchange codes: NASDAQ, NYSE, AMEX. "
+            "The node auto-receives the broker connection via DAG traversal from OverseasStockBrokerNode."
+        ),
+        "output_consumption": (
+            "Consume the `values` port ONLY — an array of {symbol, exchange, price, change, change_pct, volume, open, high, low, close, per, eps}. "
+            "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
+            "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
+            "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}` "
+            "(the array carries each symbol's price, resolved internally)."
+        ),
+        "common_combinations": [
+            "WatchlistNode/SymbolQueryNode → OverseasStockMarketDataNode.symbols (multi-symbol price fetch)",
+            "OverseasStockMarketDataNode.values → TableDisplayNode.data (price monitoring display)",
+            "OverseasStockMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
+        ],
+        "pitfalls": [
+            "If the bound symbol source (ConditionNode.passed_symbols / SymbolFilterNode.symbols) is empty for this run the node returns values=[] with no error (normal no-signal). The `symbols 필드가 필수입니다` error is raised only when no symbol source is configured or the binding did not resolve",
+            "The symbol field must be a single dict — not a list. Use SplitNode for multi-symbol scenarios",
+            "REST polling returns a snapshot at call time; for tick-level streaming use OverseasStockRealMarketDataNode",
+            "OverseasStockBrokerNode must be upstream via a main edge for connection auto-injection to work",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array of per-symbol market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
+            fields=PRICE_DATA_FIELDS,
+        ),
+    ]
+
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Remove nonexistent singular quote output; bind the values array."
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasStockMarketDataNode.symbol",
+                description="i18n:fields.OverseasStockMarketDataNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "NASDAQ", "symbol": "AAPL"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasStockMarketDataNode.symbol.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasStockMarketDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasStockMarketDataNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual list or list binding, used when no upstream array input is wired (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "NASDAQ", "symbol": "AAPL"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
+            ),
+        }

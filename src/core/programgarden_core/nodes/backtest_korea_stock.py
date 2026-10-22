@@ -1,0 +1,319 @@
+"""
+ProgramGarden Core - Korea Stock Historical Data Node
+
+국내주식 과거 데이터 조회:
+- KoreaStockHistoricalDataNode: 국내주식 과거 OHLCV 데이터 조회 (KRX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 과거 OHLCV 데이터)
+"""
+
+from typing import Any, Optional, List, Literal, Dict, ClassVar, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    HISTORICAL_DATA_FIELDS,
+    HISTORICAL_VALUE_FIELDS,
+)
+
+
+class KoreaStockHistoricalDataNode(BaseNode):
+    """
+    국내주식 과거 데이터 조회 노드 (단일 종목)
+
+    SplitNode와 함께 사용하여 개별 종목의 과거 OHLCV 데이터를 조회합니다.
+    거래소: KRX (KOSPI, KOSDAQ)
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {symbol})
+    - Output: value (해당 종목의 과거 OHLCV 데이터)
+    """
+
+    type: Literal["KoreaStockHistoricalDataNode"] = "KoreaStockHistoricalDataNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.KoreaStockHistoricalDataNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.KOREA_STOCK
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution) - 국내주식은 exchange 불필요
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with symbol code (6-digit)",
+    )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols"), 단수 symbol/입력 부재 시).
+    # 선언 누락 + executor 미소비로 리터럴 목록 예제가 빈 ohlcv 로 조용히 죽던 이원화 정리.
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{symbol}] — manual literal list; symbol (single) and upstream input take precedence",
+    )
+    start_date: str = Field(
+        default="{{ date.months_ago(3, format='yyyymmdd') }}",
+        description="Start date (YYYY-MM-DD or {{ date.months_ago(N, format='yyyymmdd') }})",
+    )
+    end_date: str = Field(
+        default="{{ date.today(format='yyyymmdd') }}",
+        description="End date (YYYY-MM-DD or {{ date.today(format='yyyymmdd') }})",
+    )
+    interval: str = Field(
+        default="1d",
+        description="Data interval (1d, 1w, 1M)",
+    )
+    adjust: bool = Field(
+        default=True,
+        description="Apply adjusted prices (수정주가 적용)",
+    )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Retrieve daily (or weekly/monthly) OHLCV history for a Korean domestic stock (KOSPI/KOSDAQ) for technical analysis or backtesting",
+            "Feed historical candles into ConditionNode plugins (RSI, MACD, Bollinger, etc.) for domestic stock strategy evaluation",
+            "Use `{{ date.ago(N, format='yyyymmdd') }}` for start_date to maintain a rolling lookback window",
+        ],
+        "when_not_to_use": [
+            "For overseas stock historical data — use OverseasStockHistoricalDataNode",
+            "For overseas futures history — use OverseasFuturesHistoricalDataNode",
+            "When you only need the current quote snapshot — use KoreaStockMarketDataNode",
+        ],
+        "typical_scenarios": [
+            "SplitNode.item → KoreaStockHistoricalDataNode → ConditionNode (RSI on domestic stock history)",
+            "KoreaStockHistoricalDataNode.value → BacktestEngineNode (domestic stock strategy backtest)",
+            "KoreaStockHistoricalDataNode.value → LineChartNode (domestic price history chart)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns time_series of OHLCV candles: [{date, open, high, low, close, volume}, ...] ordered oldest-first",
+        "Supports intervals: 1d, 1w, 1M — intraday intervals (1m/5m) not available for Korean domestic stocks via this node",
+        "adjust=True (default) applies split/dividend-adjusted (수정주가) prices for accurate long-term analysis",
+        "start_date / end_date accept YYYYMMDD strings or `{{ date.ago(N, format='yyyymmdd') }}` expressions",
+        "is_tool_enabled=True — AI Agent can fetch domestic historical data for fundamental/technical analysis",
+        "Symbol format: 6-digit KRX code (e.g., '005930') without exchange field",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "The value port is one row object whose time_series lists bars of exactly {date, open, high, low, close, volume}; the values port is the array of such rows",
+        "This ohlcv_data is not the realtime shape: a *RealMarketDataNode records ohlcv_data as a symbol-keyed object of bar lists, although both are typed ohlcv_data",
+        "A previous close is the close of the corresponding bar in time_series; a change cannot be computed from a single bar",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Binding `{{ nodes.historical.value }}` directly to ConditionNode data instead of `.time_series`",
+            "reason": "The value port is a dict with a `time_series` key — plugins expect a plain list of candle dicts.",
+            "alternative": "Bind `{{ nodes.historical.value.time_series }}` to the ConditionNode data field.",
+        },
+        {
+            "pattern": "Using interval='1m' or '5m' for Korean domestic stocks",
+            "reason": "Intraday intervals below 1d are not supported for Korean domestic stocks by this node.",
+            "alternative": "Use interval='1d' for daily bars. For real-time intraday data, use KoreaStockRealMarketDataNode.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "60-day daily history for RSI on Samsung Electronics",
+            "description": "Fetch 60 days of 005930 daily OHLCV data and compute RSI signal.",
+            "workflow_snippet": {
+                "id": "korea_stock_historical_rsi",
+                "name": "KRX Historical RSI",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '005930'}]},
+                    {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(60, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1d", "adjust": True},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "RSI", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 14, "threshold": 30, "direction": "below"}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                {'from': 'condition', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_korea_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "value.time_series: [{date, open, high, low, close, volume}, ...]. RSI ConditionNode emits oversold signal.",
+        },
+        {
+            "title": "Weekly Bollinger Bands on KOSDAQ stock",
+            "description": "Fetch 1-year weekly bars for a KOSDAQ stock and apply Bollinger Bands strategy.",
+            "workflow_snippet": {
+                "id": "korea_stock_historical_bollinger_weekly",
+                "name": "KRX Weekly Bollinger",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "KoreaStockBrokerNode", "credential_id": "broker_cred"},
+                    {'id': 'split', 'type': 'SplitNode', 'array': [{'symbol': '247540'}]},
+                    {"id": "historical", "type": "KoreaStockHistoricalDataNode", "symbol": "{{ nodes.split.item }}", "start_date": "{{ date.ago(365, format='yyyymmdd') }}", "end_date": "{{ date.today(format='yyyymmdd') }}", "interval": "1w", "adjust": True},
+                    {"id": "condition", "type": "ConditionNode", "plugin": "BollingerBands", "items": {"from": "{{ item.time_series }}", "extract": {"symbol": "{{ item.symbol }}", "exchange": "{{ item.exchange }}", "date": "{{ row.date }}", "close": "{{ row.close }}"}}, "fields": {"period": 20, "std": 2.0, "direction": "below_lower"}},
+                {'id': 'split_results', 'type': 'AggregateNode', 'mode': 'collect'}],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "split"},
+                    {"from": "split", "to": "historical"},
+                    {"from": "broker", "to": "historical"},
+                    {"from": "historical", "to": "condition"},
+                {'from': 'condition', 'to': 'split_results'}],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_korea_stock",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "Weekly OHLCV in time_series; Bollinger ConditionNode emits upper/lower band breach signal.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbol` field takes a single dict with only `symbol` key (6-digit KRX code, e.g., {\"symbol\": \"005930\"}). "
+            "No exchange field needed. Supported intervals: 1d, 1w, 1M. "
+            "Use adjust=True (default) for accurate long-term analysis with split/dividend-adjusted prices."
+        ),
+        "output_consumption": (
+            "The `value` port emits {symbol, time_series: [{date, open, high, low, close, volume}, ...]}. "
+            "Bind `{{ nodes.historical.value.time_series }}` to ConditionNode plugins."
+        ),
+        "common_combinations": [
+            "SplitNode.item → KoreaStockHistoricalDataNode → ConditionNode (technical signal on domestic history)",
+            "KoreaStockHistoricalDataNode.value → BacktestEngineNode (domestic stock backtest)",
+            "KoreaStockHistoricalDataNode.value → LineChartNode (domestic price history chart)",
+        ],
+        "pitfalls": [
+            "`symbol: {{ item }}` / `{{ nodes.<split>.item }}` resolves only inside a per-symbol loop (auto-iterate over an upstream array, or a SplitNode branch). If the upstream array is empty for this run the node logs `No symbols to fetch` and returns an empty series — normal no-signal, not a defect. A `No symbols provided` WARNING means the symbol source is missing or the binding did not resolve",
+            "Access time_series via `{{ nodes.historical.value.time_series }}` — the value port wraps the list in a dict",
+            "Intraday intervals (1m/5m/15m) not supported for Korean domestic stocks — use 1d minimum",
+            "adjust=True is the default; set False only if you specifically need unadjusted prices",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(name="value", type="ohlcv_data", description="i18n:ports.ohlcv_value", fields=HISTORICAL_VALUE_FIELDS),
+    ]
+
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, UIComponent, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.KoreaStockHistoricalDataNode.symbol",
+                description="i18n:fields.KoreaStockHistoricalDataNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"symbol": "005930"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{symbol: str}",
+                help_text="i18n:fields.KoreaStockHistoricalDataNode.symbol.help_text",
+                object_schema=[
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.KoreaStockHistoricalDataNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{symbol}] — manual literal list, used only when symbol (single) and upstream input are absent (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"symbol": "005930"}],
+                example_binding="{{ nodes.watchlist.symbols }}",
+                bindable_sources=["WatchlistNode.symbols"],
+                expected_type="[{symbol: str}]",
+            ),
+            "start_date": FieldSchema(
+                name="start_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.KoreaStockHistoricalDataNode.start_date",
+                description="i18n:fields.KoreaStockHistoricalDataNode.start_date",
+                default="{{ date.months_ago(3, format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-01-01",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.KoreaStockHistoricalDataNode.start_date.help_text",
+            ),
+            "end_date": FieldSchema(
+                name="end_date",
+                type=FieldType.STRING,
+                display_name="i18n:fieldNames.KoreaStockHistoricalDataNode.end_date",
+                description="i18n:fields.KoreaStockHistoricalDataNode.end_date",
+                default="{{ date.today(format='yyyymmdd') }}",
+                required=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example="2024-12-31",
+                expected_type="str",
+                ui_component=UIComponent.CUSTOM_DATE_PICKER,
+                help_text="i18n:fields.KoreaStockHistoricalDataNode.end_date.help_text",
+            ),
+            "interval": FieldSchema(
+                name="interval",
+                type=FieldType.ENUM,
+                display_name="i18n:fieldNames.KoreaStockHistoricalDataNode.interval",
+                description="i18n:fields.KoreaStockHistoricalDataNode.interval",
+                default="1d",
+                required=True,
+                enum_values=["1d", "1w", "1M"],
+                enum_labels={
+                    "1d": "i18n:enums.interval.1d",
+                    "1w": "i18n:enums.interval.1w",
+                    "1M": "i18n:enums.interval.1M",
+                },
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.FIXED_ONLY,
+                example="1d",
+                expected_type="str",
+            ),
+            "adjust": FieldSchema(
+                name="adjust",
+                type=FieldType.BOOLEAN,
+                display_name="i18n:fieldNames.KoreaStockHistoricalDataNode.adjust",
+                description="i18n:fields.KoreaStockHistoricalDataNode.adjust.short",
+                help_text="i18n:fields.KoreaStockHistoricalDataNode.adjust.detail",
+                default=True,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                ui_component=UIComponent.CHECKBOX,
+            ),
+        }

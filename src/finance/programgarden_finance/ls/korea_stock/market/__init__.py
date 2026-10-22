@@ -1,0 +1,1121 @@
+
+from typing import List, Optional
+from programgarden_finance.ls.tr_base import set_tr_header_options
+from programgarden_finance.ls.models import SetupOptions
+from programgarden_finance.ls.token_manager import TokenManager
+from . import t9945
+from .t9945 import TrT9945
+from .t9945.blocks import T9945InBlock, T9945Request, T9945RequestHeader
+from . import t8450
+from .t8450 import TrT8450
+from .t8450.blocks import T8450InBlock, T8450Request, T8450RequestHeader
+from . import t1101
+from .t1101 import TrT1101
+from .t1101.blocks import T1101InBlock, T1101Request, T1101RequestHeader
+from . import t1102
+from .t1102 import TrT1102
+from .t1102.blocks import T1102InBlock, T1102Request, T1102RequestHeader
+from . import t1104
+from .t1104 import TrT1104
+from .t1104.blocks import T1104InBlock, T1104InBlock1, T1104Request, T1104RequestHeader
+from . import t1105
+from .t1105 import TrT1105
+from .t1105.blocks import T1105InBlock, T1105Request, T1105RequestHeader
+from . import t1301
+from .t1301 import TrT1301
+from .t1301.blocks import T1301InBlock, T1301Request, T1301RequestHeader
+from . import t1109
+from .t1109 import TrT1109
+from .t1109.blocks import T1109InBlock, T1109Request, T1109RequestHeader
+from . import t1302
+from .t1302 import TrT1302
+from .t1302.blocks import T1302InBlock, T1302Request, T1302RequestHeader
+from . import t1305
+from .t1305 import TrT1305
+from .t1305.blocks import T1305InBlock, T1305Request, T1305RequestHeader
+from . import t1308
+from .t1308 import TrT1308
+from .t1308.blocks import T1308InBlock, T1308Request, T1308RequestHeader
+from . import t1310
+from .t1310 import TrT1310
+from .t1310.blocks import T1310InBlock, T1310Request, T1310RequestHeader
+from . import t1486
+from .t1486 import TrT1486
+from .t1486.blocks import T1486InBlock, T1486Request, T1486RequestHeader
+from . import t1488
+from .t1488 import TrT1488
+from .t1488.blocks import T1488InBlock, T1488Request, T1488RequestHeader
+from . import t1471
+from .t1471 import TrT1471
+from .t1471.blocks import T1471InBlock, T1471Request, T1471RequestHeader
+from . import t1475
+from .t1475 import TrT1475
+from .t1475.blocks import T1475InBlock, T1475Request, T1475RequestHeader
+from . import t1404
+from .t1404 import TrT1404
+from .t1404.blocks import T1404InBlock, T1404Request, T1404RequestHeader
+from . import t1405
+from .t1405 import TrT1405
+from .t1405.blocks import T1405InBlock, T1405Request, T1405RequestHeader
+from . import t1422
+from .t1422 import TrT1422
+from .t1422.blocks import T1422InBlock, T1422Request, T1422RequestHeader
+from . import t1442
+from .t1442 import TrT1442
+from .t1442.blocks import T1442InBlock, T1442Request, T1442RequestHeader
+from . import t1449
+from .t1449 import TrT1449
+from .t1449.blocks import T1449InBlock, T1449Request, T1449RequestHeader
+from . import t1427
+from .t1427 import TrT1427
+from .t1427.blocks import T1427InBlock, T1427Request, T1427RequestHeader
+from . import t1410
+from .t1410 import TrT1410
+from .t1410.blocks import T1410InBlock, T1410Request, T1410RequestHeader
+
+from . import t8407
+from .t8407 import TrT8407
+from .t8407.blocks import T8407InBlock, T8407Request, T8407RequestHeader
+from . import t8454
+from .t8454 import TrT8454
+from .t8454.blocks import T8454InBlock, T8454Request, T8454RequestHeader
+
+from programgarden_core.korea_alias import require_korean_alias
+
+
+class Market:
+    """
+    국내 주식 시세를 조회하는 Market 클래스입니다.
+
+    API 엔드포인트: /stock/market-data
+    """
+
+    def __init__(self, token_manager: TokenManager):
+        if not token_manager:
+            raise ValueError("token_manager is required")
+        self.token_manager = token_manager
+
+    @require_korean_alias
+    def t9945(
+        self,
+        body: T9945InBlock,
+        header: Optional[T9945RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT9945:
+        """
+        LS openAPI의 t9945 주식마스터조회API용을 조회합니다.
+
+        Args:
+            body (T9945InBlock): 조회를 위한 입력 데이터입니다.
+            header (Optional[T9945RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT9945: 조회를 위한 TrT9945 인스턴스
+        """
+
+        request_data = T9945Request(
+            body={
+                "t9945InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT9945(request_data)
+
+    주식마스터조회 = t9945
+    주식마스터조회.__doc__ = "주식마스터를 조회합니다."
+
+    @require_korean_alias
+    def t8450(
+        self,
+        body: T8450InBlock,
+        header: Optional[T8450RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8450:
+        """
+        LS openAPI의 t8450 주식현재가호가조회2 API용을 조회합니다.
+
+        Args:
+            body (T8450InBlock): 조회를 위한 입력 데이터입니다.
+            header (Optional[T8450RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT8450: 조회를 위한 TrT8450 인스턴스
+        """
+
+        request_data = T8450Request(
+            body={
+                "t8450InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8450(request_data)
+
+    주식현재가호가조회 = t8450
+    주식현재가호가조회.__doc__ = "주식현재가호가를 조회합니다."
+
+    @require_korean_alias
+    def t1101(
+        self,
+        body: T1101InBlock,
+        header: Optional[T1101RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1101:
+        """
+        [호가 전용] 매도/매수 10단계 호가, 호가잔량, 직전대비, 예상체결가를 조회합니다.
+
+        시세/펀더멘탈/증권사동향이 필요하면 t1102를 사용하세요.
+
+        Args:
+            body (T1101InBlock): shcode(종목코드 6자리) 입력
+            header (Optional[T1101RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1101: 호가 조회 인스턴스 (.req() 호출로 실행)
+        """
+
+        request_data = T1101Request(
+            body={
+                "t1101InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1101(request_data)
+
+    주식현재가호가 = t1101
+    주식현재가호가.__doc__ = "[호가 전용] 매도/매수 10단계 호가, 호가잔량, 직전대비, 예상체결가를 조회합니다."
+
+    @require_korean_alias
+    def t1102(
+        self,
+        body: T1102InBlock,
+        header: Optional[T1102RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1102:
+        """
+        [시세/종합정보] 현재가, 등락률, 거래량, 시고저가, PER/PBR, 시가총액,
+        증권사별 매매동향(Top5), 외국계 매매동향, 재무실적을 조회합니다.
+
+        호가(매도/매수 10단계)가 필요하면 t1101을 사용하세요.
+
+        Args:
+            body (T1102InBlock): shcode(종목코드 6자리), exchgubun(거래소구분) 입력
+            header (Optional[T1102RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1102: 시세 조회 인스턴스 (.req() 호출로 실행)
+        """
+
+        request_data = T1102Request(
+            body={
+                "t1102InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1102(request_data)
+
+    주식현재가시세 = t1102
+    주식현재가시세.__doc__ = "[시세/종합정보] 현재가, 등락률, PER/PBR, 시가총액, 증권사/외국계 매매동향, 재무실적을 조회합니다."
+
+    @require_korean_alias
+    def t1104(
+        self,
+        t1104InBlock_body: T1104InBlock,
+        t1104InBlock1_body: Optional[List[T1104InBlock1]] = None,
+        header: Optional[T1104RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1104:
+        """
+        LS openAPI의 t1104 주식현재가시세메모를 조회합니다.
+
+        종목코드 + 거래소구분 + 조회 디렉티브 리스트(t1104InBlock1)로
+        시세/최고저가/Pivot/이동평균선 메모를 항목별로 조회합니다.
+
+        Args:
+            t1104InBlock_body (T1104InBlock): code(종목코드 6자리),
+                nrec(t1104InBlock1 개수), exchgubun(거래소 K/N/U) 입력
+            t1104InBlock1_body (Optional[List[T1104InBlock1]]): 조회 디렉티브
+                리스트. 각 항목은 indx(occurs index),
+                gubn(1:시세/2:최고저가/3:Pivot/4:이동평균선),
+                dat1(1:시가/2:고가/3:저가/4:가중평균가),
+                dat2(1:당일/2:전일) 입력
+            header (Optional[T1104RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1104: 시세메모 조회 인스턴스 (.req() 단건)
+        """
+
+        request_data = T1104Request(
+            body={
+                "t1104InBlock": t1104InBlock_body,
+                "t1104InBlock1": t1104InBlock1_body,
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1104(request_data)
+
+    주식현재가시세메모 = t1104
+    주식현재가시세메모.__doc__ = "주식 현재가 시세메모(시세/최고저가/Pivot/이동평균선)를 항목별로 조회합니다."
+
+    @require_korean_alias
+    def t1105(
+        self,
+        body: T1105InBlock,
+        header: Optional[T1105RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1105:
+        """
+        주식 피봇/디마크 레벨을 조회합니다.
+
+        종목코드, 거래소구분 조건으로
+        피봇(pbot), 1차/2차 저항(offer1/2), 1차/2차 지지(supp1/2),
+        기준가격(stdprc), Demark 저항(offerd), Demark 지지(suppd)를 반환합니다.
+        연속조회 cursor 가 없는 단발성 TR 입니다.
+
+        Args:
+            body (T1105InBlock): shcode(종목코드 6자리), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1105RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1105: 피봇/디마크 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1105Request(
+            body={
+                "t1105InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1105(request_data)
+
+    주식피봇디마크조회 = t1105
+    주식피봇디마크조회.__doc__ = "주식 피봇/디마크 레벨(피봇, 1/2차 저항/지지, 기준가격, Demark 저항/지지)을 조회합니다."
+
+    @require_korean_alias
+    def t1301(
+        self,
+        body: T1301InBlock,
+        header: Optional[T1301RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1301:
+        """
+        주식 시간대별 체결 내역을 조회합니다.
+
+        종목코드, 시작/종료시간 조건으로
+        체결시간, 현재가, 체결량, 매도/매수 체결수량을 반환합니다.
+        cts_time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1301InBlock): shcode(종목코드), starttime, endtime, cts_time(연속조회키) 입력
+            header (Optional[T1301RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1301: 시간대별체결 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1301Request(
+            body={
+                "t1301InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1301(request_data)
+
+    주식시간대별체결조회 = t1301
+    주식시간대별체결조회.__doc__ = "주식 시간대별 체결 내역(체결시간, 현재가, 체결량, 매도/매수 체결수량)을 조회합니다."
+
+    @require_korean_alias
+    def t1109(
+        self,
+        body: T1109InBlock,
+        header: Optional[T1109RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1109:
+        """
+        주식 시간외 체결 내역(시간외 단일가/시간외 종가)을 조회합니다.
+
+        종목코드 조건으로 시간외 체결시간, 현재가, 전일대비, 등락율, 체결량,
+        체결강도, 누적거래량을 반환합니다.
+        ``dan_chetime`` + ``idx`` 페어 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1109InBlock): shcode(종목코드), dan_chetime(체결cts), idx(연속조회 인덱스) 입력
+            header (Optional[T1109RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1109: 시간외체결량 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1109Request(
+            body={
+                "t1109InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1109(request_data)
+
+    시간외체결량 = t1109
+    시간외체결량.__doc__ = "주식 시간외 체결 내역(시간외 단일가/시간외 종가)을 조회합니다."
+
+    @require_korean_alias
+    def t1302(
+        self,
+        body: T1302InBlock,
+        header: Optional[T1302RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1302:
+        """
+        주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다.
+
+        종목코드, 봉 구분, 거래소 조건으로
+        체결시간, 시가/고가/저가/종가, 거래량, 매수/매도 체결수량 + 건수,
+        시간별 매수/매도 체결량, 잔량을 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1302InBlock): shcode(종목코드), gubun(봉 구분 0~6),
+                time(연속조회키), cnt(건수 1~900), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1302RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1302: 분별주가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1302Request(
+            body={
+                "t1302InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1302(request_data)
+
+    주식분별주가조회 = t1302
+    주식분별주가조회.__doc__ = "주식 분별 주가(30초/1/3/5/10/30/60분 봉)를 조회합니다."
+
+    @require_korean_alias
+    def t1305(
+        self,
+        body: T1305InBlock,
+        header: Optional[T1305RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1305:
+        """
+        주식 기간별 주가(일/주/월 봉)를 조회합니다.
+
+        종목코드, 봉 구분(일/주/월), 거래소 조건으로
+        시가/고가/저가/종가, 거래량, 외인/기관/개인 순매수, 체결강도,
+        소진율, 회전율, 시가/고가/저가 대비 등락률을 반환합니다.
+        ``date`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1305InBlock): shcode(종목코드), dwmcode(1=일/2=주/3=월),
+                date(연속조회키), idx(미사용, 0), cnt(건수 1 이상),
+                exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1305RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1305: 기간별주가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1305Request(
+            body={
+                "t1305InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1305(request_data)
+
+    기간별주가 = t1305
+    기간별주가.__doc__ = "주식 기간별 주가(일/주/월 봉)를 조회합니다."
+
+    @require_korean_alias
+    def t1308(
+        self,
+        body: T1308InBlock,
+        header: Optional[T1308RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1308:
+        """
+        주식 시간대별 봉 데이터(분 단위 OHLC + 체결 통계 + 체결강도)를 조회합니다.
+
+        종목코드, 시작/종료시간(HHMM), 분간격, 거래소 조건으로
+        체결시간, 현재가, 전일대비/등락률, 체결강도(거래량/건수), 거래량,
+        매도/매수 체결수량+건수, 시고저를 반환합니다.
+        연속조회 cursor가 없는 단발성 TR입니다.
+
+        Args:
+            body (T1308InBlock): shcode(종목코드 6자리), starttime(HHMM),
+                endtime(HHMM), bun_term(분간격 2자), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1308RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1308: 시간대별체결 챠트 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1308Request(
+            body={
+                "t1308InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1308(request_data)
+
+    주식시간대별체결조회챠트 = t1308
+    주식시간대별체결조회챠트.__doc__ = "주식 시간대별 봉 데이터(분 단위 OHLC + 체결 통계 + 체결강도)를 조회합니다."
+
+    @require_korean_alias
+    def t1310(
+        self,
+        body: T1310InBlock,
+        header: Optional[T1310RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1310:
+        """
+        주식 당일/전일 분틱(분 또는 틱 단위) 시세를 조회합니다.
+
+        종목코드, 당일전일구분(0/1), 분틱구분(0/1), 거래소 조건으로
+        체결시간, 현재가, 전일대비, 등락률, 체결강도, 거래량,
+        매수/매도 누적 체결수량+건수, 순체결량+건수를 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1310InBlock): daygb(0=당일/1=전일), timegb(0=분/1=틱),
+                shcode(종목코드 6자리), endtime(HHMM 종료시간),
+                cts_time(연속조회키), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1310RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1310: 당일전일분틱 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1310Request(
+            body={
+                "t1310InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1310(request_data)
+
+    주식당일전일분틱조회 = t1310
+    주식당일전일분틱조회.__doc__ = "주식 당일/전일 분틱(분 또는 틱 단위) 시세를 조회합니다."
+
+    @require_korean_alias
+    def t1486(
+        self,
+        body: T1486InBlock,
+        header: Optional[T1486RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1486:
+        """
+        시간별 예상체결가(예상체결가, 예상체결량, Top-of-book 호가/잔량)를 조회합니다.
+
+        종목코드, 거래소 조건으로 시간 버킷별 예상체결가, sign(전일대비구분),
+        전일대비/등락률, 예상체결량, 매도/매수 1단계 호가/잔량을 반환합니다.
+        ``cts_time`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1486InBlock): shcode(종목코드), cts_time(연속조회키),
+                cnt(조회건수), exchgubun(거래소 K/N/U) 입력
+            header (Optional[T1486RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1486: 시간별예상체결가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1486Request(
+            body={
+                "t1486InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1486(request_data)
+
+    시간별예상체결가 = t1486
+    시간별예상체결가.__doc__ = "시간별 예상체결가(예상체결가, 예상체결량, Top-of-book 호가/잔량)를 조회합니다."
+
+    @require_korean_alias
+    def t1488(
+        self,
+        body: T1488InBlock,
+        header: Optional[T1488RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1488:
+        """
+        예상체결가 기준 상승/하락 등락률 상위 종목을 조회합니다.
+
+        시장구분(전체/KOSPI/KOSDAQ), 상하락구분, 장구분(장전/장후/직전대비),
+        종목체크 비트마스크, 거래량 버킷, 예상체결가/예상체결량 필터로
+        예상체결가, 등락률, Top-of-book 호가/잔량, 연속일수, 증거금율,
+        전일거래량을 반환합니다. ``idx`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1488InBlock): gubun(거래소구분 0/1/2), sign(상하락 1/2),
+                jgubun(장구분 1/2/3), jongchk(종목체크 비트마스크),
+                idx(연속조회키), volume(거래량 버킷 0~5),
+                yesprice/yeeprice(예상체결가 범위), yevolume(예상체결량) 입력
+            header (Optional[T1488RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1488: 예상체결가등락율상위 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1488Request(
+            body={
+                "t1488InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1488(request_data)
+
+    예상체결가등락율상위조회 = t1488
+    예상체결가등락율상위조회.__doc__ = "예상체결가 기준 상승/하락 등락률 상위 종목(현재가, 등락률, 호가, 잔량, 연속일수)을 조회합니다."
+
+    @require_korean_alias
+    def t1471(
+        self,
+        body: T1471InBlock,
+        header: Optional[T1471RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1471:
+        """
+        시간대별 호가 잔량 추이를 조회합니다.
+
+        종목코드, 시간 조건으로
+        매도잔량, 매수잔량, 호가, 순매수잔량, 매수비율을 반환합니다.
+        time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1471InBlock): shcode(종목코드), gubun(분단위), time(연속조회키) 입력
+            header (Optional[T1471RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1471: 시간대별호가잔량추이 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1471Request(
+            body={
+                "t1471InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1471(request_data)
+
+    시간대별호가잔량추이 = t1471
+    시간대별호가잔량추이.__doc__ = "시간대별 호가 잔량 추이(매도잔량, 매수잔량, 호가, 순매수잔량, 매수비율)를 조회합니다."
+
+    @require_korean_alias
+    def t1475(
+        self,
+        body: T1475InBlock,
+        header: Optional[T1475RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1475:
+        """
+        체결강도 추이를 조회합니다.
+
+        종목코드, 분/일 구분 조건으로
+        체결강도, 이동평균(5/20/60) 체결강도를 반환합니다.
+        date+time 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1475InBlock): shcode(종목코드), vptype(체결강도구분), gubun(분/일구분) 입력
+            header (Optional[T1475RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1475: 체결강도추이 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1475Request(
+            body={
+                "t1475InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1475(request_data)
+
+    체결강도추이 = t1475
+    체결강도추이.__doc__ = "체결강도 추이(체결강도, 이동평균 5/20/60 체결강도)를 조회합니다."
+
+    @require_korean_alias
+    def t1404(
+        self,
+        body: T1404InBlock,
+        header: Optional[T1404RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1404:
+        """
+        관리종목, 불성실공시, 투자유의, 투자환기 종목을 조회합니다.
+
+        시장구분, 종목체크 구분 조건으로
+        현재가, 등락률, 거래량, 지정일, 사유를 반환합니다.
+        cts_shcode 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1404InBlock): gubun(시장구분), jongchk(종목체크 1:관리/2:불성실공시/3:투자유의/4:투자환기), cts_shcode(연속조회키) 입력
+            header (Optional[T1404RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1404: 관리/불성실/투자유의 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1404Request(
+            body={
+                "t1404InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1404(request_data)
+
+    관리불성실투자유의조회 = t1404
+    관리불성실투자유의조회.__doc__ = "관리종목, 불성실공시, 투자유의, 투자환기 종목을 조회합니다."
+
+    @require_korean_alias
+    def t1405(
+        self,
+        body: T1405InBlock,
+        header: Optional[T1405RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1405:
+        """
+        투자경고, 매매정지, 정리매매, 투자주의/위험/위험예고 종목을 조회합니다.
+
+        시장구분, 종목체크 구분 조건으로
+        현재가, 등락률, 거래량, 지정일, 해제일을 반환합니다.
+        cts_shcode 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1405InBlock): gubun(시장구분), jongchk(종목체크 1:투자경고/2:매매정지/3:정리매매 등), cts_shcode(연속조회키) 입력
+            header (Optional[T1405RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1405: 투자경고/매매정지/정리매매 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1405Request(
+            body={
+                "t1405InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1405(request_data)
+
+    투자경고매매정지정리매매조회 = t1405
+    투자경고매매정지정리매매조회.__doc__ = "투자경고, 매매정지, 정리매매, 투자주의/위험/위험예고 종목을 조회합니다."
+
+    @require_korean_alias
+    def t1422(
+        self,
+        body: T1422InBlock,
+        header: Optional[T1422RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1422:
+        """
+        상한가/하한가 종목을 조회합니다.
+
+        시장구분, 당일/전일, 상한/하한 조건으로
+        현재가, 등락률, 거래량, 매도잔량, 매수잔량을 반환합니다.
+        idx 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1422InBlock): gubun(시장구분), sign(상한/하한), 필터 조건, idx(연속조회키) 입력
+            header (Optional[T1422RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1422: 상하한가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1422Request(
+            body={
+                "t1422InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1422(request_data)
+
+    상하한가 = t1422
+    상하한가.__doc__ = "상한가/하한가 종목(현재가, 등락률, 거래량, 매도잔량, 매수잔량)을 조회합니다."
+
+    @require_korean_alias
+    def t1442(
+        self,
+        body: T1442InBlock,
+        header: Optional[T1442RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1442:
+        """
+        신고가/신저가 종목을 조회합니다.
+
+        기간별(52주, 연중, 월중 등) 신고가/신저가 종목을 반환합니다.
+        idx 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1442InBlock): gubun(시장구분), type1(기간구분), type2(고저구분), 필터 조건, idx(연속조회키) 입력
+            header (Optional[T1442RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1442: 신고/신저가 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1442Request(
+            body={
+                "t1442InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1442(request_data)
+
+    신고신저가 = t1442
+    신고신저가.__doc__ = "신고가/신저가 종목(52주, 연중, 월중 등 기간별)을 조회합니다."
+
+    @require_korean_alias
+    def t1449(
+        self,
+        body: T1449InBlock,
+        header: Optional[T1449RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1449:
+        """
+        가격대별 매매비중을 조회합니다.
+
+        종목코드, 일자구분(당일/전일/당일+전일) 조건으로
+        현재가 요약(현재가, 전일대비, 등락률, 거래량, 매수/매도 체결량) 및
+        가격대별 행(체결가, sign, 전일대비, 등락률(tickdiff), 체결수량,
+        비중(diff), 매도/매수 체결량, 매수비율(msdiff))을 반환합니다.
+        연속조회 cursor가 없는 단발성 TR입니다.
+
+        Args:
+            body (T1449InBlock): shcode(종목코드 6자리), dategb(1=당일/2=전일/3=당일+전일) 입력
+            header (Optional[T1449RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1449: 가격대별매매비중 조회 인스턴스 (.req() 단건 호출)
+        """
+
+        request_data = T1449Request(
+            body={
+                "t1449InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1449(request_data)
+
+    가격대별매매비중조회 = t1449
+    가격대별매매비중조회.__doc__ = "가격대별 매매비중(현재가 요약 + 가격대별 체결가/비중/매수비율)을 조회합니다."
+
+    @require_korean_alias
+    def t1427(
+        self,
+        body: T1427InBlock,
+        header: Optional[T1427RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1427:
+        """
+        상한가/하한가에 근접한(직전) 종목을 조회합니다.
+
+        시장구분(전체/KOSPI/KOSDAQ), 상하한가구분(상한직전/하한직전),
+        등락율 임계치, 대상제외 비트마스크(관리종목/시장경보/거래정지 등),
+        현재가/거래량 필터로 현재가, 등락률, 거래량, 거래증가율, 상/하한가,
+        대비율, 시가/고가/저가, 연속(lmtdaycnt), 거래대금, 시가총액을 반환합니다.
+        ``idx`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1427InBlock): qrygb(조회구분 1/그외), gubun(거래소구분 0/1/2),
+                signgubun(상하한가구분 1/2), diff(등락율 임계치),
+                jc_num(대상제외 비트마스크), sprice/eprice(현재가 범위),
+                volume(누적거래량 임계치), idx(연속조회키),
+                jshex(전일상하한제외 c/C) 입력
+            header (Optional[T1427RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1427: 상하한가직전 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1427Request(
+            body={
+                "t1427InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1427(request_data)
+
+    상하한가직전 = t1427
+    상하한가직전.__doc__ = "상한가/하한가에 근접한(직전) 종목(현재가, 등락률, 거래량, 거래증가율, 상/하한가, 연속일수)을 조회합니다."
+
+    @require_korean_alias
+    def t1410(
+        self,
+        body: T1410InBlock,
+        header: Optional[T1410RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT1410:
+        """
+        시장구분별(전체/코스피/코스닥) 초저유동성 종목을 조회합니다.
+
+        시장구분 조건으로 한글명, 현재가, 전일대비/등락률, 누적거래량,
+        종목코드를 반환합니다. ``cts_shcode`` cursor 기반 연속조회를 지원합니다.
+
+        Args:
+            body (T1410InBlock): gubun(0=전체/1=코스피/2=코스닥),
+                cts_shcode(연속조회키) 입력
+            header (Optional[T1410RequestHeader]): 요청 헤더 정보입니다.
+            options (Optional[SetupOptions]): 추가 설정 옵션입니다.
+
+        Returns:
+            TrT1410: 초저유동성 조회 인스턴스 (.req() 단건, .occurs_req() 전체)
+        """
+
+        request_data = T1410Request(
+            body={
+                "t1410InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT1410(request_data)
+
+    초저유동성조회 = t1410
+    초저유동성조회.__doc__ = "시장구분별(전체/코스피/코스닥) 초저유동성 종목(한글명, 현재가, 등락률, 누적거래량)을 조회합니다."
+
+    @require_korean_alias
+    def t8407(
+        self,
+        body: T8407InBlock,
+        header: Optional[T8407RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8407:
+        """
+        LS openAPI의 t8407 주식멀티현재가조회을(를) 조회합니다.
+        """
+
+        request_data = T8407Request(
+            body={
+                "t8407InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8407(request_data)
+
+    주식멀티현재가조회 = t8407
+    주식멀티현재가조회.__doc__ = "주식 멀티 현재가를 조회합니다."
+
+    @require_korean_alias
+    def t8454(
+        self,
+        body: T8454InBlock,
+        header: Optional[T8454RequestHeader] = None,
+        options: Optional[SetupOptions] = None,
+    ) -> TrT8454:
+        """
+        LS openAPI의 t8454 주식시간대별체결조회2을(를) 조회합니다.
+        """
+
+        request_data = T8454Request(
+            body={
+                "t8454InBlock": body
+            },
+        )
+        set_tr_header_options(
+            token_manager=self.token_manager,
+            header=header,
+            options=options,
+            request_data=request_data
+        )
+
+        return TrT8454(request_data)
+
+    주식시간대별체결조회2 = t8454
+    주식시간대별체결조회2.__doc__ = "주식 시간대별 체결2를 조회합니다."
+
+
+__all__ = [
+    Market,
+    t9945,
+    t8450,
+    t1101,
+    t1102,
+    t1104,
+    t1105,
+    t1301,
+    t1109,
+    t1302,
+    t1305,
+    t1308,
+    t1310,
+    t1486,
+    t1488,
+    t1471,
+    t1475,
+    t1404,
+    t1405,
+    t1422,
+    t1442,
+    t1449,
+    t1427,
+    t1410,
+    t8407,
+    t8454,
+]

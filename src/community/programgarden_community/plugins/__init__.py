@@ -1,0 +1,356 @@
+"""
+ProgramGarden Community - 플러그인 레지스트리
+
+플러그인 자동 로딩 및 등록을 담당합니다.
+
+폴더 구조:
+    plugins/
+    ├── rsi/              # TECHNICAL - RSI 지표
+    ├── macd/             # TECHNICAL - MACD 지표
+    ├── bollinger_bands/  # TECHNICAL - 볼린저밴드
+    ├── volume_spike/     # TECHNICAL - 거래량 급증
+    ├── ma_cross/         # TECHNICAL - 이동평균 크로스
+    ├── dual_momentum/    # TECHNICAL - 듀얼 모멘텀
+    ├── stochastic/       # TECHNICAL - 스토캐스틱
+    ├── atr/              # TECHNICAL - ATR
+    ├── price_channel/    # TECHNICAL - 가격 채널 (돈치안)
+    ├── golden_ratio/     # TECHNICAL - 피보나치 되돌림
+    ├── pivot_point/      # TECHNICAL - 피봇 포인트
+    ├── mean_reversion/   # TECHNICAL - 평균 회귀
+    ├── breakout_retest/  # TECHNICAL - 돌파 후 되돌림
+    ├── three_line_strike/ # TECHNICAL - 삼선 타격
+    ├── ichimoku_cloud/   # TECHNICAL - 일목균형표
+    ├── vwap/             # TECHNICAL - VWAP
+    ├── parabolic_sar/    # TECHNICAL - 파라볼릭 SAR
+    ├── williams_r/       # TECHNICAL - 윌리엄스 %R
+    ├── cci/              # TECHNICAL - CCI
+    ├── supertrend/       # TECHNICAL - 슈퍼트렌드
+    ├── keltner_channel/  # TECHNICAL - 켈트너 채널
+    ├── trix/             # TECHNICAL - TRIX
+    ├── cmf/              # TECHNICAL - 차이킨 자금흐름
+    ├── engulfing/        # TECHNICAL - 장악형 패턴
+    ├── hammer_shooting_star/ # TECHNICAL - 망치/유성형
+    ├── doji/             # TECHNICAL - 도지
+    ├── morning_evening_star/ # TECHNICAL - 샛별/석별형
+    ├── regime_detection/  # TECHNICAL - 시장 상태 분류
+    ├── relative_strength/ # TECHNICAL - 상대 강도
+    ├── multi_timeframe_confirmation/ # TECHNICAL - 다중 타임프레임 확인
+    ├── correlation_analysis/ # TECHNICAL - 상관관계 분석
+    ├── contango_backwardation/ # TECHNICAL - 콘탱고/백워데이션 (선물)
+    ├── calendar_spread/  # TECHNICAL - 캘린더 스프레드 (선물)
+    ├── z_score/          # TECHNICAL - Z-Score
+    ├── squeeze_momentum/ # TECHNICAL - 스퀴즈 모멘텀
+    ├── momentum_rank/    # TECHNICAL - 모멘텀 순위
+    ├── market_internals/ # TECHNICAL - 시장 내부 지표
+    ├── pair_trading/     # TECHNICAL - 페어 트레이딩
+    ├── time_series_momentum/ # TECHNICAL - 시계열 모멘텀
+    ├── connors_rsi/      # TECHNICAL - 코너스 RSI
+    ├── mfi/              # TECHNICAL - 자금흐름지수
+    ├── coppock_curve/    # TECHNICAL - 코폭 커브
+    ├── elder_ray/        # TECHNICAL - 엘더 레이
+    ├── turtle_breakout/  # TECHNICAL - 터틀 브레이크아웃
+    ├── volatility_breakout/ # TECHNICAL - 변동성 돌파
+    ├── seasonal_filter/  # TECHNICAL - 계절성 필터
+    ├── tactical_asset_allocation/ # TECHNICAL - 전술적 자산배분
+    ├── magic_formula/    # TECHNICAL - 마법공식
+    ├── support_resistance_levels/ # TECHNICAL - 지지/저항 레벨
+    ├── level_touch/      # TECHNICAL - 레벨 터치/돌파
+    ├── rsi_divergence/   # TECHNICAL - RSI 다이버전스
+    ├── ultimate_oscillator/ # TECHNICAL - 얼티밋 오실레이터
+    ├── kdj/              # TECHNICAL - KDJ
+    ├── aroon/            # TECHNICAL - 아룬
+    ├── heikin_ashi/      # TECHNICAL - 하이킨아시
+    ├── vortex_indicator/ # TECHNICAL - 보텍스 지표
+    ├── hurst_exponent/   # TECHNICAL - 허스트 지수
+    ├── stop_loss/        # POSITION - 손절
+    ├── profit_target/    # POSITION - 익절
+    ├── trailing_stop/    # POSITION - 트레일링 스탑
+    ├── partial_take_profit/ # POSITION - 분할 익절
+    ├── time_based_exit/  # POSITION - 시간 기반 청산
+    ├── drawdown_protection/ # POSITION - 낙폭 보호
+    ├── volatility_position_sizing/ # POSITION - 변동성 포지션 사이징
+    ├── roll_management/  # POSITION - 롤오버 관리 (선물)
+    ├── kelly_criterion/  # POSITION - 켈리 기준
+    ├── risk_parity/      # POSITION - 리스크 패리티
+    ├── var_cvar_monitor/  # POSITION - VaR/CVaR 모니터
+    ├── correlation_guard/ # POSITION - 상관관계 가드
+    ├── beta_hedge/       # POSITION - 베타 헷지
+    ├── dynamic_stop_loss/ # POSITION - 동적 손절
+    ├── max_position_limit/ # POSITION - 최대 포지션 한도
+    ├── sharpe_ratio_monitor/ # POSITION - 샤프비율 모니터
+    ├── sortino_ratio/    # POSITION - 소르티노 비율
+    └── calmar_ratio/     # POSITION - 칼마 비율
+
+사용법:
+    from programgarden_community.plugins import register_all_plugins, get_plugin
+
+    register_all_plugins()
+    schema = get_plugin("RSI")
+"""
+
+from typing import Optional, Dict, Any
+
+
+def register_all_plugins() -> None:
+    """
+    모든 플러그인을 PluginRegistry에 등록합니다.
+    """
+    from programgarden_core.registry import PluginRegistry
+
+    registry = PluginRegistry()
+
+    # === TECHNICAL 플러그인 ===
+    from .rsi import RSI_SCHEMA, rsi_condition
+    from .macd import MACD_SCHEMA, macd_condition
+    from .bollinger_bands import BOLLINGER_SCHEMA, bollinger_condition
+    from .volume_spike import VOLUME_SPIKE_SCHEMA, volume_spike_condition
+    from .ma_cross import MA_CROSS_SCHEMA, ma_cross_condition
+    from .dual_momentum import DUAL_MOMENTUM_SCHEMA, dual_momentum_condition
+    from .stochastic import STOCHASTIC_SCHEMA, stochastic_condition
+    from .atr import ATR_SCHEMA, atr_condition
+    from .price_channel import PRICE_CHANNEL_SCHEMA, price_channel_condition
+    from .adx import ADX_SCHEMA, adx_condition
+    from .obv import OBV_SCHEMA, obv_condition
+    from .golden_ratio import GOLDEN_RATIO_SCHEMA, golden_ratio_condition
+    from .pivot_point import PIVOT_POINT_SCHEMA, pivot_point_condition
+    from .mean_reversion import MEAN_REVERSION_SCHEMA, mean_reversion_condition
+    from .breakout_retest import BREAKOUT_RETEST_SCHEMA, breakout_retest_condition
+    from .three_line_strike import THREE_LINE_STRIKE_SCHEMA, three_line_strike_condition
+    from .ichimoku_cloud import ICHIMOKU_CLOUD_SCHEMA, ichimoku_cloud_condition
+    from .vwap import VWAP_SCHEMA, vwap_condition
+    from .parabolic_sar import PARABOLIC_SAR_SCHEMA, parabolic_sar_condition
+    from .williams_r import WILLIAMS_R_SCHEMA, williams_r_condition
+    from .cci import CCI_SCHEMA, cci_condition
+    from .supertrend import SUPERTREND_SCHEMA, supertrend_condition
+    from .keltner_channel import KELTNER_CHANNEL_SCHEMA, keltner_channel_condition
+    from .trix import TRIX_SCHEMA, trix_condition
+    from .cmf import CMF_SCHEMA, cmf_condition
+    from .engulfing import ENGULFING_SCHEMA, engulfing_condition
+    from .hammer_shooting_star import HAMMER_SHOOTING_STAR_SCHEMA, hammer_shooting_star_condition
+    from .doji import DOJI_SCHEMA, doji_condition
+    from .morning_evening_star import MORNING_EVENING_STAR_SCHEMA, morning_evening_star_condition
+    from .regime_detection import REGIME_DETECTION_SCHEMA, regime_detection_condition
+    from .relative_strength import RELATIVE_STRENGTH_SCHEMA, relative_strength_condition
+    from .multi_timeframe_confirmation import MTF_CONFIRMATION_SCHEMA, multi_timeframe_confirmation_condition
+    from .correlation_analysis import CORRELATION_ANALYSIS_SCHEMA, correlation_analysis_condition
+    from .contango_backwardation import CONTANGO_BACKWARDATION_SCHEMA, contango_backwardation_condition
+    from .calendar_spread import CALENDAR_SPREAD_SCHEMA, calendar_spread_condition
+    from .z_score import Z_SCORE_SCHEMA, z_score_condition
+    from .squeeze_momentum import SQUEEZE_MOMENTUM_SCHEMA, squeeze_momentum_condition
+    from .momentum_rank import MOMENTUM_RANK_SCHEMA, momentum_rank_condition
+    from .market_internals import MARKET_INTERNALS_SCHEMA, market_internals_condition
+    from .pair_trading import PAIR_TRADING_SCHEMA, pair_trading_condition
+    from .time_series_momentum import TSMOM_SCHEMA, time_series_momentum_condition
+    from .connors_rsi import CONNORS_RSI_SCHEMA, connors_rsi_condition
+    from .mfi import MFI_SCHEMA, mfi_condition
+    from .coppock_curve import COPPOCK_CURVE_SCHEMA, coppock_curve_condition
+    from .elder_ray import ELDER_RAY_SCHEMA, elder_ray_condition
+    from .turtle_breakout import TURTLE_BREAKOUT_SCHEMA, turtle_breakout_condition
+    from .volatility_breakout import VOLATILITY_BREAKOUT_SCHEMA, volatility_breakout_condition
+    from .seasonal_filter import SEASONAL_FILTER_SCHEMA, seasonal_filter_condition
+    from .tactical_asset_allocation import TAA_SCHEMA, taa_condition
+    from .magic_formula import MAGIC_FORMULA_SCHEMA, magic_formula_condition
+    from .support_resistance_levels import SUPPORT_RESISTANCE_LEVELS_SCHEMA, support_resistance_levels_condition
+    from .level_touch import LEVEL_TOUCH_SCHEMA, level_touch_condition
+    from .rsi_divergence import RSI_DIVERGENCE_SCHEMA, rsi_divergence_condition
+    from .ultimate_oscillator import ULTIMATE_OSCILLATOR_SCHEMA, ultimate_oscillator_condition
+    from .kdj import KDJ_SCHEMA, kdj_condition
+    from .aroon import AROON_SCHEMA, aroon_condition
+    from .heikin_ashi import HEIKIN_ASHI_SCHEMA, heikin_ashi_condition
+    from .vortex_indicator import VORTEX_INDICATOR_SCHEMA, vortex_indicator_condition
+    from .hurst_exponent import HURST_EXPONENT_SCHEMA, hurst_exponent_condition
+
+    # === 신규(2026-07): TECHNICAL 지표 4 + VALUE 밸류 스크리너 4 (모두 순수 stdlib, TECHNICAL 카테고리) ===
+    from .fisher_transform import FISHER_TRANSFORM_SCHEMA, fisher_transform_condition
+    from .cmo import CMO_SCHEMA, cmo_condition
+    from .schaff_trend_cycle import SCHAFF_TREND_CYCLE_SCHEMA, schaff_trend_cycle_condition
+    from .qqe import QQE_SCHEMA, qqe_condition
+    from .piotroski_f_score import PIOTROSKI_SCHEMA, piotroski_f_score_condition
+    from .graham_number import GRAHAM_SCHEMA, graham_number_condition
+    from .dcf_fair_value import DCF_SCHEMA, dcf_fair_value_condition
+    from .ev_ebitda_screen import EV_EBITDA_SCHEMA, ev_ebitda_screen_condition
+
+    # === POSITION 플러그인 ===
+    from .stop_loss import STOP_LOSS_SCHEMA, stop_loss_condition
+    from .profit_target import PROFIT_TARGET_SCHEMA, profit_target_condition
+    from .trailing_stop import TRAILING_STOP_SCHEMA, trailing_stop_condition
+    from .partial_take_profit import PARTIAL_TAKE_PROFIT_SCHEMA, partial_take_profit_condition
+    from .time_based_exit import TIME_BASED_EXIT_SCHEMA, time_based_exit_condition
+    from .drawdown_protection import DRAWDOWN_PROTECTION_SCHEMA, drawdown_protection_condition
+    from .volatility_position_sizing import VOLATILITY_POSITION_SIZING_SCHEMA, volatility_position_sizing_condition
+    from .roll_management import ROLL_MANAGEMENT_SCHEMA, roll_management_condition
+    from .kelly_criterion import KELLY_CRITERION_SCHEMA, kelly_criterion_condition
+    from .risk_parity import RISK_PARITY_SCHEMA, risk_parity_condition
+    from .var_cvar_monitor import VAR_CVAR_MONITOR_SCHEMA, var_cvar_monitor_condition
+    from .correlation_guard import CORRELATION_GUARD_SCHEMA, correlation_guard_condition
+    from .beta_hedge import BETA_HEDGE_SCHEMA, beta_hedge_condition
+    from .dynamic_stop_loss import DYNAMIC_STOP_LOSS_SCHEMA, dynamic_stop_loss_condition
+    from .max_position_limit import MAX_POSITION_LIMIT_SCHEMA, max_position_limit_condition
+    from .sharpe_ratio_monitor import SHARPE_RATIO_MONITOR_SCHEMA, sharpe_ratio_monitor_condition
+    from .sortino_ratio import SORTINO_RATIO_SCHEMA, sortino_ratio_condition
+    from .calmar_ratio import CALMAR_RATIO_SCHEMA, calmar_ratio_condition
+    from .portfolio_optimizer import PORTFOLIO_OPTIMIZER_SCHEMA, portfolio_optimizer_condition
+
+    # TECHNICAL 등록
+    technical_plugins = [
+        ("RSI", rsi_condition, RSI_SCHEMA),
+        ("MACD", macd_condition, MACD_SCHEMA),
+        ("BollingerBands", bollinger_condition, BOLLINGER_SCHEMA),
+        ("VolumeSpike", volume_spike_condition, VOLUME_SPIKE_SCHEMA),
+        ("MovingAverageCross", ma_cross_condition, MA_CROSS_SCHEMA),
+        ("DualMomentum", dual_momentum_condition, DUAL_MOMENTUM_SCHEMA),
+        ("Stochastic", stochastic_condition, STOCHASTIC_SCHEMA),
+        ("ATR", atr_condition, ATR_SCHEMA),
+        ("PriceChannel", price_channel_condition, PRICE_CHANNEL_SCHEMA),
+        ("ADX", adx_condition, ADX_SCHEMA),
+        ("OBV", obv_condition, OBV_SCHEMA),
+        ("GoldenRatio", golden_ratio_condition, GOLDEN_RATIO_SCHEMA),
+        ("PivotPoint", pivot_point_condition, PIVOT_POINT_SCHEMA),
+        ("MeanReversion", mean_reversion_condition, MEAN_REVERSION_SCHEMA),
+        ("BreakoutRetest", breakout_retest_condition, BREAKOUT_RETEST_SCHEMA),
+        ("ThreeLineStrike", three_line_strike_condition, THREE_LINE_STRIKE_SCHEMA),
+        ("IchimokuCloud", ichimoku_cloud_condition, ICHIMOKU_CLOUD_SCHEMA),
+        ("VWAP", vwap_condition, VWAP_SCHEMA),
+        ("ParabolicSAR", parabolic_sar_condition, PARABOLIC_SAR_SCHEMA),
+        ("WilliamsR", williams_r_condition, WILLIAMS_R_SCHEMA),
+        ("CCI", cci_condition, CCI_SCHEMA),
+        ("Supertrend", supertrend_condition, SUPERTREND_SCHEMA),
+        ("KeltnerChannel", keltner_channel_condition, KELTNER_CHANNEL_SCHEMA),
+        ("TRIX", trix_condition, TRIX_SCHEMA),
+        ("CMF", cmf_condition, CMF_SCHEMA),
+        ("Engulfing", engulfing_condition, ENGULFING_SCHEMA),
+        ("HammerShootingStar", hammer_shooting_star_condition, HAMMER_SHOOTING_STAR_SCHEMA),
+        ("Doji", doji_condition, DOJI_SCHEMA),
+        ("MorningEveningStar", morning_evening_star_condition, MORNING_EVENING_STAR_SCHEMA),
+        ("RegimeDetection", regime_detection_condition, REGIME_DETECTION_SCHEMA),
+        ("RelativeStrength", relative_strength_condition, RELATIVE_STRENGTH_SCHEMA),
+        ("MultiTimeframeConfirmation", multi_timeframe_confirmation_condition, MTF_CONFIRMATION_SCHEMA),
+        ("CorrelationAnalysis", correlation_analysis_condition, CORRELATION_ANALYSIS_SCHEMA),
+        ("ContangoBackwardation", contango_backwardation_condition, CONTANGO_BACKWARDATION_SCHEMA),
+        ("CalendarSpread", calendar_spread_condition, CALENDAR_SPREAD_SCHEMA),
+        ("ZScore", z_score_condition, Z_SCORE_SCHEMA),
+        ("SqueezeMomentum", squeeze_momentum_condition, SQUEEZE_MOMENTUM_SCHEMA),
+        ("MomentumRank", momentum_rank_condition, MOMENTUM_RANK_SCHEMA),
+        ("MarketInternals", market_internals_condition, MARKET_INTERNALS_SCHEMA),
+        ("PairTrading", pair_trading_condition, PAIR_TRADING_SCHEMA),
+        ("TimeSeriesMomentum", time_series_momentum_condition, TSMOM_SCHEMA),
+        ("ConnorsRSI", connors_rsi_condition, CONNORS_RSI_SCHEMA),
+        ("MFI", mfi_condition, MFI_SCHEMA),
+        ("CoppockCurve", coppock_curve_condition, COPPOCK_CURVE_SCHEMA),
+        ("ElderRay", elder_ray_condition, ELDER_RAY_SCHEMA),
+        ("TurtleBreakout", turtle_breakout_condition, TURTLE_BREAKOUT_SCHEMA),
+        ("VolatilityBreakout", volatility_breakout_condition, VOLATILITY_BREAKOUT_SCHEMA),
+        ("SeasonalFilter", seasonal_filter_condition, SEASONAL_FILTER_SCHEMA),
+        ("TacticalAssetAllocation", taa_condition, TAA_SCHEMA),
+        ("MagicFormula", magic_formula_condition, MAGIC_FORMULA_SCHEMA),
+        ("SupportResistanceLevels", support_resistance_levels_condition, SUPPORT_RESISTANCE_LEVELS_SCHEMA),
+        ("LevelTouch", level_touch_condition, LEVEL_TOUCH_SCHEMA),
+        ("RSIDivergence", rsi_divergence_condition, RSI_DIVERGENCE_SCHEMA),
+        ("UltimateOscillator", ultimate_oscillator_condition, ULTIMATE_OSCILLATOR_SCHEMA),
+        ("KDJ", kdj_condition, KDJ_SCHEMA),
+        ("Aroon", aroon_condition, AROON_SCHEMA),
+        ("HeikinAshi", heikin_ashi_condition, HEIKIN_ASHI_SCHEMA),
+        ("VortexIndicator", vortex_indicator_condition, VORTEX_INDICATOR_SCHEMA),
+        ("HurstExponent", hurst_exponent_condition, HURST_EXPONENT_SCHEMA),
+        # 신규(2026-07): 기술지표 4 (순수 파이썬, dual-use — CodeNode 샌드박스 인라인 가능)
+        ("FisherTransform", fisher_transform_condition, FISHER_TRANSFORM_SCHEMA),
+        ("CMO", cmo_condition, CMO_SCHEMA),
+        ("SchaffTrendCycle", schaff_trend_cycle_condition, SCHAFF_TREND_CYCLE_SCHEMA),
+        ("QQE", qqe_condition, QQE_SCHEMA),
+        # 신규(2026-07): 밸류 스크리너 4 (fundamental, TECHNICAL 카테고리로 등록)
+        ("PiotroskiFScore", piotroski_f_score_condition, PIOTROSKI_SCHEMA),
+        ("GrahamNumber", graham_number_condition, GRAHAM_SCHEMA),
+        ("DCFFairValue", dcf_fair_value_condition, DCF_SCHEMA),
+        ("EVEBITDAScreen", ev_ebitda_screen_condition, EV_EBITDA_SCHEMA),
+    ]
+
+    # POSITION 등록
+    position_plugins = [
+        ("StopLoss", stop_loss_condition, STOP_LOSS_SCHEMA),
+        ("ProfitTarget", profit_target_condition, PROFIT_TARGET_SCHEMA),
+        ("TrailingStop", trailing_stop_condition, TRAILING_STOP_SCHEMA),
+        ("PartialTakeProfit", partial_take_profit_condition, PARTIAL_TAKE_PROFIT_SCHEMA),
+        ("TimeBasedExit", time_based_exit_condition, TIME_BASED_EXIT_SCHEMA),
+        ("DrawdownProtection", drawdown_protection_condition, DRAWDOWN_PROTECTION_SCHEMA),
+        ("VolatilityPositionSizing", volatility_position_sizing_condition, VOLATILITY_POSITION_SIZING_SCHEMA),
+        ("RollManagement", roll_management_condition, ROLL_MANAGEMENT_SCHEMA),
+        ("KellyCriterion", kelly_criterion_condition, KELLY_CRITERION_SCHEMA),
+        ("RiskParity", risk_parity_condition, RISK_PARITY_SCHEMA),
+        ("VarCvarMonitor", var_cvar_monitor_condition, VAR_CVAR_MONITOR_SCHEMA),
+        ("CorrelationGuard", correlation_guard_condition, CORRELATION_GUARD_SCHEMA),
+        ("BetaHedge", beta_hedge_condition, BETA_HEDGE_SCHEMA),
+        ("DynamicStopLoss", dynamic_stop_loss_condition, DYNAMIC_STOP_LOSS_SCHEMA),
+        ("MaxPositionLimit", max_position_limit_condition, MAX_POSITION_LIMIT_SCHEMA),
+        ("SharpeRatioMonitor", sharpe_ratio_monitor_condition, SHARPE_RATIO_MONITOR_SCHEMA),
+        ("SortinoRatio", sortino_ratio_condition, SORTINO_RATIO_SCHEMA),
+        ("CalmarRatio", calmar_ratio_condition, CALMAR_RATIO_SCHEMA),
+        ("PortfolioOptimizer", portfolio_optimizer_condition, PORTFOLIO_OPTIMIZER_SCHEMA),
+    ]
+
+    for plugin_id, plugin_callable, schema in technical_plugins + position_plugins:
+        try:
+            registry.register(
+                plugin_id=plugin_id,
+                plugin_callable=plugin_callable,
+                schema=schema,
+            )
+        except ValueError:
+            # 이미 등록된 경우 무시
+            pass
+
+
+def get_plugin(plugin_id: str) -> Optional[Dict[str, Any]]:
+    """
+    플러그인 스키마 조회
+
+    Args:
+        plugin_id: 플러그인 ID (예: "RSI", "MACD")
+
+    Returns:
+        플러그인 스키마 dict 또는 None
+    """
+    from programgarden_core.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    schema = registry.get_schema(plugin_id)
+
+    if schema:
+        return {
+            "id": schema.id,
+            "name": schema.name,
+            "category": schema.category.value if hasattr(schema.category, 'value') else schema.category,
+            "version": schema.version,
+            "description": schema.description,
+            "products": [p.value if hasattr(p, 'value') else p for p in schema.products],
+            "fields_schema": schema.fields_schema,
+            "required_data": schema.required_data,
+            "tags": schema.tags,
+        }
+    return None
+
+
+def list_plugins(
+    category: Optional[str] = None,
+    product: Optional[str] = None,
+) -> Dict[str, list]:
+    """
+    플러그인 목록 조회
+
+    Args:
+        category: 필터링할 카테고리 (technical, position)
+        product: 필터링할 상품 (overseas_stock, overseas_futures 등)
+
+    Returns:
+        카테고리별 플러그인 ID 목록
+    """
+    from programgarden_core.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    return registry.list_plugins(category=category, product=product)
+
+
+__all__ = [
+    "register_all_plugins",
+    "get_plugin",
+    "list_plugins",
+]

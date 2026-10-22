@@ -1,0 +1,2165 @@
+# 노드 레퍼런스 가이드
+
+ProgramGarden에서 사용할 수 있는 모든 노드의 상세 설명입니다. 각 노드는 워크플로우에서 하나의 **블록** 역할을 하며, 블록을 연결(엣지)하여 자동매매 전략을 만듭니다.
+
+> **노드 수**: 12개 카테고리, 76개 노드
+>
+> **해외주식 / 해외선물 / 국내주식**: 대부분의 노드가 상품별로 분리되어 있습니다. 예를 들어 `OverseasStockBrokerNode`(해외주식), `OverseasFuturesBrokerNode`(해외선물), `KoreaStockBrokerNode`(국내주식)는 같은 기능이지만 상품이 다릅니다.
+
+---
+
+## 1. infra - 인프라/연결
+
+워크플로우의 시작점, 증권사 연결, 데이터 흐름 제어를 담당하는 기반 노드들입니다.
+
+### StartNode
+
+워크플로우의 **진입점**입니다. 모든 워크플로우에 반드시 1개 있어야 합니다. StartNode 없이는 워크플로우가 실행되지 않습니다.
+
+```json
+{
+  "id": "start",
+  "type": "StartNode"
+}
+```
+
+**출력**: `start` - 워크플로우 시작 신호
+
+> **주의**: StartNode는 ScheduleNode와 함께 사용하면 스케줄에 따라 반복 실행됩니다. StartNode만 있으면 1회 실행 후 종료됩니다.
+
+---
+
+### BrokerNode (증권사 연결)
+
+LS증권 API에 연결하는 노드입니다. **증권사 연결이 필요한 모든 노드**(계좌 조회, 시세 조회, 주문 등)는 이 노드가 먼저 있어야 합니다.
+
+상품 유형에 따라 노드 타입이 다릅니다:
+
+| 상품 | 노드 타입 | credential 타입 | 모의투자 |
+|------|----------|----------------|---------|
+| 해외주식 | `OverseasStockBrokerNode` | `broker_ls_overseas_stock` | 미지원 (실전만 가능) |
+| 해외선물 | `OverseasFuturesBrokerNode` | `broker_ls_overseas_futures` | 지원 |
+| 국내주식 | `KoreaStockBrokerNode` | `broker_ls_korea_stock` | 미지원 (실전만 가능) |
+
+**해외주식 연결 (실전 전용):**
+
+```json
+{
+  "id": "broker",
+  "type": "OverseasStockBrokerNode",
+  "credential_id": "my-stock-cred",
+  "paper_trading": false
+}
+```
+
+**해외선물 연결 (모의투자):**
+
+```json
+{
+  "id": "broker",
+  "type": "OverseasFuturesBrokerNode",
+  "credential_id": "my-futures-cred",
+  "paper_trading": true
+}
+```
+
+**국내주식 연결:**
+
+```json
+{
+  "id": "broker",
+  "type": "KoreaStockBrokerNode",
+  "credential_id": "my-kr-cred"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `credential_id` | string | ✅ | credentials 섹션에서 정의한 인증 ID |
+| `paper_trading` | boolean | ❌ | 모의투자 여부. **해외주식은 `false` 명시 필수** (기본값이 true여서 실전 연결이 실패). 해외선물은 `true`로 모의투자. 국내주식은 모의투자 미지원이므로 내부적으로 항상 false 강제. |
+
+**출력**: `connection` - 증권사 연결 객체
+
+> **자동 전달**: BrokerNode의 `connection`은 하위 노드(계좌, 시세, 주문 등)에 자동으로 전달됩니다. 엣지로 연결만 해주면 되고, `{{ nodes.broker.connection }}`처럼 직접 바인딩할 필요가 없습니다.
+
+> **⚠️ OverseasStockBrokerNode는 `paper_trading: false` 필수**: Executor의 `paper_trading` 기본값은 `true`입니다. 해외주식 노드에서 이 필드를 생략하면 기본값(`true`)으로 처리되지만, LS증권은 해외주식 실거래만 제공하므로 연결이 즉시 거부되고 후속 노드(시세·계좌·주문 전부)가 전파 오류로 깨집니다. 따라서 **실거래 연결을 위해 반드시 `paper_trading: false`를 명시**해야 합니다.
+>
+> | 노드 | `paper_trading` 값 | 의미 |
+> |------|--------------------|------|
+> | `OverseasStockBrokerNode` | `false` **필수 명시** | 실거래 연결 (모의투자 모드 없음) |
+> | `OverseasFuturesBrokerNode` | `true` / `false` | `true` → 모의투자, `false` → 실거래 |
+> | `KoreaStockBrokerNode` | (지정 불가) | 내부적으로 항상 `false` 강제 |
+
+> **주의 - credential 설정**: `credential_id`가 credentials 섹션의 ID와 정확히 일치해야 합니다. 불일치하면 연결에 실패합니다.
+
+---
+
+### ThrottleNode
+
+실시간 데이터의 흐름을 제어하는 **속도 조절기**입니다. 실시간 노드(RealMarketDataNode, RealAccountNode 등)는 초당 수십 번 데이터를 보내는데, 이를 받아서 하위 노드가 너무 자주 실행되지 않도록 막아줍니다.
+
+```json
+{
+  "id": "throttle",
+  "type": "ThrottleNode",
+  "mode": "latest",
+  "interval_sec": 5,
+  "pass_first": true
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `mode` | `"skip"` \| `"latest"` | `"latest"` | 쿨다운 중 데이터 처리 방식 |
+| `interval_sec` | number | `5` | 최소 실행 간격 (초), 0.1~300 |
+| `pass_first` | boolean | `true` | 첫 번째 데이터를 즉시 통과시킬지 여부 |
+
+**모드 설명:**
+
+| 모드 | 동작 | 언제 쓰나요? |
+|------|------|------------|
+| `skip` | 쿨다운 중 들어오는 데이터를 전부 버림 | 단순히 실행 빈도만 줄이고 싶을 때 |
+| `latest` | 쿨다운 중 최신 데이터만 기억해두고, 쿨다운 끝나면 그 데이터로 실행 | 항상 최신 상태를 반영해야 할 때 **(권장)** |
+
+**latest 모드 동작 예시:**
+
+```
+시간 →  0초    1초    2초    3초    4초    5초    6초
+데이터    A     B     C     D      -     E     F
+결과     통과   대기   대기   대기         D실행   통과
+                                   (쿨다운 끝나면 가장 최신인 D 실행)
+```
+
+**필수 사용 패턴:**
+
+```mermaid
+flowchart LR
+    A[RealAccountNode] -->|빈번한 이벤트| B[ThrottleNode] -->|5초마다| C[ConditionNode] --> D[OrderNode]
+```
+
+> **중요**: 실시간 노드 → 주문 노드, 실시간 노드 → AI 에이전트를 **직접 연결하면 차단**됩니다. 반드시 ThrottleNode를 사이에 넣어야 합니다. 이는 초당 수십 번의 주문이 나가는 사고를 방지하기 위한 안전장치입니다.
+
+> **팁**: `interval_sec`을 너무 짧게 설정하면 API 호출이 과도해져 증권사에서 제한당할 수 있습니다. 주문 관련 흐름에서는 최소 5초 이상을 권장합니다.
+
+---
+
+### SplitNode
+
+리스트(배열) 데이터를 개별 항목으로 **분리**하여 하나씩 처리합니다. 예를 들어 관심종목 3개를 하나씩 분리해서 각각 차트 데이터를 조회할 때 사용합니다.
+
+```json
+{
+  "id": "split",
+  "type": "SplitNode",
+  "parallel": false,
+  "continue_on_error": true
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `parallel` | boolean | `false` | 병렬 실행 여부 (true면 동시에 실행) |
+| `delay_ms` | number | `0` | 항목 간 대기 시간 (밀리초, 0~60000) |
+| `continue_on_error` | boolean | `true` | 하나가 에러 나도 나머지 계속 처리 |
+
+**출력:**
+- `item` - 현재 처리 중인 항목
+- `index` - 현재 순번 (0부터 시작)
+- `total` - 전체 항목 수
+
+**사용 예시:**
+
+```mermaid
+flowchart LR
+    A["WatchlistNode<br/>(AAPL, NVDA, TSM)"] -->|3개 종목| B["SplitNode<br/>(1개씩)"]
+    B -->|"1회차: AAPL"| C[HistoricalDataNode]
+    B -->|"2회차: NVDA"| C
+    B -->|"3회차: TSM"| C
+```
+
+하위 노드에서 현재 항목을 참조할 때는 `{{ item }}`을 사용합니다:
+
+```json
+{
+  "id": "history",
+  "type": "OverseasStockHistoricalDataNode",
+  "symbol": "{{ item }}"
+}
+```
+
+> **주의 - API 호출 제한**: 종목이 많을 때 `parallel: true`로 설정하면 증권사 API를 동시에 많이 호출하게 되어 제한당할 수 있습니다. 10개 이상의 종목을 처리할 때는 `parallel: false`로 하고 `delay_ms: 500` 정도를 권장합니다.
+
+> **팁**: SplitNode 없이도 이전 노드가 배열을 출력하면 다음 노드가 자동으로 반복 실행됩니다 (Auto-Iterate). SplitNode은 `parallel`, `delay_ms` 등 세밀한 제어가 필요할 때 사용하세요. 자세한 내용은 [자동 반복 처리 가이드](auto_iterate_guide.md)를 참고하세요.
+
+---
+
+### AggregateNode
+
+SplitNode으로 분리된 결과를 다시 **하나로 모으는** 노드입니다. 예를 들어 3개 종목의 RSI 결과를 모아서 조건을 통과한 종목만 필터링할 때 사용합니다.
+
+```json
+{
+  "id": "aggregate",
+  "type": "AggregateNode",
+  "mode": "collect"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `mode` | string | `"collect"` | 집계 방식 |
+| `filter_field` | string | `"passed"` | `filter` 모드에서 필터링할 필드명 |
+| `value_field` | string | `"value"` | `sum`/`avg`/`min`/`max`에서 대상 필드명 |
+
+**mode 옵션:**
+
+| 모드 | 설명 | 사용 예시 |
+|------|------|----------|
+| `collect` | 모든 결과를 배열로 모음 | 3개 종목의 차트 데이터를 하나의 배열로 |
+| `filter` | 특정 필드가 true인 것만 모음 | RSI 조건 통과한 종목만 |
+| `sum` | 숫자 합계 | 전체 포지션 금액 합계 |
+| `avg` | 숫자 평균 | 평균 수익률 |
+| `min` / `max` | 최솟값 / 최댓값 | 가장 낮은 RSI 값 |
+| `count` | 개수 | 조건 통과한 종목 수 |
+| `first` / `last` | 첫 번째 / 마지막 항목 | - |
+
+**출력:**
+- `array` - 집계된 배열
+- `value` - 집계된 단일 값 (sum, avg 등)
+- `count` - 항목 수
+
+**전형적인 패턴 (Split → 처리 → Aggregate):**
+
+```mermaid
+flowchart LR
+    A["WatchlistNode<br/>(3종목)"] --> B["SplitNode<br/>(분리)"] --> C["HistoricalDataNode<br/>(각각 조회)"] --> D["ConditionNode<br/>(각각 평가)"] --> E["AggregateNode<br/>(결과 취합)"]
+```
+
+---
+
+### IfNode (조건 분기)
+
+조건을 평가하여 **true/false 두 갈래로 실행 흐름을 분기**하는 노드입니다. 프로그래밍의 `if-else`와 같은 역할입니다.
+
+```json
+{
+  "nodes": [
+    {"id": "account", "type": "OverseasStockAccountNode"},
+    {"id": "if1", "type": "IfNode",
+     "left": "{{ nodes.account.balance }}",
+     "operator": ">=",
+     "right": 1000000},
+    {"id": "order", "type": "OverseasStockNewOrderNode"},
+    {"id": "notify", "type": "FieldMappingNode"}
+  ],
+  "edges": [
+    {"from": "account", "to": "if1"},
+    {"from": "if1", "to": "order", "from_port": "true"},
+    {"from": "if1", "to": "notify", "from_port": "false"}
+  ]
+}
+```
+
+위 예시는 계좌 잔고가 100만원 이상이면 주문 실행, 미만이면 알림 노드로 분기합니다.
+
+**입력 필드:**
+
+| 필드 | 타입 | 설명 | 표현식 |
+|------|------|------|--------|
+| `left` | any | 왼쪽 피연산자 | `{{ nodes.account.balance }}` |
+| `operator` | string | 비교 연산자 (기본값: `==`) | - |
+| `right` | any | 오른쪽 피연산자 | `{{ 1000000 }}` |
+
+**지원 연산자 (12종):**
+
+| 연산자 | 설명 | 예시 |
+|--------|------|------|
+| `==` | 같음 | `"AAPL" == "AAPL"` → true |
+| `!=` | 다름 | `5 != 3` → true |
+| `>` | 초과 | `100 > 50` → true |
+| `>=` | 이상 | `100 >= 100` → true |
+| `<` | 미만 | `50 < 100` → true |
+| `<=` | 이하 | `100 <= 100` → true |
+| `in` | 포함됨 | `"AAPL" in ["AAPL","TSLA"]` → true |
+| `not_in` | 미포함 | `"MSFT" not_in ["AAPL","TSLA"]` → true |
+| `contains` | 문자열 포함 | `"Hello World" contains "World"` → true |
+| `not_contains` | 문자열 미포함 | `"Hello" not_contains "World"` → true |
+| `is_empty` | 빈값 (right 불필요) | `[] is_empty` → true |
+| `is_not_empty` | 비어있지 않음 (right 불필요) | `[1,2] is_not_empty` → true |
+
+> **타입 자동 변환**: 숫자 비교(`>`, `>=`, `<`, `<=`)에서 문자열 `"100"`과 숫자 `50`을 비교하면 자동으로 숫자로 변환합니다. 변환 불가능한 경우 `false`를 반환합니다.
+
+**출력:**
+
+| 포트 | 타입 | 설명 |
+|------|------|------|
+| `true` | any | 조건 참 → upstream 데이터 pass-through |
+| `false` | any | 조건 거짓 → upstream 데이터 pass-through |
+| `result` | boolean | 조건 평가 결과 (`true` / `false`) |
+
+**분기 연결 (from_port):**
+
+엣지에 `from_port`를 지정하여 어떤 브랜치의 후속 노드인지 명시합니다:
+
+```json
+{"from": "if1", "to": "buy_order", "from_port": "true"}
+{"from": "if1", "to": "sell_order", "from_port": "false"}
+```
+
+`from_port`가 없는 엣지는 **항상 실행**됩니다 (합류 노드에 유용).
+
+**활용 패턴:**
+
+1. **잔고 확인 후 주문**: 잔고 >= 최소금액 → 매수 / 아니면 → 대기
+2. **종목 필터링**: 종목코드 `in` 관심종목 리스트 → 분석 진행
+3. **다단계 분기**: IfNode를 연속 배치하여 `if-elif-else` 구현
+
+```mermaid
+flowchart LR
+    A["AccountNode"] --> B["IfNode<br/>잔고 >= 100만?"]
+    B -->|true| C["NewOrderNode<br/>(매수)"]
+    B -->|false| D["FieldMappingNode<br/>(알림)"]
+```
+
+> **캐스케이딩 스킵**: false 브랜치의 하위 노드들은 자동으로 실행이 스킵됩니다. 여러 노드가 연결되어 있어도 스킵이 전파됩니다.
+
+---
+
+## 2. account - 계좌 조회
+
+계좌 잔고, 보유종목, 미체결 주문을 조회하는 노드들입니다.
+
+### AccountNode (1회성 계좌 조회)
+
+REST API로 현재 시점의 계좌 정보를 **한 번** 조회합니다. 스냅샷을 찍는 것과 같습니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockAccountNode` |
+| 해외선물 | `OverseasFuturesAccountNode` |
+| 국내주식 | `KoreaStockAccountNode` |
+
+```json
+{
+  "id": "account",
+  "type": "OverseasStockAccountNode"
+}
+```
+
+**출력:**
+- `held_symbols` - 보유종목 코드 리스트 `["AAPL", "NVDA"]`
+- `balance` - 예수금/매수가능금액
+- `positions` - 보유종목 상세 정보
+
+**positions 출력 예시:**
+
+```json
+[
+  {
+    "symbol": "AAPL",
+    "exchange": "NASDAQ",
+    "quantity": 10,
+    "buy_price": 185.50,
+    "current_price": 192.30,
+    "pnl_rate": 3.67
+  },
+  {
+    "symbol": "NVDA",
+    "exchange": "NASDAQ",
+    "quantity": 5,
+    "buy_price": 880.00,
+    "current_price": 920.50,
+    "pnl_rate": 4.60
+  }
+]
+```
+
+> **주의**: AccountNode는 실행 시점의 데이터를 1회 조회합니다. 실시간으로 계속 업데이트되는 데이터가 필요하면 RealAccountNode을 사용하세요.
+
+> **주의**: 보유종목이 없으면 `positions`는 빈 배열 `[]`을 반환합니다. 잔고가 0이면 `balance`는 0을 반환합니다. 에러가 아닙니다.
+
+> **해외선물 거래소 (2.6.5)**: LS 잔고(CIDBQ01500)·미체결(CIDBQ02400) 응답에는 거래소 정보가 없습니다. `OverseasFuturesAccountNode`의 `positions[].exchange`·`held_symbols[].exchange`와 `OverseasFuturesOpenOrdersNode`의 `open_orders[].exchange`는 종목마다 o3105 거래소코드로 채웁니다(예: `MNQZ26` → `CME`). 확인하지 못하면 다른 거래소로 추측하지 않고 `null`로 둡니다. 2.6.6부터는 확인하지 못한 종목을 같은 실행 안에서 다음 노드 실행 때 다시 조회하되, 종목마다 5분에 한 번까지만 조회합니다(2.6.5는 실행이 끝날 때까지 `null`로 유지). 2.6.4 이하에서는 모든 선물 행이 `"HKEX"`로 표시됐습니다.
+
+---
+
+### OpenOrdersNode (미체결 주문 조회)
+
+아직 체결되지 않은 주문 목록을 조회합니다. 지정가 주문을 넣었는데 아직 체결되지 않은 경우 등을 확인할 수 있습니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockOpenOrdersNode` |
+| 해외선물 | `OverseasFuturesOpenOrdersNode` |
+| 국내주식 | `KoreaStockOpenOrdersNode` |
+
+```json
+{
+  "id": "openOrders",
+  "type": "OverseasStockOpenOrdersNode"
+}
+```
+
+**출력:**
+- `open_orders` - 미체결 주문 목록
+- `count` - 미체결 주문 수
+
+**open_orders 출력 예시:**
+
+```json
+[
+  {
+    "order_no": "12345",
+    "symbol": "AAPL",
+    "side": "buy",
+    "order_type": "limit",
+    "price": 180.00,
+    "quantity": 10,
+    "filled_quantity": 0
+  }
+]
+```
+
+> **팁**: CancelOrderNode와 `ScheduleNode` + `IfNode`를 조합하면 "30분 이내 미체결 시 자동 취소" 같은 로직을 직접 구현할 수 있습니다.
+
+---
+
+### RealAccountNode (실시간 계좌)
+
+WebSocket으로 계좌 정보를 **실시간** 수신합니다. 주문이 체결되거나 시세가 변할 때마다 자동으로 업데이트됩니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockRealAccountNode` |
+| 해외선물 | `OverseasFuturesRealAccountNode` |
+| 국내주식 | `KoreaStockRealAccountNode` |
+
+```json
+{
+  "id": "realAccount",
+  "type": "OverseasStockRealAccountNode",
+  "stay_connected": true,
+  "sync_interval_sec": 60,
+  "commission_rate": 0.25
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `stay_connected` | boolean | `true` | 워크플로우 종료 후에도 WebSocket 연결 유지 |
+| `sync_interval_sec` | number | `60` | REST API로 정확한 데이터 동기화하는 주기 (초, 10~3600) |
+| `commission_rate` | number | `0.25` | 수수료율 (%), 수익률 계산에 반영 |
+| `tax_rate` | number | `0.0` | 세율 (%), 수익률 계산에 반영 |
+
+**출력:**
+- `held_symbols` - 보유종목 코드
+- `balance` - 예수금
+- `open_orders` - 미체결 주문
+- `positions` - 보유종목 (실시간 수익률 포함)
+
+**AccountNode vs RealAccountNode 비교:**
+
+| 항목 | AccountNode | RealAccountNode |
+|------|-------------|-----------------|
+| 연결 방식 | REST API (1회 조회) | WebSocket (실시간 스트리밍) |
+| 데이터 갱신 | 호출 시점 1번 | 이벤트 발생 시 자동 갱신 |
+| 사용 시점 | 매매 전 잔고 확인 | 실시간 모니터링, 리스크 관리 |
+| 리소스 | 가벼움 | 연결 유지 필요 |
+
+> **주의**: RealAccountNode의 데이터는 매우 빈번하게 업데이트됩니다. 하위에 주문 노드를 연결할 때는 반드시 **ThrottleNode**를 사이에 넣어주세요.
+
+> **팁 - commission_rate**: 해외주식 수수료는 증권사마다 다릅니다. LS증권의 경우 약 0.25%입니다. 정확한 수익률 계산을 위해 실제 수수료율을 입력하세요.
+
+---
+
+### RealOrderEventNode (실시간 주문 이벤트)
+
+주문이 접수/체결/정정/취소/거부될 때마다 실시간으로 이벤트를 수신합니다. 주문 상태를 모니터링할 때 사용합니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockRealOrderEventNode` |
+| 해외선물 | `OverseasFuturesRealOrderEventNode` |
+| 국내주식 | `KoreaStockRealOrderEventNode` |
+
+```json
+{
+  "id": "orderEvents",
+  "type": "OverseasStockRealOrderEventNode",
+  "stay_connected": true
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `stay_connected` | boolean | `true` | WebSocket 연결 유지 여부 |
+
+**출력 (5개 포트):**
+
+이벤트 종류별로 다른 출력 포트로 나갑니다:
+
+| 포트 | 설명 | 언제 발생하나요? |
+|------|------|-----------------|
+| `accepted` | 주문 접수됨 | 주문이 거래소에 접수되었을 때 |
+| `filled` | 체결됨 | 주문이 실제로 체결되었을 때 |
+| `modified` | 정정 완료 | 주문 가격/수량이 정정되었을 때 |
+| `cancelled` | 취소 완료 | 주문이 취소되었을 때 |
+| `rejected` | 거부됨 | 주문이 거래소에서 거부되었을 때 |
+
+**사용 예시 - 체결 알림:**
+
+```mermaid
+flowchart LR
+    A[RealOrderEventNode] -->|filled| B[TableDisplayNode]
+    A -->|rejected| C["TableDisplayNode<br/>(에러 로그)"]
+```
+
+> **팁**: `filled` 포트에 조건 로직을 연결하면 "체결되면 → 익절/손절 주문 자동 발생" 같은 흐름을 만들 수 있습니다.
+
+---
+
+### OverseasFuturesOrderableQuantityNode (해외선물 주문가능수량)
+
+연결된 **해외선물 계좌**에서 해당 종목의 주문가능수량을 조회합니다. 주문은 제출하지 않으며, 진입 전에 "몇 계약까지 낼 수 있는지"를 확인하는 용도입니다. **해외선물 전용**입니다 (LS CIDBQ01400).
+
+```json
+{
+  "id": "orderable",
+  "type": "OverseasFuturesOrderableQuantityNode",
+  "symbol": "{{ item }}",
+  "side": "buy",
+  "order_type": "limit",
+  "price": "{{ nodes.market.values.price }}",
+  "query_type": "new"
+}
+```
+
+| 필드 | 값 | 설명 |
+|------|-----|------|
+| `symbol` | `{symbol, exchange}` (필수) | 현재 거래할 선물 종목과 거래소 |
+| `side` | `buy`, `sell` (기본 `buy`) | 주문할 매매 방향 |
+| `order_type` | `limit`, `market` (기본 `limit`) | 지정가/시장가 기준 주문가능수량 |
+| `price` | 숫자 (선택) | 현재 시세로 확인한 지정가. 시장가는 `0`으로 조회 |
+| `query_type` | `new`, `close`, `total` (기본 `new`) | 신규 진입 / 청산 / 총 주문가능 중 조회 항목 |
+
+**입력**: `trigger` (선택) - 종목과 현재가가 준비된 뒤 조회
+
+**출력**:
+- `quantity` - 주문 가능 계약 수. 확인 불가 시 `null`
+- `verified` - 완전히 일치하는 응답일 때만 `true`
+- `error` - 조회가 불가능한 사유. 정상적으로 0 이상이 나오면 `null`
+
+> **주의**: 위쪽에 해외선물 브로커 노드와 현재가(시세) 노드가 먼저 있어야 합니다. 지정가는 실제 주문 가격을 `price`에 넣어 조회하세요.
+
+---
+
+## 3. market - 시세/종목
+
+시세 조회, 종목 검색, 관심종목 관리를 담당하는 노드들입니다.
+
+### MarketDataNode (현재가 조회)
+
+REST API로 **당일 현재가**를 조회합니다. 단일 종목 기반으로 동작하며, 여러 종목을 조회하려면 SplitNode과 조합합니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockMarketDataNode` |
+| 해외선물 | `OverseasFuturesMarketDataNode` |
+| 국내주식 | `KoreaStockMarketDataNode` |
+
+```json
+{
+  "id": "market",
+  "type": "OverseasStockMarketDataNode",
+  "symbol": "{{ item }}"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `symbol` | object | ✅ | 종목 정보 (단일) |
+| `symbols` | array | ❌ | 종목 목록 — 상류 배열 입력이 없을 때 수동 목록/바인딩으로 사용 |
+
+`symbol` 지정 방법:
+- SplitNode과 함께: `"{{ item }}"` (자동으로 현재 종목 사용)
+- 직접 지정: `{"exchange": "NASDAQ", "symbol": "AAPL"}`
+- 여러 종목을 직접 넣으려면 `symbols` 에 배열로: `[{"exchange": "NASDAQ", "symbol": "AAPL"}, ...]` (상류 WatchlistNode 배열 입력이 있으면 그쪽이 우선)
+
+**출력**: `value` - 시세 데이터
+
+```json
+{
+  "symbol": "AAPL",
+  "exchange": "NASDAQ",
+  "price": 192.30,
+  "change": 1.50,
+  "change_pct": 0.79,
+  "volume": 45123456,
+  "open": 190.50,
+  "high": 193.20,
+  "low": 189.80,
+  "close": 192.30
+}
+```
+
+> **MarketDataNode vs HistoricalDataNode**: MarketDataNode은 **오늘 현재가 1건**만 조회합니다. RSI나 MACD 같은 기술적 지표를 계산하려면 과거 N일 데이터가 필요하므로 **HistoricalDataNode**을 사용하세요.
+
+---
+
+### FundamentalNode (종목 펀더멘털 조회)
+
+LS증권 g3104 API로 **PER, EPS, 시가총액, 52주 고/저가** 등 펀더멘털 데이터를 조회합니다. **해외주식 전용**입니다 (해외선물은 파생상품이므로 펀더멘털 개념 없음).
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockFundamentalNode` |
+| 해외선물 | - (지원하지 않음) |
+
+```json
+{
+  "id": "fundamental",
+  "type": "OverseasStockFundamentalNode",
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "AAPL"},
+    {"exchange": "NASDAQ", "symbol": "MSFT"}
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `symbol` | object | - | 단일 종목 (`{exchange, symbol}`) |
+| `symbols` | array | - | 복수 종목 배열 |
+
+`symbol` 또는 `symbols` 중 하나를 지정합니다. SplitNode과 함께 사용 시 `"symbol": "{{ item }}"`.
+
+**출력**: `value` / `values` — 펀더멘털 데이터
+
+```json
+{
+  "exchange": "NASDAQ", "symbol": "AAPL", "name": "APPLE INC",
+  "industry": "Technology", "nation": "USA", "exchange_name": "NASDAQ",
+  "current_price": 264.35, "volume": 45123456, "change_percent": 1.25,
+  "per": 33.39, "eps": 7.9,
+  "market_cap": 3869057094000, "shares_outstanding": 14681100000,
+  "high_52w": 288.62, "low_52w": 169.21, "exchange_rate": 1443.1
+}
+```
+
+| 출력 필드 | 설명 |
+|-----------|------|
+| `per` | PER (주가수익비율) |
+| `eps` | EPS (주당순이익) |
+| `market_cap` | 시가총액 |
+| `shares_outstanding` | 발행주식수 |
+| `high_52w` / `low_52w` | 52주 최고가 / 최저가 |
+| `exchange_rate` | 환율 |
+
+> **MarketDataNode vs FundamentalNode**: MarketDataNode은 시세(가격/변동) 위주이고 PER/EPS도 포함합니다. FundamentalNode은 **시가총액, 업종, 52주 고/저가, 발행주식수** 등 종목 기본정보를 추가로 제공합니다.
+
+> **AI 에이전트 도구**: `is_tool_enabled = true`이므로 AIAgentNode에서 도구(tool)로 직접 호출할 수 있습니다.
+
+---
+
+### HistoricalDataNode (과거 차트 조회)
+
+과거 N일치 **OHLCV**(시가/고가/저가/종가/거래량) 차트 데이터를 조회합니다. RSI, MACD 같은 기술적 지표 계산에 필수입니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockHistoricalDataNode` |
+| 해외선물 | `OverseasFuturesHistoricalDataNode` |
+
+```json
+{
+  "id": "history",
+  "type": "OverseasStockHistoricalDataNode",
+  "symbol": "{{ item }}",
+  "interval": "1d",
+  "start_date": "{{ date.ago(90, format='yyyymmdd') }}",
+  "end_date": "{{ date.today(format='yyyymmdd') }}"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbol` | object | - | 종목 정보 (단일 — 상류 배열 입력·auto-iterate 와 함께 쓰는 기본 경로) |
+| `symbols` | array | - | 종목 목록 (수동 리터럴 목록 — `symbol`/상류 입력이 없을 때만 사용됨) |
+| `interval` | string | `"1d"` | 데이터 주기 |
+| `start_date` | string | 3개월 전 | 조회 시작일 (YYYYMMDD) |
+| `end_date` | string | 오늘 | 조회 종료일 (YYYYMMDD) |
+| `adjust` | boolean | `false` | 수정주가 적용 여부 |
+
+**interval 옵션:**
+
+| 값 | 주기 | 용도 |
+|----|------|------|
+| `1m` | 1분봉 | 단타/스캘핑 |
+| `5m` | 5분봉 | 단기 매매 |
+| `15m` | 15분봉 | 단기 매매 |
+| `1h` | 1시간봉 | 스윙 트레이딩 |
+| `1d` | 일봉 | **가장 많이 사용** |
+| `1w` | 주봉 | 중장기 분석 |
+| `1M` | 월봉 | 장기 분석 |
+
+**출력**: `value` - OHLCV 배열
+
+```json
+[
+  {"date": "2025-01-10", "open": 190.0, "high": 193.5, "low": 189.2, "close": 192.3, "volume": 45000000},
+  {"date": "2025-01-09", "open": 188.5, "high": 191.0, "low": 187.8, "close": 190.0, "volume": 38000000}
+]
+```
+
+> **주의 - RSI 기간 설정**: RSI 14일을 계산하려면 최소 14일 이상의 데이터가 필요합니다. `start_date`를 넉넉하게 잡아주세요. 보통 RSI 14일 기준으로 최소 30일, 권장 90일 이상입니다.
+
+> **주의 - 분봉 데이터**: 1분봉/5분봉은 조회 가능한 기간이 제한적입니다 (최근 수일). 일봉은 수년치 조회 가능합니다.
+
+> **팁**: `adjust: true`로 설정하면 액면분할 등이 반영된 수정주가를 조회합니다. 장기 백테스트에 유용합니다.
+
+---
+
+### RealMarketDataNode (실시간 시세)
+
+WebSocket으로 **실시간 시세**를 수신합니다. 체결이 발생할 때마다 데이터가 업데이트됩니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockRealMarketDataNode` |
+| 해외선물 | `OverseasFuturesRealMarketDataNode` |
+
+```json
+{
+  "id": "realMarket",
+  "type": "OverseasStockRealMarketDataNode",
+  "symbol": "{{ item }}",
+  "stay_connected": true
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbol` | object | - | 종목 (SplitNode의 `{{ item }}` 사용) |
+| `stay_connected` | boolean | `true` | 워크플로우 종료 후에도 연결 유지 |
+
+**출력:**
+- `ohlcv_data` - OHLCV 실시간 데이터
+- `data` - 전체 시세 (현재가, 호가, 거래량 등)
+
+> **LS증권 미국 주식 거래 시간 (한국시간 기준)**:
+>
+> | 구간 | 겨울 (서머타임 미적용) | 여름 (서머타임 적용, 3~11월) | 비고 |
+> |------|----------------------|---------------------------|------|
+> | 주간거래 | 10:00 ~ 17:30 | 09:00 ~ 16:30 | 지정가만 가능 |
+> | 프리마켓 | 18:00 ~ 23:30 | 17:00 ~ 22:30 | 장전 시간외 |
+> | 정규장 | 23:30 ~ 06:00 (익일) | 22:30 ~ 05:00 (익일) | 메인 거래 시간 |
+> | 애프터마켓 | 06:00 ~ 09:30 | 05:00 ~ 08:30 | 장후 시간외 |
+>
+> 실시간 시세는 위 거래 시간 중에 수신됩니다.
+
+> **주의**: 실시간 노드 하위에 주문이나 AI 노드를 연결할 때는 반드시 ThrottleNode를 거쳐야 합니다.
+
+---
+
+### SymbolQueryNode (종목 검색)
+
+종목 코드나 이름으로 종목을 검색합니다. "애플의 종목코드가 뭐지?" 할 때 사용합니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockSymbolQueryNode` |
+| 해외선물 | `OverseasFuturesSymbolQueryNode` |
+
+```json
+{
+  "id": "query",
+  "type": "OverseasStockSymbolQueryNode",
+  "keyword": "AAPL"
+}
+```
+
+**출력**: `symbols` - 검색 결과 종목 리스트
+
+---
+
+### RankingNode (순위 조회)
+
+오늘의 **상승률·하락률·거래량·거래대금·시가총액 상위 종목**을 가져옵니다. "오늘 많이 오른 종목 30개" 같은 후보 목록을 만들 때 씁니다. 읽기 전용이며 주문을 내지 않습니다.
+
+| 상품 | 노드 타입 | LS TR |
+|------|----------|-------|
+| 국내주식 | `KoreaStockRankingNode` | t1441(등락률), t1452(거래량), t1463(거래대금), t1444(시가총액) |
+| 해외주식(미국) | `OverseasStockRankingNode` | g3112(시세순위) |
+| 해외선물 | 없음 — LS 에 순위 TR 이 없습니다. 주요 계약을 직접 고르거나 `FuturesContractNode` 를 쓰세요. | — |
+
+```json
+{
+  "id": "ranking",
+  "type": "KoreaStockRankingNode",
+  "ranking_type": "change_rate_up",
+  "market": "all",
+  "limit": 30
+}
+```
+
+| 필드 | 국내 | 해외 |
+|------|------|------|
+| `ranking_type` | `change_rate_up`, `change_rate_down`, `volume`, `trading_value`, `market_cap` | 국내 값 + `turnover`, `high_52w`, `low_52w` |
+| `market` | `all`, `KOSPI`, `KOSDAQ` (`market_cap` 은 KOSPI/KOSDAQ 하나만) | `all`, `NYSE`, `NASDAQ`, `ETF` |
+| `limit` | 1~100 (기본 20) | 1~100 (기본 20) |
+
+**출력**:
+- `rankings` — 순위 행. 공통: `rank`, `symbol`, `exchange`, `name`, `price`, `sign`(LS 원래 코드), `change`·`change_pct`(sign 코드로 부호를 붙인 값), `volume`, `trading_value`+`trading_value_unit`, `market_cap`+`market_cap_unit`, `product`, `source_tr`. 국내는 `market`, `open`/`high`/`low`(t1441 만), 해외는 `exchange_source`, `exchange_name`, `keysymbol`, `turnover`, `high_52w`, `low_52w` 가 더 있습니다.
+- `symbols` — 하류 노드에 바로 넣을 수 있는 종목 리스트 (국내 `{exchange:"KRX", market, symbol, name, product}`, 해외 `{exchange, symbol, name, product}`).
+- `count` — 행 수. 성공했는데 0건이면 `rankings=[]`, `count=0` 입니다.
+
+> **단위**: 값은 LS 가 준 그대로이며 변환하지 않습니다. 국내 거래대금은 t1441 `as_returned`, t1463 `KRW_million`(백만원), 시가총액은 t1441 `as_returned`, t1463 `KRW_million`, t1444 `KRW_100million`(억원)입니다. 서로 다른 순위 종류의 값을 섞어 비교하지 마세요.
+>
+> **해외 거래소**: LS 키 종목코드(`82TSLA`)의 앞 두 자리로 정합니다(81 → NYSE, 82 → NASDAQ). 알 수 없으면 `exchange=null` 이고 `symbols` 에서 빠집니다.
+>
+> **요청 제한**: 한 번 실행에 최대 5번 요청하며 TR 별 초당 한도(t1441·t1463·g3112 1건, t1452·t1444 2건)를 지킵니다. 실패하면 `t1441: <코드> <메시지>` 처럼 TR 코드로 시작하는 오류로 멈춥니다.
+>
+> **모의 실행·심층 검증**: 브로커를 부르지 않고 같은 모양의 가짜 행 3개를 냅니다.
+>
+> **필요 버전**: 엔진 `programgarden` 2.6.6 이상(core 2.6.3 이상)에서 실행됩니다. 2.6.5 이하 엔진에 core 2.6.3 만 함께 설치되면, 순위를 읽지 않고 `KoreaStockRankingNode requires the programgarden engine 2.6.6 or later ...` 오류를 출력합니다(심층 검증에서도 실패). core 2.6.2 이하에서는 알 수 없는 노드로 거부됩니다.
+>
+> **주의**: 순위를 주문 노드에 바로 연결하지 마세요. CodeNode 등으로 가격·보유·예산을 확인한 뒤 고른 종목만 주문합니다.
+
+---
+
+### WatchlistNode (관심종목)
+
+사용자가 직접 지정하는 **관심종목 목록**입니다. 워크플로우에서 처리할 종목을 정의하는 가장 기본적인 방법입니다.
+
+```json
+{
+  "id": "watchlist",
+  "type": "WatchlistNode",
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "AAPL"},
+    {"exchange": "NASDAQ", "symbol": "NVDA"},
+    {"exchange": "NYSE", "symbol": "TSM"}
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `symbols` | array | ✅ | 종목 목록 (`{exchange, symbol}` 배열) |
+
+**출력**: `symbols` - 종목 리스트
+
+> **주의 - exchange 필수**: 종목 코드만 넣으면 안 됩니다. `exchange`(거래소)와 `symbol`(종목코드)을 함께 지정해야 합니다.
+
+| 거래소 | 코드 | 예시 종목 |
+|--------|------|----------|
+| 나스닥 | `NASDAQ` | AAPL, NVDA, TSLA, MSFT |
+| 뉴욕증권거래소 | `NYSE` | TSM, JPM, V, WMT |
+| 아멕스 | `AMEX` | SPY, QQQ, GLD |
+
+---
+
+### MarketUniverseNode (지수 구성종목)
+
+나스닥100, S&P500 같은 **대표 지수의 구성종목**을 자동으로 가져옵니다.
+
+> 해외주식 전용입니다. Broker 연결이 필요하지 않습니다 (독립 실행).
+
+```json
+{
+  "id": "universe",
+  "type": "MarketUniverseNode",
+  "universe": "NASDAQ100"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `universe` | string | `"NASDAQ100"` | 지수 이름 |
+
+**지원 인덱스:**
+
+| 인덱스 | 종목 수 | 설명 |
+|--------|--------|------|
+| `NASDAQ100` | ~101개 | 나스닥 대형주 100선 |
+| `SP500` | ~503개 | S&P 500 |
+| `SP100` | ~100개 | S&P 100 (대형주) |
+| `DOW30` | 30개 | 다우존스 산업평균 |
+
+**출력**: `symbols` (종목 리스트), `count` (종목 수)
+
+> **팁**: MarketUniverseNode + ScreenerNode을 조합하면 "나스닥100 중 시총 1000억 이상 + 거래량 100만주 이상" 같은 스크리닝이 가능합니다.
+
+---
+
+### ScreenerNode (종목 스크리닝)
+
+시가총액, 거래량, 섹터 등의 **조건으로 종목을 필터링**합니다.
+
+> 해외주식 전용입니다. Broker 연결이 필요하지 않습니다.
+
+```json
+{
+  "id": "screener",
+  "type": "ScreenerNode",
+  "market_cap_min": 100000000000,
+  "volume_min": 1000000,
+  "sector": "Technology",
+  "exchange": "NASDAQ",
+  "max_results": 10
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbols` | array | - | 입력 종목 리스트 (미지정 시 전체 대상) |
+| `market_cap_min` | number | - | 최소 시가총액 (USD) |
+| `market_cap_max` | number | - | 최대 시가총액 (USD) |
+| `volume_min` | number | - | 최소 일 거래량 |
+| `sector` | string | - | 섹터 (Technology, Healthcare, Financial 등) |
+| `exchange` | string | - | 거래소 (NASDAQ, NYSE, AMEX) |
+| `max_results` | number | `100` | 최대 결과 수 (1~500) |
+
+**출력**: `symbols` (조건 충족 종목), `count` (결과 수)
+
+> **팁 - 시가총액 단위**: 미국 달러 기준입니다. 1000억 달러 = `100000000000`, 10억 달러 = `1000000000`.
+
+---
+
+### SymbolFilterNode (종목 집합 연산)
+
+두 종목 리스트를 **비교/필터링**합니다. 집합 연산(차집합, 교집합, 합집합)을 수행합니다.
+
+```json
+{
+  "id": "filter",
+  "type": "SymbolFilterNode",
+  "operation": "difference",
+  "input_a": "{{ nodes.universe.symbols }}",
+  "input_b": "{{ nodes.account.held_symbols }}"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `operation` | string | `"difference"` | 연산 방식 |
+| `input_a` | expression | - | 첫 번째 종목 리스트 |
+| `input_b` | expression | - | 두 번째 종목 리스트 |
+
+**operation 옵션:**
+
+| 연산 | 의미 | 실전 예시 |
+|------|------|----------|
+| `difference` | A에만 있는 것 (A - B) | 나스닥100 중 **아직 보유하지 않은** 종목 |
+| `intersection` | A, B 모두에 있는 것 | 관심종목 중 **현재 보유 중인** 종목 |
+| `union` | A + B 합치기 | 두 리스트 합치기 (중복 제거) |
+
+**출력**: `symbols` (결과 리스트), `count` (개수)
+
+**사용 예시 - 미보유 종목만 매수:**
+
+```mermaid
+flowchart LR
+    A[MarketUniverseNode] --> C["SymbolFilterNode<br/>(difference)"] --> D[...매수 로직]
+    B[AccountNode] --> C
+```
+
+### ExclusionListNode (거래 제외 종목)
+
+거래에서 **제외할 종목**을 관리합니다. 수동 입력과 동적 바인딩을 결합할 수 있고, 입력 종목 리스트에서 자동 필터링도 가능합니다.
+
+```json
+{
+  "id": "exclusion",
+  "type": "ExclusionListNode",
+  "symbols": [
+    {"exchange": "NASDAQ", "symbol": "NVDA", "reason": "변동성 과다"},
+    {"exchange": "NYSE", "symbol": "BA", "reason": "사고 리스크"}
+  ],
+  "default_reason": "리스크 관리",
+  "input_symbols": "{{ nodes.watchlist.symbols }}"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbols` | array | `[]` | 수동 제외 종목 `[{exchange, symbol, reason}]` |
+| `dynamic_symbols` | expression | - | 동적 제외 종목 바인딩 |
+| `input_symbols` | expression | - | 필터링할 원본 종목 리스트 |
+| `default_reason` | string | `""` | 사유 미지정 시 기본 사유 |
+
+**출력**: `excluded` (제외 종목), `filtered` (필터링 결과), `count` (제외 수), `reasons` (종목별 사유)
+
+**3가지 활용 패턴:**
+
+| 패턴 | 설명 | 설정 |
+|------|------|------|
+| 선언만 | 제외 목록 정의, 다른 노드에서 참조 | `symbols`만 설정 |
+| 직접 필터링 | 입력 리스트에서 제외 종목 제거 | `symbols` + `input_symbols` |
+| SymbolFilter 연동 | 차집합 연산으로 제외 적용 | SymbolFilterNode의 `input_b`에 `excluded` 연결 |
+
+**주문 안전장치**: ExclusionListNode가 워크플로우에 있으면, NewOrderNode에서 제외 종목 주문을 **자동 차단**합니다 (`ignore_exclusion: true`로 비활성화 가능).
+
+---
+
+### FuturesContractNode (선물 월물 선택)
+
+기초자산(예: 미니 항셍)을 **실행 시점에 현재 상장된 월물 종목코드**로 바꿔줍니다. 월물을 직접 적어두면 만기가 지나는 순간 시세가 조용히 끊기는데(LS 는 만기 경과 종목에 과거봉도 현재가도 주지 않고 에러도 내지 않습니다), 이 노드를 쓰면 시간이 지나도 자동으로 다음 월물로 넘어갑니다. 출력 형식이 WatchlistNode(관심종목)와 같아서 아래쪽 배선을 그대로 두면 됩니다. **해외선물 전용**입니다 (LS o3101 해외선물마스터조회).
+
+```json
+{
+  "id": "contract",
+  "type": "FuturesContractNode",
+  "base_products": ["HMH"],
+  "contract_selection": "front"
+}
+```
+
+| 필드 | 값 | 설명 |
+|------|-----|------|
+| `base_products` | 문자열 배열 (기본 `[]`) | 해소할 기초자산 코드(LS BscGdsCd). 예: `["HMH"]`=미니 항셍, `["HMCE"]`=미니 H주. 코드당 1개 월물을 순서대로 출력 |
+| `contract_selection` | `front`, `next`, `quarterly` (기본 `front`) | `front`=근월물(유동성 최고), `next`=차월물(롤 대상), `quarterly`=가장 가까운 3·6·9·12월물 |
+| `futures_exchange` | 문자열 (선택) | LS 거래소 코드(ExchCd)로 필터, 예: `"HKEX"`. 생략 시 전체 |
+
+**출력**:
+- `symbols` - WatchlistNode와 동일한 형식(`[{exchange, symbol}]`)이라 하류 선물 노드에 그대로 연결됩니다
+- `contracts` - 해소된 계약 상세 배열
+- `count` - 해소된 계약 수
+
+> **주의**: `base_products`에는 월물코드(`HMHN26`)가 아니라 **기초자산 코드**(`HMH`)를 넣으세요 — 월물 글자는 노드가 붙입니다. 알 수 없는 코드를 넣으면 사용 가능한 코드 목록과 함께 **명확히 실패**하며, 조용한 빈 리스트를 반환하지 않습니다. 주식에는 쓰지 마세요(종목이 만기되지 않으므로 WatchlistNode 사용).
+
+---
+
+### OverseasFuturesContractInfoNode (해외선물 종목상세 조회)
+
+연결된 증권사를 통해 선물 종목의 **만기일·최종거래일·증거금·거래시간**을 조회합니다. 확인되지 않은 값은 비워 두며 주문을 실행하지 않습니다. **해외선물 전용**입니다 (LS o3105).
+
+```json
+{
+  "id": "contract_info",
+  "type": "OverseasFuturesContractInfoNode",
+  "symbol": "{{ item }}"
+}
+```
+
+| 필드 | 값 | 설명 |
+|------|-----|------|
+| `symbol` | `{symbol, exchange}` | 정확한 상장 월물 종목코드와 거래소 |
+
+**입력**: `trigger` (선택) - 월물을 해소한 뒤 새로고침
+
+**출력**:
+- `value` - 관측된 상세(실패 시 `null`, 확인 안 된 선택 필드는 `null`). 주요 필드: `maturity_date`(만기일), `last_trading_date`(최종거래일), `first_notice_date`(최초통지일), `initial_margin`(개시증거금), `maintenance_margin`(유지증거금), `tick_size`(호가단위), `tick_value`(틱가치), 거래시간(`korea_start_time`·`korea_end_time`·`local_start_time`·`local_end_time`), `currency`, `source_tr`(o3105), `observed_at`
+- `verified` - 심볼/거래소가 일치하는 성공 응답 여부(모든 선택 필드의 완전성은 아님)
+- `missing_fields` - 응답에 없거나 잘못된 선택 출력 필드 목록
+- `error` - 안전한 실패 사유. 일치 성공 시 `null`
+
+> **주의**: 증거금은 계좌의 주문가능수량이 아닙니다. LS 가 주지 않은 값은 추정하지 않고 `null`로 둡니다. FuturesContractNode 로 월물을 해소한 뒤 실제 보유 계약의 만기를 확인할 때 유용합니다.
+
+---
+
+## 4. condition - 조건 평가
+
+매수/매도 조건을 판단하는 핵심 노드들입니다.
+
+### ConditionNode
+
+**플러그인 기반**으로 매수/매도 조건을 판단합니다. RSI, MACD, 볼린저밴드 등 다양한 기술적 지표를 플러그인으로 선택하여 사용합니다.
+
+```json
+{
+  "id": "rsi",
+  "type": "ConditionNode",
+  "plugin": "RSI",
+  "fields": {
+    "period": 14,
+    "threshold": 30,
+    "direction": "below"
+  }
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `plugin` | string | ✅ | 사용할 플러그인 ID (RSI, MACD 등) |
+| `fields` | object | ❌ | 플러그인별 파라미터 |
+| `positions` | expression | 조건부 | 포지션 데이터 (익절/손절 플러그인에서 필수) |
+
+**플러그인별로 필요한 데이터가 다릅니다:**
+
+| 플러그인 유형 | 필요 데이터 | 연결할 노드 | 예시 플러그인 |
+|-------------|-----------|------------|-------------|
+| 시계열 기반 | 과거 OHLCV 데이터 | HistoricalDataNode | RSI, MACD, BollingerBands, VolumeSpike |
+| 포지션 기반 | 보유종목 정보 | AccountNode의 positions | ProfitTarget, StopLoss |
+
+**출력:**
+- `result` - 조건 평가 결과
+
+```json
+{
+  "passed": true,
+  "passed_symbols": [
+    {"symbol": "AAPL", "exchange": "NASDAQ", "rsi": 28.5}
+  ],
+  "analysis": [
+    {"symbol": "AAPL", "rsi": 28.5, "signal": "oversold"},
+    {"symbol": "NVDA", "rsi": 55.2, "signal": "neutral"}
+  ]
+}
+```
+
+- `passed`: 조건을 통과한 종목이 **하나라도** 있으면 `true`
+- `passed_symbols`: 조건을 통과한 종목만
+- `analysis`: 모든 종목의 분석 결과
+
+**전형적인 사용 패턴:**
+
+```mermaid
+flowchart LR
+    A[BrokerNode] --> B[WatchlistNode] --> C[SplitNode] --> D[HistoricalDataNode] --> E["ConditionNode<br/>(RSI)"]
+    E --> F["LogicNode<br/>(AND)"]
+    F --> G[NewOrderNode]
+```
+
+> **팁**: 하나의 워크플로우에 ConditionNode을 여러 개 넣고, LogicNode으로 조합할 수 있습니다. 예: "RSI 과매도 **AND** MACD 골든크로스일 때만 매수".
+
+> 전체 플러그인 목록과 파라미터: [종목조건 플러그인](strategies/stock_condition.md)
+
+---
+
+### LogicNode
+
+여러 조건을 **논리적으로 조합**합니다. "RSI **그리고** MACD", "RSI **또는** 볼린저밴드" 같은 복합 조건을 만듭니다.
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "all",
+  "conditions": [
+    {
+      "is_condition_met": "{{ nodes.rsi.result }}",
+      "passed_symbols": "{{ nodes.rsi.passed_symbols }}"
+    },
+    {
+      "is_condition_met": "{{ nodes.macd.result }}",
+      "passed_symbols": "{{ nodes.macd.passed_symbols }}"
+    }
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `operator` | string | ✅ | 논리 연산자 |
+| `threshold` | number | 조건부 | 임계값 (`at_least`, `weighted` 등에서 사용) |
+| `conditions` | array | ✅ | 조건 목록 |
+
+**conditions 배열 항목:**
+
+| 필드 | 설명 |
+|------|------|
+| `is_condition_met` | ConditionNode의 result 바인딩 |
+| `passed_symbols` | ConditionNode의 passed_symbols 바인딩 |
+| `weight` | 가중치 (`weighted` 연산자에서만 사용, 0~1) |
+
+**연산자 설명:**
+
+| 연산자 | 의미 | 실전 예시 |
+|--------|------|----------|
+| `all` | 모든 조건 만족 (AND) | RSI 과매도 **그리고** MACD 골든크로스 |
+| `any` | 하나 이상 만족 (OR) | RSI 과매도 **또는** 볼린저밴드 하단 이탈 |
+| `not` | 모든 조건 불만족 | RSI 과매수 **아닌** 종목 |
+| `xor` | 정확히 하나만 만족 | 두 신호 중 하나만 |
+| `at_least` | N개 이상 만족 | 3개 조건 중 **2개 이상** (threshold: 2) |
+| `at_most` | N개 이하 만족 | 최대 1개만 충족 |
+| `exactly` | 정확히 N개 만족 | 정확히 2개 충족 |
+| `weighted` | 가중치 합이 threshold 이상 | RSI 40% + MACD 35% + BB 25% = 가중 점수 |
+
+**weighted 예시 (스코어링):**
+
+```json
+{
+  "id": "logic",
+  "type": "LogicNode",
+  "operator": "weighted",
+  "threshold": 0.6,
+  "conditions": [
+    {
+      "is_condition_met": "{{ nodes.rsi.result }}",
+      "passed_symbols": "{{ nodes.rsi.passed_symbols }}",
+      "weight": 0.4
+    },
+    {
+      "is_condition_met": "{{ nodes.macd.result }}",
+      "passed_symbols": "{{ nodes.macd.passed_symbols }}",
+      "weight": 0.35
+    },
+    {
+      "is_condition_met": "{{ nodes.bb.result }}",
+      "passed_symbols": "{{ nodes.bb.result.passed_symbols }}",
+      "weight": 0.25
+    }
+  ]
+}
+```
+
+이 예시에서 RSI(40%) + MACD(35%) = 75% ≥ 60%(threshold)이면 매수 신호가 됩니다.
+
+> 상세 가이드: [조건 조합 (LogicNode)](logic_guide.md)
+
+---
+
+## 5. order - 주문 실행
+
+실제 매수/매도 주문을 실행하는 노드들입니다.
+
+### NewOrderNode (신규 주문)
+
+신규 매수/매도 주문을 실행합니다. **플러그인을 사용하지 않으며**, 고정 필드(`side`/`order_type`/`order`)를 직접 설정합니다. `order`는 `PositionSizingNode.order`를 바인딩하는 것이 표준 패턴입니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockNewOrderNode` |
+| 해외선물 | `OverseasFuturesNewOrderNode` |
+| 국내주식 | `KoreaStockNewOrderNode` |
+
+```json
+{
+  "id": "order",
+  "type": "OverseasStockNewOrderNode",
+  "side": "buy",
+  "order_type": "market",
+  "order": "{{ nodes.sizing.order }}"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `side` | `"buy"` \| `"sell"` | ✅ | 매수/매도 |
+| `order_type` | `"market"` \| `"limit"` | ✅ | 시장가/지정가 |
+| `price_type` | enum | ❌ | LS증권 호가 유형 (`limit`, `market`, `LOO`, `LOC`, `MOO`, `MOC`) |
+| `order` | `{symbol, exchange, quantity, price?}` | ✅ | `PositionSizingNode.order` 바인딩 권장 (expression-only) |
+
+**출력**: `result` - 주문 결과 (배열)
+
+```json
+[
+  {
+    "order_id": "12345",
+    "exchange": "NASDAQ",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 10,
+    "price": 192.30,
+    "status": "submitted"
+  }
+]
+```
+
+> **⚠️ `plugin: "MarketOrder"` / `"LimitOrder"` 은 존재하지 않는 예제였습니다**: 구 버전 가이드의 `plugin` + `fields: {side, amount_type, amount}` 패턴은 실제로 구현되지 않았으며 사용 시 `[log/error] 주문할 종목이 없습니다` 경고 후 조용히 no-op 됩니다. 반드시 위의 고정 필드 + `PositionSizingNode.order` 바인딩 패턴을 사용하세요.
+
+> **중요 - 실시간 연결 차단**: 실시간 노드(RealMarketDataNode 등)에서 NewOrderNode으로 **직접 연결할 수 없습니다**. 초당 수십 번 주문이 나가는 사고를 방지하기 위해, 반드시 ThrottleNode를 사이에 넣어야 합니다.
+
+> **주의 - 실전 주문**: 해외주식 BrokerNode은 모의투자를 지원하지 않으므로, 주문 노드를 연결하면 **실제 돈으로 거래**됩니다. 처음에는 소량으로 테스트하세요.
+
+> **주의 - 재시도 비활성화**: 주문 노드는 네트워크 에러를 제외하고 자동 재시도가 **비활성화**되어 있습니다. 중복 주문을 방지하기 위한 안전장치입니다.
+
+> 전체 주문 파이프라인 예시: [주문 노드 사용법](strategies/order_condition.md)
+
+---
+
+### ModifyOrderNode (주문 정정)
+
+미체결 주문의 가격이나 수량을 정정합니다. **플러그인을 사용하지 않으며**, `order_id` + `new_price` / `new_quantity` 를 직접 설정합니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockModifyOrderNode` |
+| 해외선물 | `OverseasFuturesModifyOrderNode` |
+
+```json
+{
+  "id": "modify",
+  "type": "OverseasStockModifyOrderNode",
+  "order_id": "{{ item.order_id }}",
+  "new_price": "{{ finance.markup(item.price, 1.0) }}"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `order_id` | string | ✅ | 정정 대상 주문 ID |
+| `new_price` | number | ❌ | 변경할 가격 |
+| `new_quantity` | integer | ❌ | 변경할 수량 |
+| `price_type` | enum | ❌ | 호가 유형 (해외주식): `limit`(지정가·기본) / `market`(시장가). 정정 TR(COSAT00311)도 시장가를 지원합니다 |
+
+> **`price_type` (해외주식 정정)**: 기본 `limit`(지정가 리프라이스). `market` 으로 두면 시장가 정정으로 나갑니다(COSAT00311 이 `00`=지정가 / `03`=시장가 를 지원). 저수준 LS 원시코드를 직접 넣고 싶으면 `price_type_code`(`"00"`/`"03"`)로 오버라이드할 수 있고, 명시된 `price_type_code` 가 우선합니다. 단 `price_type` 과 `price_type_code` 를 **둘 다** 주면서 서로 다른 유형을 가리키면 정정이 거부됩니다(둘 중 하나만 주거나 일치시키세요).
+
+> **⚠️ `TrailingStop` 플러그인은 존재하지 않습니다**: 가격 추적 정정은 실시간 시세(`OverseasStockRealMarketDataNode` + `ThrottleNode`)와 `OverseasStockOpenOrdersNode`를 조합한 워크플로우에서 `new_price`를 표현식으로 직접 계산하여 구현하세요.
+
+---
+
+### CancelOrderNode (주문 취소)
+
+미체결 주문을 취소합니다. **플러그인을 사용하지 않으며**, `order_id` 를 직접 설정합니다.
+
+| 상품 | 노드 타입 |
+|------|----------|
+| 해외주식 | `OverseasStockCancelOrderNode` |
+| 해외선물 | `OverseasFuturesCancelOrderNode` |
+
+```json
+{
+  "id": "cancel",
+  "type": "OverseasStockCancelOrderNode",
+  "order_id": "{{ item.order_id }}"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `order_id` | string | ✅ | 취소할 주문 ID |
+
+> **⚠️ `TimeStop` 플러그인은 존재하지 않습니다**: "N분 이내 미체결 시 자동 취소"는 `ScheduleNode`로 주기적으로 `OverseasStockOpenOrdersNode`를 조회하고, 미체결 시간을 `IfNode`로 판정한 뒤 `OverseasStockCancelOrderNode`를 호출하여 직접 구현하세요.
+
+---
+
+### PositionSizingNode (포지션 크기 계산)
+
+**주문 수량을 자동으로 계산**합니다. "잔고의 10%만 투자" 같은 자금 관리 규칙을 적용합니다.
+
+```json
+{
+  "id": "sizing",
+  "type": "PositionSizingNode",
+  "symbol": "{{ item }}",
+  "balance": "{{ nodes.account.balance }}",
+  "method": "fixed_percent",
+  "max_percent": 10
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `symbol` | expression | - | 대상 종목 |
+| `balance` | expression | - | 가용 잔고 |
+| `market_data` | expression | - | 현재가 정보 (선택) |
+| `method` | string | `"fixed_percent"` | 포지션 사이징 방법 |
+| `max_percent` | number | `10` | 잔고 대비 비율 (%) |
+| `fixed_amount` | number | - | 고정 금액 (fixed_amount 방법 시) |
+| `fixed_quantity` | number | `1` | 고정 수량 (fixed_quantity 방법 시) |
+
+**method 옵션:**
+
+| 방법 | 설명 | 사용 예시 |
+|------|------|----------|
+| `fixed_percent` | 잔고의 N% | "잔고의 10%씩 투자" (가장 일반적) |
+| `fixed_amount` | 고정 금액 | "종목당 $1000씩 투자" |
+| `fixed_quantity` | 고정 수량 | "종목당 10주씩 매수" |
+| `kelly` | 켈리 공식 | 승률 기반 최적 비율 (고급) |
+| `atr_based` | ATR 기반 | 변동성 기반 사이징 (고급) |
+
+**출력**: `order` - 주문 정보
+
+```json
+{
+  "symbol": "AAPL",
+  "exchange": "NASDAQ",
+  "quantity": 5,
+  "price": 192.30
+}
+```
+
+**전형적인 사용 패턴:**
+
+```mermaid
+flowchart LR
+    A[AccountNode] -->|balance| C["PositionSizingNode<br/>(잔고의 10%로 계산)"]
+    B[ConditionNode] -->|종목| C
+    C -->|order| D["NewOrderNode<br/>(계산된 수량으로 주문)"]
+```
+
+> **팁**: PositionSizingNode의 출력(`order`)을 NewOrderNode의 `order` 필드에 바인딩하면 자동으로 계산된 수량으로 주문됩니다. 과도한 집중 투자를 방지하는 핵심 노드입니다.
+
+---
+
+## 6. risk - 리스크 관리
+
+### PortfolioNode
+
+멀티 전략 포트폴리오의 **자본 배분과 리밸런싱**을 관리합니다. 여러 전략에 자금을 어떻게 나눌지 결정합니다.
+
+```json
+{
+  "id": "portfolio",
+  "type": "PortfolioNode",
+  "total_capital": 100000,
+  "allocation_method": "equal",
+  "rebalance_rule": "drift",
+  "drift_threshold": 5.0,
+  "reserve_percent": 10
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `total_capital` | number | `100000` | 총 투자 자본 (USD) |
+| `allocation_method` | string | `"equal"` | 자금 배분 방법 |
+| `rebalance_rule` | string | `"none"` | 리밸런싱 규칙 |
+| `drift_threshold` | number | `5.0` | 배분 비율 이탈 허용치 (%) |
+| `reserve_percent` | number | `0` | 현금 보유 비율 (%, 비상금) |
+
+**배분 방법:**
+
+| 방법 | 설명 | 예시 (3개 전략, $100,000) |
+|------|------|--------------------------|
+| `equal` | 균등 배분 | 각각 $33,333 |
+| `custom` | 사용자 지정 | RSI 50%, MACD 30%, BB 20% |
+| `risk_parity` | 변동성 역비례 (변동성 낮은 전략에 더 많이) | 안정형 $45,000, 공격형 $25,000 등 |
+| `momentum` | 최근 수익률 비례 (잘 되는 전략에 더 많이) | 수익률 높은 전략에 자금 집중 |
+
+**리밸런싱 규칙:**
+
+| 규칙 | 설명 |
+|------|------|
+| `none` | 리밸런싱 안 함 (초기 배분 유지) |
+| `periodic` | 주기적으로 리밸런싱 (daily/weekly/monthly/quarterly) |
+| `drift` | 배분 비율이 `drift_threshold`% 이상 벗어나면 리밸런싱 |
+| `both` | 주기 + 드리프트 둘 다 적용 |
+
+**출력**: `combined_equity` (통합 자산곡선), `allocation_weights` (배분 비율), `rebalance_signal` (리밸런싱 신호), `allocated_capital` (전략별 배분 금액)
+
+> **팁 - reserve_percent**: 항상 일정 비율은 현금으로 보유하는 것이 안전합니다. `reserve_percent: 10`이면 총 자본의 10%를 현금으로 유지합니다.
+
+---
+
+## 7. schedule - 스케줄/시간
+
+### ScheduleNode
+
+크론(cron) 스케줄에 따라 워크플로우를 **반복 실행**합니다. "평일 9시에 자동 실행", "15분마다 체크" 같은 스케줄을 설정합니다.
+
+```json
+{
+  "id": "schedule",
+  "type": "ScheduleNode",
+  "cron": "0 */15 9-16 * * mon-fri",
+  "timezone": "America/New_York"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `cron` | string | `"0 */5 * * * *"` | 크론 표현식 (6-field 권장) |
+| `timezone` | string | `"America/New_York"` | 타임존 |
+| `enabled` | boolean | `true` | 활성화 여부 |
+
+> **cron 포맷**: 예제는 **6-field (`초 분 시 일 월 요일`)** 로 통일합니다. 5-field(`분 시 일 월 요일`)도 지원되지만 혼동 방지를 위해 초 필드를 명시하세요.
+
+**자주 쓰는 크론 예시 (6-field):**
+
+| 표현식 | 설명 |
+|--------|------|
+| `0 30 9 * * *` | 매일 오전 9:30 (뉴욕 시간) |
+| `0 */15 9-16 * * mon-fri` | 평일 9~16시, 15분마다 |
+| `0 0 9 * * mon` | 매주 월요일 오전 9:00 |
+| `0 0 23 * * *` | 한국시간 기준 매일 08:00 (뉴욕 23시) |
+
+**출력**: `trigger` - 스케줄 트리거 신호
+
+> **주의 - timezone**: 미국 주식은 뉴욕 시간(`America/New_York`)으로 설정하세요. 한국 시간으로 설정하면 거래시간이 맞지 않습니다.
+
+> **팁 - LS증권 미국 주식 거래 시간 (한국시간 기준)**:
+>
+> | 구간 | 겨울 (서머타임 미적용) | 여름 (서머타임 적용, 3~11월) | 비고 |
+> |------|----------------------|---------------------------|------|
+> | 주간거래 | 10:00 ~ 17:30 | 09:00 ~ 16:30 | 지정가만 가능 |
+> | 프리마켓 | 18:00 ~ 23:30 | 17:00 ~ 22:30 | 장전 시간외 |
+> | 정규장 | 23:30 ~ 06:00 (익일) | 22:30 ~ 05:00 (익일) | 메인 거래 시간 |
+> | 애프터마켓 | 06:00 ~ 09:30 | 05:00 ~ 08:30 | 장후 시간외 |
+>
+> 한국시간 오전에도 주간거래로 미국 주식 매매가 가능합니다. 정규장 외 시간에는 지정가 주문만 가능하므로 `OverseasStockNewOrderNode`에서 `order_type: "limit"` + `order.price`를 명시하여 지정가 주문을 사용하세요.
+
+> 상세 가이드: [스케줄 설정](schedule_guide.md)
+
+---
+
+### TradingHoursFilterNode
+
+**거래시간 필터**입니다. 거래시간이 아니면 대기하다가, 거래시간이 시작되면 통과시킵니다.
+
+```json
+{
+  "id": "tradingHours",
+  "type": "TradingHoursFilterNode",
+  "start": "09:30",
+  "end": "16:00",
+  "timezone": "America/New_York",
+  "days": ["mon", "tue", "wed", "thu", "fri"]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `start` | string | ✅ | 시작 시간 (HH:MM) |
+| `end` | string | ✅ | 종료 시간 (HH:MM) |
+| `timezone` | string | ✅ | 타임존 |
+| `days` | array | ✅ | 활성 요일 (mon, tue, wed, thu, fri, sat, sun) |
+
+**동작 방식:**
+
+| 상황 | 동작 |
+|------|------|
+| 거래시간 내 | 즉시 통과 |
+| 거래시간 외 | 거래시간 시작까지 **대기** (blocking) |
+| shutdown 요청 | 종료 |
+
+**출력**: `passed` (통과 여부), `blocked` (차단 여부)
+
+The `passed` port and default edges run only when `passed=true`. Outside the
+window the node waits; timeout sets `blocked=true` and selects only an explicit
+`blocked` edge. Use SessionGateNode with IfNode for an immediate closed-window
+decision. Job shutdown still prevents further execution.
+
+> **주의**: 거래시간 외에 워크플로우를 시작하면 이 노드에서 **멈춰서 대기**합니다. ScheduleNode과 조합하여 거래시간 내에만 실행되도록 설정하는 것을 권장합니다.
+
+---
+
+### SessionGateNode (거래 시간대 확인)
+
+설정한 현지 시간대·요일·시간 구간을 **즉시 확인**해 지금이 허용 구간 안인지 판정합니다. TradingHoursFilterNode 처럼 멈춰서 대기하지 않고, 결과를 `allowed`로 바로 내보내므로 **IfNode 로 분기**해 닫힌 구간이면 즉시 끝내거나 다른 길로 보낼 수 있습니다.
+
+```json
+{
+  "id": "session",
+  "type": "SessionGateNode",
+  "timezone": "America/New_York",
+  "windows": [{ "start": "09:30", "end": "16:00" }],
+  "days": ["mon", "tue", "wed", "thu", "fri"],
+  "exchange_calendar": "XNYS"
+}
+```
+
+| 필드 | 값 | 설명 |
+|------|-----|------|
+| `timezone` | IANA 시간대 (필수) | 예: `"America/New_York"`, `"Asia/Hong_Kong"`. 설치된 시간대 데이터로 서머타임 반영 |
+| `windows` | `[{start, end}]` (필수, 1개 이상) | 현지 `HH:MM` 구간. 시작은 포함, 종료는 제외하며 자정을 넘는 구간도 지원 |
+| `days` | `mon`~`sun` 배열 (필수, 1개 이상) | 시작일 기준 허용 요일. 자정 이후 구간은 전날의 시작 요일에 속함 |
+| `closed_dates` | `YYYY-MM-DD` 배열 (기본 `[]`) | 제외일. 현지 날짜 또는 구간 시작 날짜가 해당하면 차단 |
+| `exchange_calendar` | `XNYS`, `XNAS`, `XHKG`, `null` (기본 `null`) | 거래소 달력의 휴장일·조기폐장을 적용. 실시간 거래정지는 확인하지 않음 |
+
+**입력**: `trigger` (선택) - 실행 시점의 현지 시간을 확인
+
+**출력**:
+- `allowed` - 허용 구간 안에서만 `true`. **IfNode 에 연결**하세요
+- `reason` - `inside_configured_window` 또는 `outside_configured_window`
+- `session_date` - 허용 구간의 시작일. 차단되면 빈 문자열
+- `local_date` - 설정한 시간대의 현재 날짜
+- `local_time` - UTC 오프셋을 포함한 현재 현지 ISO 시각
+
+> **주의**: 즉시 판정이 필요할 때는 SessionGateNode + IfNode 를, 거래시간이 될 때까지 **대기**해야 할 때는 TradingHoursFilterNode 를 쓰세요.
+
+---
+
+## 8. data - 데이터 조회/저장
+
+### SQLiteNode
+
+로컬 SQLite 데이터베이스에 데이터를 **저장하고 조회**합니다. 매매 이력 저장, 최고가 추적 등에 활용합니다.
+
+두 가지 모드를 지원합니다:
+
+#### 모드 1: execute_query (SQL 직접 작성)
+
+SQL을 알고 있다면 직접 쿼리를 작성할 수 있습니다.
+
+```json
+{
+  "id": "sqlite",
+  "type": "SQLiteNode",
+  "db_name": "trading.db",
+  "operation": "execute_query",
+  "query": "SELECT * FROM trade_history WHERE symbol = :symbol",
+  "parameters": {"symbol": "AAPL"}
+}
+```
+
+#### 모드 2: simple (SQL 없이 CRUD)
+
+SQL 없이 테이블/액션/컬럼을 선택하여 사용합니다.
+
+```json
+{
+  "id": "sqlite",
+  "type": "SQLiteNode",
+  "db_name": "trading.db",
+  "operation": "simple",
+  "table": "peak_tracker",
+  "action": "upsert",
+  "columns": ["symbol", "peak_price"],
+  "values": {"symbol": "AAPL", "peak_price": 195.50},
+  "on_conflict": "symbol"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `db_name` | string | ✅ | DB 파일명 (자동 생성됨) |
+| `operation` | string | ✅ | `execute_query` 또는 `simple` |
+| `query` | string | 조건부 | SQL 쿼리 (execute_query 모드) |
+| `parameters` | object | ❌ | 쿼리 파라미터 (`:name` 형식) |
+| `table` | string | 조건부 | 테이블명 (simple 모드) |
+| `action` | string | 조건부 | `select` / `insert` / `update` / `delete` / `upsert` |
+| `values` | object | 조건부 | 저장할 값 |
+| `on_conflict` | string | 조건부 | upsert 시 충돌 키 (예: `"symbol"`) |
+
+**출력**: `rows` (조회 결과), `affected_count` (영향 행 수)
+
+> **팁 - upsert**: "있으면 업데이트, 없으면 삽입"입니다. 최고가 추적처럼 한 종목당 하나의 레코드를 유지할 때 유용합니다.
+
+---
+
+### HTTPRequestNode
+
+외부 HTTP API를 호출합니다. 뉴스 API, 경제 지표 API 등 외부 데이터를 가져올 때 사용합니다.
+
+```json
+{
+  "id": "http",
+  "type": "HTTPRequestNode",
+  "method": "GET",
+  "url": "https://api.example.com/news",
+  "query_params": {"symbol": "AAPL", "limit": "5"},
+  "timeout_seconds": 30
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `method` | string | `"GET"` | HTTP 메서드 (GET, POST, PUT, PATCH, DELETE) |
+| `url` | string | - | 요청 URL |
+| `query_params` | object | - | URL 쿼리 파라미터 |
+| `body` | object | - | 요청 본문 (POST/PUT/PATCH) |
+| `headers` | object | - | 추가 헤더 |
+| `credential_id` | string | - | API 인증 정보 |
+| `timeout_seconds` | number | `30` | 타임아웃 (초, 1~300) |
+
+**출력**: `response` (응답 데이터), `status_code` (HTTP 상태 코드), `success` (성공 여부), `error` (에러 메시지)
+
+> **주의**: 실시간 노드에서 HTTPRequestNode으로 직접 연결하면 **경고**가 표시됩니다. ThrottleNode를 사용하세요.
+
+> **팁**: 인증이 필요한 API는 `credential_id`로 credentials 섹션의 HTTP 인증 정보를 참조합니다. Bearer 토큰, 헤더 키, Basic 인증 등을 지원합니다.
+
+---
+
+### FieldMappingNode
+
+데이터의 **필드명을 변환**합니다. 외부 API 응답의 필드명이 ProgramGarden 형식과 다를 때 매핑해줍니다.
+
+```json
+{
+  "id": "mapping",
+  "type": "FieldMappingNode",
+  "data": "{{ nodes.http.response }}",
+  "mappings": [
+    {"from": "ticker", "to": "symbol"},
+    {"from": "last_price", "to": "price"},
+    {"from": "vol", "to": "volume"}
+  ],
+  "preserve_unmapped": true
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `data` | expression | - | 변환할 데이터 |
+| `mappings` | array | - | 매핑 규칙 `[{from: "원래이름", to: "새이름"}]` |
+| `preserve_unmapped` | boolean | `true` | 매핑 규칙에 없는 필드도 유지할지 여부 |
+
+**출력**: `mapped_data` (변환된 데이터)
+
+**변환 전**: `{"ticker": "AAPL", "last_price": 192.30, "vol": 45000000}`
+**변환 후**: `{"symbol": "AAPL", "price": 192.30, "volume": 45000000}`
+
+> **팁**: ConditionNode의 플러그인은 `symbol`, `open`, `high`, `low`, `close`, `volume` 같은 표준 필드명을 기대합니다. 외부 API 데이터를 ConditionNode에 넣기 전에 FieldMappingNode으로 필드명을 맞춰주세요.
+
+---
+
+### CodeNode (커스텀 파이썬 코드)
+
+기존 타입 노드로 표현할 수 없는 커스텀 로직을 파이썬 코드로 실행합니다. `code`에 `async def execute(data, params, context)` 함수를 정의하면, 반환한 dict가 선언한 `outputs` 포트(미선언 시 단일 `result` 포트)로 매핑됩니다.
+
+```json
+{
+  "id": "momentum",
+  "type": "CodeNode",
+  "data": "{{ nodes.historical.values }}",
+  "params": { "lookback": 20 },
+  "outputs": [{ "name": "ranked", "type": "array" }],
+  "code": "async def execute(data, params, context):\n    ...\n    return {'ranked': [...]}"
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `code` | string ✅ | `async def execute(data, params, context)` 정의 (sync `def`도 허용, 자동 래핑) |
+| `outputs` | array | 출력 포트 선언 `[{name, type}]`. 미선언 시 단일 `result` 포트 |
+| `params` | object | 코드에 전달되는 파라미터 (표현식 바인딩 허용) |
+| `data` | any | 입력 데이터 (상류 값 전체를 바인딩, 코드 안에서 반복) |
+
+**출력**: 선언한 `outputs` 포트 (미선언 시 `result` = 반환값 전체)
+
+- **다운스트림 소비**: 타입 포트 매칭이 아니라, 소비자 노드의 범용 입력 필드(TableDisplayNode.data, IfNode.left/right 등)에 `{{ nodes.<id>.<port> }}` 표현식으로 소비합니다. 타입드 노드(주문/조건)로 흘릴 땐 표준 심볼 배열 `[{symbol, exchange, ...}]`을 반환하세요.
+- **실행 환경**: 오픈소스 엔진에서는 CodeNode 선언과 구조 검증까지만 지원하며, 실행은 ProgramGarden 플랫폼에서만 가능합니다(`CodeNode runs on the ProgramGarden platform only.`). 자세한 내용은 [CodeNode 가이드](code_node_guide.md) 참조.
+
+---
+
+## 9. display - 시각화
+
+차트와 테이블을 생성합니다. 실시간 노드와 연결하면 데이터가 **자동으로 갱신**됩니다.
+
+### TableDisplayNode (테이블)
+
+데이터를 테이블(표) 형태로 표시합니다.
+
+```json
+{
+  "id": "table",
+  "type": "TableDisplayNode",
+  "title": "보유 종목 현황",
+  "data": "{{ nodes.account.positions }}",
+  "columns": ["symbol", "quantity", "buy_price", "current_price", "pnl_rate"],
+  "limit": 20,
+  "sort_by": "pnl_rate",
+  "sort_order": "desc"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `title` | string | - | 테이블 제목 |
+| `data` | expression | - | 표시할 데이터 (배열) |
+| `columns` | array | 전체 | 표시할 컬럼 목록 (미지정 시 모든 컬럼) |
+| `limit` | number | `10` | 최대 행 수 (1~100) |
+| `sort_by` | string | - | 정렬 기준 컬럼 |
+| `sort_order` | string | `"desc"` | `"asc"` (오름차순) 또는 `"desc"` (내림차순) |
+
+---
+
+### LineChartNode (라인 차트)
+
+시계열 데이터를 라인 차트로 표시합니다. RSI 추이, 가격 변동 등을 시각화할 때 사용합니다.
+
+```json
+{
+  "id": "chart",
+  "type": "LineChartNode",
+  "title": "RSI 추이",
+  "data": "{{ nodes.rsi.result.analysis }}",
+  "x_field": "date",
+  "y_field": "rsi"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `title` | string | ❌ | 차트 제목 |
+| `data` | expression | ✅ | 차트 데이터 (배열) |
+| `x_field` | string | ✅ | X축 필드명 (보통 `"date"`) |
+| `y_field` | string | ✅ | Y축 필드명 (보통 값 필드) |
+
+> **주의**: `x_field`와 `y_field`를 반드시 명시해야 합니다. 자동 추론은 지원하지 않습니다.
+
+---
+
+### MultiLineChartNode (다중 라인 차트)
+
+여러 시리즈(종목)를 **한 차트에** 표시합니다. 종목별 가격 비교에 유용합니다.
+
+```json
+{
+  "id": "multiChart",
+  "type": "MultiLineChartNode",
+  "title": "종목별 가격 추이",
+  "data": "{{ nodes.history.value }}",
+  "x_field": "date",
+  "y_field": "close",
+  "series_key": "symbol"
+}
+```
+
+> **주의**: `HistoricalDataNode`의 출력은 `.value`(단수, 배열) 또는 `.value.time_series`(단일 종목의 시계열)입니다. 구 버전에서 쓰던 `.values`(복수)는 존재하지 않습니다.
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `series_key` | string | ✅ | 시리즈 구분 키 (예: `"symbol"`이면 종목별로 라인 분리) |
+
+---
+
+### CandlestickChartNode (캔들스틱 차트)
+
+OHLCV 데이터를 **캔들스틱(봉) 차트**로 표시합니다. 주식 차트의 기본 형태입니다.
+
+```json
+{
+  "id": "candle",
+  "type": "CandlestickChartNode",
+  "title": "AAPL 일봉",
+  "data": "{{ nodes.history.value }}",
+  "date_field": "date",
+  "open_field": "open",
+  "high_field": "high",
+  "low_field": "low",
+  "close_field": "close",
+  "volume_field": "volume"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `date_field` | string | ✅ | 날짜 필드 |
+| `open_field` | string | ✅ | 시가 필드 |
+| `high_field` | string | ✅ | 고가 필드 |
+| `low_field` | string | ✅ | 저가 필드 |
+| `close_field` | string | ✅ | 종가 필드 |
+| `volume_field` | string | ❌ | 거래량 필드 |
+
+---
+
+### BarChartNode (바 차트)
+
+범주형 데이터를 바(막대) 차트로 표시합니다.
+
+```json
+{
+  "id": "bar",
+  "type": "BarChartNode",
+  "title": "종목별 수익률",
+  "data": "{{ nodes.account.positions }}",
+  "x_field": "symbol",
+  "y_field": "pnl_rate"
+}
+```
+
+---
+
+### SummaryDisplayNode (요약 카드)
+
+핵심 지표를 **요약 카드** 형태로 표시합니다. 대시보드의 KPI 카드처럼 한눈에 보이는 요약 정보입니다.
+
+```json
+{
+  "id": "summary",
+  "type": "SummaryDisplayNode",
+  "title": "계좌 요약",
+  "data": "{{ nodes.account }}"
+}
+```
+
+---
+
+## 10. analysis - 백테스트/분석
+
+### BacktestEngineNode
+
+과거 데이터로 전략을 **검증**합니다. 실제 돈을 투자하기 전에 "이 전략이 과거에 얼마나 수익이 났을까?"를 시뮬레이션합니다.
+
+```json
+{
+  "id": "backtest",
+  "type": "BacktestEngineNode",
+  "initial_capital": 10000,
+  "commission_rate": 0.001,
+  "position_sizing": "kelly",
+  "exit_rules": {
+    "stop_loss_percent": 5,
+    "take_profit_percent": 15
+  }
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `initial_capital` | number | 초기 투자 자본 (USD) |
+| `commission_rate` | number | 수수료율 (0.001 = 0.1%) |
+| `position_sizing` | string | 포지션 사이징: `fixed`, `percent`, `kelly`, `atr` |
+| `exit_rules` | object | 자동 청산 규칙 |
+
+**exit_rules 옵션:**
+
+| 필드 | 설명 |
+|------|------|
+| `stop_loss_percent` | 손절 비율 (%) - 이 이상 손실나면 자동 매도 |
+| `take_profit_percent` | 익절 비율 (%) - 이 이상 이익나면 자동 매도 |
+
+**출력:**
+- `equity_curve` - 자산 변동 곡선 (날짜별 자산 추이)
+- `summary` - 성과 요약
+
+```json
+{
+  "total_return": 25.3,
+  "mdd": -8.2,
+  "win_rate": 62.5,
+  "sharpe_ratio": 1.85,
+  "total_trades": 48
+}
+```
+
+> **팁**: `summary`의 `sharpe_ratio`가 1.0 이상이면 괜찮은 전략, 2.0 이상이면 우수한 전략으로 평가됩니다. `mdd`(최대 낙폭)가 -20% 이하면 위험할 수 있습니다.
+
+---
+
+### BenchmarkCompareNode
+
+여러 백테스트 결과를 **나란히 비교**합니다. "RSI 전략 vs Buy & Hold, 어떤 게 더 나았을까?"를 분석합니다.
+
+```json
+{
+  "id": "compare",
+  "type": "BenchmarkCompareNode",
+  "strategies": [
+    "{{ nodes.backtestRSI }}",
+    "{{ nodes.backtestSPY }}"
+  ],
+  "ranking_metric": "sharpe"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `strategies` | array | ✅ | BacktestEngineNode 출력들 |
+| `ranking_metric` | string | ❌ | 순위 기준 (기본: `sharpe`) |
+
+**ranking_metric 옵션:**
+
+| 지표 | 설명 | 좋은 값 |
+|------|------|--------|
+| `sharpe` | 위험 대비 수익 (샤프 비율) | 높을수록 좋음 (>1.0) |
+| `return` | 총 수익률 | 높을수록 좋음 |
+| `mdd` | 최대 낙폭 | 낮을수록(0에 가까울수록) 좋음 |
+| `calmar` | 수익률 / MDD | 높을수록 좋음 |
+
+**출력:**
+- `combined_curve` - 통합 자산 곡선 (비교 차트용)
+- `comparison_metrics` - 전략별 비교 지표
+- `ranking` - 순위
+
+**사용 패턴:**
+
+```mermaid
+flowchart LR
+    A["BacktestEngineNode<br/>(내 RSI 전략)"] --> C[BenchmarkCompareNode] --> D[LineChartNode]
+    B["BacktestEngineNode<br/>(SPY Buy&Hold)"] --> C
+```
+
+> **팁 - Buy & Hold 벤치마크**: BacktestEngineNode에 조건 신호 없이 데이터만 넣으면 **Buy & Hold** (사서 보유) 전략으로 자동 적용됩니다. 내 전략이 단순 보유보다 나은지 비교하세요.
+
+### PerformanceReportNode (성과·리스크 리포트)
+
+백테스트나 실계좌의 수익 시계열(equity/returns/prices)로부터 **성과·리스크 지표**를 산출합니다. quantstats 백엔드를 사용하며, `perf` extra 설치가 필요합니다 (`pip install "programgarden-community[perf]"` — 미설치 시 설치 안내와 함께 명시 에러).
+
+```json
+{
+  "id": "perf",
+  "type": "PerformanceReportNode",
+  "data": "{{ nodes.backtest.equity_curve }}",
+  "data_kind": "equity"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| `data` | array | ✅ | 수익 시계열 (BacktestEngineNode `equity_curve` 등) |
+| `data_kind` | enum | ❌ | 입력 종류: `equity`(기본) / `returns` / `prices` |
+| `value_field` | string | ❌ | 시계열 항목에서 읽을 값 필드 (기본 `close`) |
+| `benchmark` | array | ❌ | 벤치마크 수익 시계열 (지정 시 beta/alpha 산출) |
+| `periods_per_year` | number | ❌ | 연환산 기준 기간 수 (기본 252) |
+| `risk_free_rate` | number | ❌ | 무위험 수익률 (기본 0.0) |
+
+**출력:**
+- `metrics` - 성과·리스크 지표 객체 (샤프/소르티노/MDD 등)
+- `report` - 텍스트 리포트
+- `drawdown_series` - 낙폭 시계열 (차트용)
+- `summary` - 요약 (관측치 3개 미만이면 `metrics=None` + `summary.error.reason="insufficient_data"`)
+
+> **팁**: `TableDisplayNode`/`SummaryDisplayNode`에 `metrics`를 연결해 지표 표를 표시하거나, `drawdown_series`를 `LineChartNode`로 시각화할 수 있습니다.
+
+---
+
+## 11. ai - AI 에이전트
+
+### LLMModelNode
+
+LLM(대규모 언어 모델) API에 연결합니다. BrokerNode이 증권사에 연결하듯, LLMModelNode은 **AI 서비스에 연결**합니다.
+
+```json
+{
+  "id": "llm",
+  "type": "LLMModelNode",
+  "credential_id": "my-openai-cred",
+  "model": "gpt-4o",
+  "temperature": 0.3,
+  "max_tokens": 2000
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `credential_id` | string | - | LLM API 인증 ID |
+| `model` | string | `"gpt-4o"` | 사용할 모델명 |
+| `temperature` | number | `0.7` | 응답의 창의성 (0.0=정확, 2.0=창의적) |
+| `max_tokens` | number | `1000` | 최대 응답 길이 (토큰 수, 100~128000) |
+| `streaming` | boolean | `false` | 응답을 실시간으로 받을지 여부 |
+
+**지원 LLM 제공자:**
+
+| 제공자 | credential 타입 | 대표 모델 |
+|--------|----------------|----------|
+| OpenAI | `llm_openai` | gpt-4o, gpt-4o-mini |
+| Anthropic | `llm_anthropic` | claude-sonnet-4-5-20250929 |
+| Google | `llm_google` | gemini-2.0-flash |
+| Azure OpenAI | `llm_azure_openai` | (배포 이름 사용) |
+| Ollama | `llm_ollama` | llama3, mistral (로컬 실행, 무료) |
+
+**출력**: `connection` - LLM 연결 (`ai_model` 엣지로 AIAgentNode에 전달)
+
+> **팁 - temperature**: 투자 분석처럼 정확성이 중요한 작업은 `temperature: 0.1~0.3`을 권장합니다. 창의적인 전략 아이디어가 필요하면 `0.7~1.0`으로 올리세요.
+
+> **팁 - Ollama**: 무료로 AI를 사용하고 싶다면 Ollama를 로컬에 설치하여 사용할 수 있습니다. 단, 성능은 OpenAI/Anthropic보다 낮을 수 있습니다.
+
+---
+
+### AIAgentNode
+
+AI 에이전트가 워크플로우의 다른 노드를 **도구(Tool)**로 활용하여 시장을 분석하고 의사결정합니다.
+
+```json
+{
+  "id": "agent",
+  "type": "AIAgentNode",
+  "preset": "technical_analyst",
+  "user_prompt": "AAPL, NVDA의 최근 차트를 분석하고 매수 적절성을 판단해주세요.",
+  "output_format": "json",
+  "max_tool_calls": 10,
+  "cooldown_sec": 60
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `preset` | string | `"custom"` | 에이전트 역할 프리셋 |
+| `system_prompt` | string | - | AI에게 주는 역할 지시 (custom 모드에서 필수) |
+| `user_prompt` | string | - | AI에게 질문/지시 (표현식 사용 가능) |
+| `output_format` | string | `"text"` | 응답 형식: `text`, `json`, `structured` |
+| `output_schema` | object | - | `structured` 모드에서 응답 구조 정의 |
+| `max_tool_calls` | number | `10` | AI가 도구를 최대 몇 번 호출할 수 있는지 (1~50) |
+| `timeout_seconds` | number | `60` | 최대 실행 시간 (초) |
+| `cooldown_sec` | number | `60` | 연속 실행 간 최소 대기 시간 (초, 1~3600) |
+
+**프리셋 역할:**
+
+| 프리셋 | 역할 | 적합한 상황 |
+|--------|------|-----------|
+| `technical_analyst` | 기술적 분석가 | RSI, MACD 등 차트 분석 |
+| `risk_manager` | 리스크 관리자 | 포지션 위험도 평가 |
+| `news_analyst` | 뉴스 분석가 | 뉴스/이벤트의 주가 영향 분석 |
+| `strategist` | 종합 전략가 | 전체 포트폴리오 전략 수립 |
+| `custom` | 사용자 정의 | `system_prompt`로 직접 역할 지정 |
+
+**연결 방법 (3가지 엣지 타입):**
+
+```json
+{
+  "edges": [
+    {"from": "llm", "to": "agent", "type": "ai_model"},
+    {"from": "history", "to": "agent", "type": "tool"},
+    {"from": "market", "to": "agent", "type": "tool"},
+    {"from": "broker", "to": "agent"}
+  ]
+}
+```
+
+| 엣지 타입 | 용도 | 필수 |
+|----------|------|:----:|
+| `ai_model` | LLMModelNode → AIAgentNode (AI 연결) | ✅ (1개) |
+| `tool` | 기존 노드 → AIAgentNode (도구로 등록) | ❌ (여러 개 가능) |
+| `main` (기본) | 실행 순서 | - |
+
+**출력**: `response` - AI 응답
+
+> **중요**: `tool` 엣지로 연결된 노드는 AI가 **필요할 때만 호출**합니다. 항상 실행되는 것이 아니라, AI가 "이 데이터가 필요하다"고 판단했을 때만 호출됩니다.
+
+> **중요 - 실시간 연결 차단**: 실시간 노드에서 AIAgentNode으로 직접 연결할 수 없습니다. ThrottleNode를 사이에 넣어야 합니다.
+
+> **주의 - Stateless**: AI 에이전트는 매 실행마다 **이전 대화를 기억하지 않습니다**. 필요한 정보는 `user_prompt`에 표현식으로 전달하세요.
+
+> **주의 - API 비용**: LLM API는 사용량에 따라 비용이 발생합니다. `cooldown_sec`을 적절히 설정하여 과도한 호출을 방지하세요.
+
+> 상세 가이드: [AI 에이전트 가이드](ai_agent_guide.md)
+
+---
+
+## 12. messaging - 알림/메시징
+
+워크플로우 결과를 외부 메신저로 보내는 노드입니다. 커뮤니티 패키지(`programgarden-community`)에서 제공됩니다.
+
+### TelegramNode (텔레그램 알림)
+
+등록된 **봇 토큰과 수신 채팅 ID**로 텔레그램 메시지를 보냅니다. 체결·신호 같은 이벤트를 알릴 때 씁니다. 실제 전송 전에 봇 토큰과 채팅 ID를 연결해야 합니다.
+
+```json
+{
+  "id": "notify",
+  "type": "TelegramNode",
+  "template": "📈 {{symbol}} RSI: {{rsi}} → 매수 신호!",
+  "credential_id": "telegram-bot-001"
+}
+```
+
+| 필드 | 값 | 설명 |
+|------|-----|------|
+| `template` | 문자열 (기본 `""`) | 메시지 템플릿. Jinja2 스타일 변수 사용 가능 (예: `{{symbol}}`, `{{price}}`) |
+| `credential_id` | 문자열 (필수) | 텔레그램 봇 토큰과 수신 채팅 ID가 등록된 인증정보(`telegram_bot` / `telegram`). 키 없이 초안 저장은 가능하며, 실제 전송 전에 연결해야 합니다 |
+
+**출력**:
+- `sent` - 전송 확인 신호 (`{sent: true, chat_id: ...}`)
+- `message_id` - 참조용 텔레그램 메시지 ID
+
+> **주의**: 봇 토큰과 채팅 ID 는 `credential_id`로 연결된 인증정보에서 **자동 주입**되므로 노드에 직접 적지 않습니다. 모의 실행·심층 검증 시에는 실제 메시지를 보내지 않습니다.
+
+---
+
+## 부록: 노드 카테고리 요약
+
+| 카테고리 | 노드 수 | 용도 | 주요 노드 |
+|----------|--------|------|----------|
+| `infra` | 8 | 시작/연결/흐름/분기 | StartNode, BrokerNode, ThrottleNode, SplitNode, AggregateNode, IfNode |
+| `account` | 13 | 계좌 조회 | AccountNode, OpenOrdersNode, RealAccountNode, RealOrderEventNode (해외주식/선물 + 국내주식), OverseasFuturesOrderableQuantityNode |
+| `market` | 23 | 시세/종목/펀더멘털/제외종목 | MarketDataNode, FundamentalNode, HistoricalDataNode, RealMarketDataNode, SymbolQueryNode, RankingNode, WatchlistNode, ScreenerNode, SymbolFilterNode, ExclusionListNode, FuturesContractNode, OverseasFuturesContractInfoNode, KoreaStock* |
+| `condition` | 2 | 조건 평가 | ConditionNode, LogicNode |
+| `order` | 10 | 주문 실행 | NewOrderNode, ModifyOrderNode, CancelOrderNode, PositionSizingNode (해외주식/선물 + 국내주식) |
+| `risk` | 1 | 리스크 관리 | PortfolioNode |
+| `schedule` | 3 | 스케줄/시간 | ScheduleNode, TradingHoursFilterNode, SessionGateNode |
+| `data` | 4 | 데이터 조회/저장/커스텀코드 | SQLiteNode, HTTPRequestNode, FieldMappingNode, CodeNode |
+| `display` | 6 | 시각화 | TableDisplayNode, LineChartNode, MultiLineChartNode, CandlestickChartNode, BarChartNode, SummaryDisplayNode |
+| `analysis` | 3 | 백테스트/성과분석 | BacktestEngineNode, BenchmarkCompareNode, PerformanceReportNode |
+| `ai` | 2 | AI 에이전트 | LLMModelNode, AIAgentNode |
+| `messaging` | 1 | 알림/메시징 | TelegramNode |
+
+---
+
+## 다음 단계
+
+- [워크플로우 구조 이해](structure.md) - 노드, 엣지, 인증의 개념부터
+- [자동 반복 처리](auto_iterate_guide.md) - 여러 종목을 자동으로 처리하는 방법
+- [표현식 문법](expression_guide.md) - `{{ }}` 표현식 작성법
+- [조건 조합](logic_guide.md) - 여러 조건을 논리 연산으로 조합
+- [종목조건 플러그인](strategies/stock_condition.md) - RSI, MACD 등 86개 전략 플러그인
+- [AI 에이전트](ai_agent_guide.md) - LLM으로 시장 분석
+
+## Account connection policy
+
+Reuse one broker connection per workflow. Another account or product requires
+a separate workflow. This is a blocking library validation rule, including for
+unbound brokers and repeated credential references.

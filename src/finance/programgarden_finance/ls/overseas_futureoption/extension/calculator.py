@@ -1,0 +1,292 @@
+"""
+해외선물 손익 계산기
+
+Tick 기반 정확한 손익 계산을 제공합니다.
+Safety Margin 개념을 적용하여 비용을 보수적으로 책정합니다.
+"""
+
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional
+
+from .symbol_spec_manager import SymbolSpecManager, SymbolSpec
+from .models import FuturesTradeInput, FuturesPnLResult, FuturesNativePnLResult
+
+# ===== 상수 정의 =====
+DEFAULT_EXCHANGE_RATE = Decimal("1400")  # 기본 환율 (원/달러)
+DEFAULT_FEE_PER_CONTRACT = Decimal("7.5")  # 편도 $7.5 Safety Margin (왕복 $15)
+CAPITAL_GAINS_TAX_RATE = Decimal("0.11")  # 양도소득세 11%
+
+
+def compute_futures_pnl_rate(entry_price, current_price, is_long: bool) -> float:
+    """해외선물 명목가 대비 수익률(%) 을 계산한다.
+
+    승수(contract multiplier)는 분자·분모에서 소거되므로 수익률 계산에 불필요:
+        long  : (current - entry) / entry * 100
+        short : 부호 반전
+
+    두 가격 인자를 방어적으로 float 로 강제하고 항상 float 를 반환한다
+    (Decimal/float 혼합 호출의 TypeError 와 반환 타입 비일관을 제거). 진입가가
+    0/음수이거나 인자가 숫자로 변환 불가하면 0.0 을 반환한다.
+
+    이 함수는 REST 잔고 직렬화(CIDBQ01500)와 실시간 트래커(FuturesAccountTracker)
+    양쪽이 **같은 값**을 내도록 공유하는 단일 진실 공급원이다. Decimal 필드에
+    담아야 하는 호출부는 반환값을 Decimal(str(...)) 로 감싼다.
+    """
+    if entry_price is None or current_price is None:
+        return 0.0
+    try:
+        entry = float(entry_price)
+        current = float(current_price)
+    except (TypeError, ValueError):
+        return 0.0
+    if entry <= 0:
+        return 0.0
+    rate = (current - entry) / entry * 100
+    if not is_long:
+        rate = -rate
+    return rate
+
+
+def calculate_futures_pnl(
+    trade: FuturesTradeInput,
+    spec: Optional[SymbolSpec] = None
+) -> FuturesPnLResult:
+    """
+    해외선물 손익 계산 (Tick 기반, Safety Margin 적용)
+    
+    Args:
+        trade: 거래 입력 데이터
+        spec: 종목 명세 (None이면 manual_tick_size/manual_tick_value 필수)
+    
+    Returns:
+        FuturesPnLResult: 손익 계산 결과
+    """
+    # This legacy API names its values USD. Never apply native non-USD tick
+    # money to USD fees or the USD/KRW rate without an explicit conversion.
+    if spec is not None and spec.currency.strip().upper() != "USD":
+        raise ValueError("usd_estimator_requires_usd_spec")
+    if trade.manual_tick_size is not None or trade.manual_tick_value is not None:
+        if trade.manual_currency.strip().upper() != "USD":
+            raise ValueError("usd_estimator_requires_usd_manual_values")
+    safety_margin_applied = False
+    
+    # 1. Tick Size/Value 결정
+    if trade.manual_tick_size is not None and trade.manual_tick_value is not None:
+        tick_size = trade.manual_tick_size
+        tick_value = trade.manual_tick_value
+        decimal_places = 2
+    elif spec:
+        tick_size = spec.tick_size
+        tick_value = spec.tick_value
+        decimal_places = spec.decimal_places
+    else:
+        raise ValueError(
+            f"Symbol spec not provided and manual_tick_size/manual_tick_value not set. "
+            f"Provide either spec or manual values."
+        )
+
+    if not tick_size.is_finite() or tick_size <= 0 or not tick_value.is_finite() or tick_value <= 0:
+        raise ValueError("missing_or_invalid_tick_metadata")
+    
+    # 2. 환율 결정
+    exchange_rate = trade.exchange_rate
+    if exchange_rate is None:
+        exchange_rate = DEFAULT_EXCHANGE_RATE
+        safety_margin_applied = True
+    
+    # 3. 수수료 결정 (계약당)
+    fee_per_contract = trade.custom_fee_usd
+    if fee_per_contract is None:
+        fee_per_contract = DEFAULT_FEE_PER_CONTRACT
+        safety_margin_applied = True
+    
+    # 4. 틱 수 계산: (매도가 - 매수가) / Tick Size
+    price_diff = trade.sell_price - trade.buy_price
+    if not trade.is_long:  # 숏 포지션이면 반대
+        price_diff = -price_diff
+    
+    # 소수점 정밀도 적용
+    if decimal_places > 0:
+        quantize_str = "0." + "0" * decimal_places
+    else:
+        quantize_str = "1"
+    
+    total_ticks = (price_diff / tick_size).quantize(Decimal(quantize_str), ROUND_HALF_UP)
+    
+    # 5. 손익 계산: 틱 수 × Tick Value × 계약수
+    qty = Decimal(str(trade.qty))
+    gross_pl = total_ticks * tick_value * qty
+    
+    # 6. 슬리피지 비용 (Safety Margin 모드에서 옵션)
+    slippage_cost = Decimal("0")
+    if trade.apply_slippage and safety_margin_applied:
+        slippage_cost = tick_value * qty * 2  # 진입/청산 각 1틱
+    
+    # 7. 수수료 계산 (왕복)
+    total_fees = fee_per_contract * qty * 2  # 진입 + 청산
+    
+    # 8. 순손익
+    net_pl_usd = gross_pl - total_fees - slippage_cost
+    net_pl_krw = (net_pl_usd * exchange_rate).quantize(Decimal("1"), ROUND_HALF_UP)
+    
+    # 9. 예상 양도소득세 (수익일 때만, 11%)
+    estimated_tax_krw = Decimal("0")
+    if net_pl_krw > 0:
+        estimated_tax_krw = (net_pl_krw * CAPITAL_GAINS_TAX_RATE).quantize(Decimal("1"), ROUND_HALF_UP)
+    
+    return FuturesPnLResult(
+        total_ticks=total_ticks,
+        gross_pl_usd=gross_pl,
+        net_pl_usd=net_pl_usd,
+        net_pl_krw=net_pl_krw,
+        total_fees_usd=total_fees,
+        slippage_cost_usd=slippage_cost,
+        estimated_tax_krw=estimated_tax_krw,
+        tick_size_used=tick_size,
+        tick_value_used=tick_value,
+        exchange_rate_used=exchange_rate,
+        is_safety_margin_applied=safety_margin_applied
+    )
+
+
+def calculate_native_gross_pnl(
+    *,
+    spec: SymbolSpec,
+    quantity: int,
+    entry_price: Decimal,
+    current_price: Decimal,
+    is_long: bool = True,
+) -> FuturesNativePnLResult:
+    """Estimate gross linear tick-value price movement in contract currency.
+
+    This is not the broker's accounting valuation, net PnL, equity return or
+    settlement result. No fee, tax, FX or margin assumption is applied.
+    """
+    currency = spec.currency.strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError("missing_or_invalid_spec_currency")
+    tick_size = Decimal(str(spec.tick_size))
+    tick_value = Decimal(str(spec.tick_value))
+    if not tick_size.is_finite() or tick_size <= 0 or not tick_value.is_finite() or tick_value <= 0:
+        raise ValueError("missing_or_invalid_tick_metadata")
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
+        raise ValueError("invalid_quantity")
+    entry = Decimal(str(entry_price))
+    current = Decimal(str(current_price))
+    if not entry.is_finite() or not current.is_finite():
+        raise ValueError("invalid_position_price")
+    ticks = (current - entry) / tick_size
+    if not is_long:
+        ticks = -ticks
+    return FuturesNativePnLResult(
+        amount=ticks * tick_value * quantity,
+        currency=currency,
+        total_ticks=ticks,
+        tick_size_used=tick_size,
+        tick_value_used=tick_value,
+    )
+
+
+class FuturesPnLCalculator:
+    """
+    해외선물 손익 계산기 클래스
+    
+    SymbolSpecManager와 연동하여 종목별 정확한 손익 계산을 수행합니다.
+    """
+    
+    def __init__(
+        self,
+        spec_manager: Optional[SymbolSpecManager] = None,
+        default_fee_per_contract: Decimal = DEFAULT_FEE_PER_CONTRACT
+    ):
+        """
+        Args:
+            spec_manager: 종목 명세 관리자
+            default_fee_per_contract: 기본 계약당 수수료 ($)
+        """
+        self._spec_manager = spec_manager
+        self._default_fee = default_fee_per_contract
+    
+    @property
+    def spec_manager(self) -> Optional[SymbolSpecManager]:
+        """종목 명세 관리자"""
+        return self._spec_manager
+    
+    def set_spec_manager(self, spec_manager: SymbolSpecManager):
+        """종목 명세 관리자 설정"""
+        self._spec_manager = spec_manager
+    
+    def calculate(self, trade: FuturesTradeInput) -> FuturesPnLResult:
+        """
+        손익 계산
+        
+        Args:
+            trade: 거래 입력 데이터
+        
+        Returns:
+            FuturesPnLResult: 손익 계산 결과
+        """
+        spec = None
+        if self._spec_manager:
+            spec = self._spec_manager.get_spec(trade.symbol)
+        
+        return calculate_futures_pnl(trade, spec)
+    
+    def calculate_realtime_pnl(
+        self,
+        symbol: str,
+        quantity: int,
+        entry_price: Decimal,
+        current_price: Decimal,
+        is_long: bool = True,
+        exchange_rate: Optional[Decimal] = None,
+        custom_fee_usd: Optional[Decimal] = None
+    ) -> FuturesPnLResult:
+        """
+        실시간 손익 계산 (보유 중인 포지션)
+        
+        Args:
+            symbol: 종목코드
+            quantity: 보유수량
+            entry_price: 진입가격
+            current_price: 현재가
+            is_long: True: 매수, False: 매도
+            exchange_rate: 환율 (None이면 기본값 사용)
+            custom_fee_usd: 계약당 수수료 (None이면 기본값 사용)
+        
+        Returns:
+            FuturesPnLResult: 손익 계산 결과
+        """
+        # 종목 명세 조회
+        spec = None
+        manual_tick_size = None
+        manual_tick_value = None
+        
+        if self._spec_manager:
+            spec = self._spec_manager.get_spec(symbol)
+        
+        if not spec:
+            # spec이 없으면 수동 입력 필요
+            raise ValueError(
+                f"Symbol '{symbol}' not found in spec_manager. "
+                f"Initialize spec_manager first or provide manual_tick_size/manual_tick_value."
+            )
+        
+        trade = FuturesTradeInput(
+            symbol=symbol,
+            buy_price=entry_price if is_long else current_price,
+            sell_price=current_price if is_long else entry_price,
+            qty=quantity,
+            is_long=is_long,
+            custom_fee_usd=custom_fee_usd or self._default_fee,
+            exchange_rate=exchange_rate,
+            apply_slippage=False
+        )
+        
+        return calculate_futures_pnl(trade, spec)
+    
+    def get_symbol_spec(self, symbol: str) -> Optional[SymbolSpec]:
+        """종목 명세 조회"""
+        if self._spec_manager:
+            return self._spec_manager.get_spec(symbol)
+        return None

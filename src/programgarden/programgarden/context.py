@@ -1,0 +1,3580 @@
+"""
+ProgramGarden - ExecutionContext
+
+Workflow execution context protocol
+- Data transfer between nodes
+- Realtime data injection
+- State management
+- Event system for realtime updates
+- Persistent node lifecycle management
+"""
+
+from typing import Optional, Dict, Any, List, Protocol, runtime_checkable, Callable, Awaitable, TYPE_CHECKING, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from collections import deque
+from copy import deepcopy
+import asyncio
+import logging
+import time
+
+from programgarden_core.expression import ExpressionContext
+from programgarden_core.bases.listener import (
+    ExecutionListener,
+    NodeState,
+    EdgeState,
+    NodeStateEvent,
+    EdgeStateEvent,
+    LogEvent,
+    JobStateEvent,
+    DisplayDataEvent,
+    WorkflowPnLEvent,
+    PositionDetail,
+    RiskEvent,
+    RestartEvent,
+    NotificationEvent,
+    NotificationCategory,
+    NotificationSeverity,
+    LLMStreamEvent,
+    TokenUsageEvent,
+    AIToolCallEvent,
+    OrderFillEvent,
+)
+from programgarden_core.models.resilience import RetryEvent
+
+logger = logging.getLogger("programgarden.context")
+
+# 체결시각을 브로커 프레임이 싣지 않았을 때 **원장에만** 쓰는 표식.
+#
+# 서버로 나가는 OrderFillEvent.fill_time 은 이때 빈 문자열이어야 한다 — 소비자
+# (호스팅 플랫폼의 체결 소비자)가 `order_date + fill_time` 을 시장 세션
+# 타임존으로 읽어 executed_at 을 **계산된 체결시각**으로 확정하기 때문이다. 값이
+# 없는데 무언가를 채우면 그게 체결시각으로 승격된다(엔진 <= v1.36.0 이
+# `datetime.now().strftime('%H%M%S000')` 를 합성하던 자리가 정확히 그 사고였다).
+#
+# 그런데 원장(workflow_position_lots.fill_datetime = f"{order_date}_{fill_time}")
+# 에 빈 값을 그대로 넣으면 다른 결함이 생긴다: 날짜 필터가
+# `fill_datetime >= f"{start_date}_000000000"` 문자열 비교라
+# ("20260912_" < "20260912_000000000") 그 로트가 **대회 구간 PnL 에서 통째로
+# 사라진다**(workflow_position_tracker.get_workflow_positions / calculate_pnl).
+# 그래서 원장에는 숫자가 아닌 표식을 쓴다 — 시계 값으로 오독될 수 없고(비숫자),
+# 날짜 필터에 포함되며("u" > "0"), FIFO 정렬에서는 그날 알려진 시각들 뒤에 온다.
+# 이 값은 컨텍스트 밖으로 나가지 않는다: _on_tracker_fill_classified 가 이벤트를
+# 만들 때 다시 빈 문자열로 되돌린다.
+UNKNOWN_FILL_TIME = "unknown"
+
+
+def _honest_execution_count(metrics, product, order_lifecycle_handler):
+    """Refuse to report a futures execution count the ledger cannot know.
+
+    When an app session is attached it reconciles canonical REST executions and
+    ``executor.on_tc3_event`` deliberately stops feeding fills into the ledger
+    (TC3 and REST identifiers have no proven alias relation). The ledger then
+    holds no futures fills at all, so its count is 0 however many orders filled.
+    Reporting that 0 as an available figure is the difference between "no
+    executions" and "not counted here" — say the second one.
+    """
+    from .order_lifecycle import FUTURES_PRODUCTS
+
+    if (not isinstance(metrics, dict) or order_lifecycle_handler is None
+            or product not in FUTURES_PRODUCTS
+            or metrics.get("executed_order_count_status") != "available"):
+        return metrics
+    return {**metrics, "executed_order_count": None,
+            "executed_order_count_status": "unavailable",
+            "executed_order_count_reason": "local_futures_ledger_not_execution_source"}
+
+
+@runtime_checkable
+class DataProvider(Protocol):
+    """Data provider protocol"""
+
+    async def get_price(self, symbol: str) -> Optional[float]:
+        """Get current price"""
+        ...
+
+    async def get_ohlcv(
+        self, symbol: str, period: str, count: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get OHLCV data"""
+        ...
+
+
+@runtime_checkable
+class AccountProvider(Protocol):
+    """Account information provider protocol"""
+
+    async def get_balance(self) -> Dict[str, Any]:
+        """Get balance"""
+        ...
+
+    async def get_positions(self) -> Dict[str, Any]:
+        """Get positions"""
+        ...
+
+    async def get_open_orders(self) -> List[Dict[str, Any]]:
+        """Get open orders"""
+        ...
+
+
+@runtime_checkable
+class OrderExecutor(Protocol):
+    """Order executor protocol"""
+
+    async def submit_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: int,
+        order_type: str = "market",
+        price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Submit order"""
+        ...
+
+    async def modify_order(
+        self,
+        order_id: str,
+        price: Optional[float] = None,
+        quantity: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Modify order"""
+        ...
+
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        """Cancel order"""
+        ...
+
+
+@dataclass
+class NodeOutput:
+    """Node output value"""
+
+    node_id: str
+    port_name: str
+    value: Any
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class WorkflowEvent:
+    """Event for realtime updates and triggers"""
+    
+    type: str  # "realtime_update" | "schedule_tick" | "order_filled" | etc.
+    source_node_id: str
+    data: Any = None
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    trigger_nodes: List[str] = field(default_factory=list)  # Nodes to trigger on this event
+
+
+class ExecutionContext:
+    """
+    Workflow execution context
+
+    Handles data transfer between nodes, realtime data injection, and state management.
+
+    Attributes:
+        context_params: Runtime parameters (symbols, dry_run, backtest options, etc.)
+        _secrets: Sensitive credentials (appkey, appsecret, etc.) - never logged
+        _resource_context: Resource management context (CPU/RAM/Disk throttling)
+    """
+
+    def __init__(
+        self,
+        job_id: str,
+        workflow_id: str,
+        context_params: Optional[Dict[str, Any]] = None,
+        secrets: Optional[Dict[str, Any]] = None,
+        workflow_inputs: Optional[Dict[str, Any]] = None,
+        workflow_credentials: Optional[List[Dict[str, Any]]] = None,
+        resource_context: Optional[Any] = None,  # ResourceContext (lazy import)
+        # DAG 탐색용 워크플로우 구조 정보
+        workflow_edges: Optional[List[Any]] = None,  # List[ResolvedEdge]
+        workflow_nodes: Optional[Dict[str, Any]] = None,  # Dict[str, ResolvedNode]
+        storage_dir: Optional[str] = None,
+        # sync (appkey, product, paper_trading, *, force_reissue=False, stale_token=None)
+        #   -> (token, expires_at_epoch)
+        ls_token_provider: Optional[Any] = None,
+        order_lifecycle_handler: Optional[Any] = None,
+        execution_key: Optional[str] = None,
+    ):
+        self.job_id = job_id
+        self.workflow_id = workflow_id
+        self._storage_dir = storage_dir
+        from programgarden.database.db_naming import engine_db_filename
+        self.execution_key = execution_key
+        self.engine_db_filename = engine_db_filename(
+            workflow_id=workflow_id, job_id=job_id, execution_key=execution_key,
+        )
+        self._startup_reconciled = False
+        self._startup_broker_snapshot = None
+        # Paper futures "no business date" waiting notice (informational only).
+        self._business_day_notice = None
+        self.position_adjustments: List[Dict[str, Any]] = []
+        self.context_params = context_params or {}
+
+        # Opt-in LS token provider. When set, broker
+        # logins consume a server-issued token instead of self-issuing.
+        self.ls_token_provider = ls_token_provider
+        # Runtime-only capabilities and acceptance guards never enter DSL state
+        # or checkpoint context_params. PAPER orders use the same guard as live.
+        self.order_lifecycle_handler = order_lifecycle_handler
+        self._order_lifecycle_operations: Dict[str, Dict[str, Any]] = {}
+
+        # Secrets storage (never logged, separate from context_params)
+        self._secrets: Dict[str, Any] = secrets or {}
+        
+        # Workflow inputs schema (for {{ input.xxx }} expressions)
+        self._workflow_inputs: Dict[str, Any] = workflow_inputs or {}
+        
+        # Workflow credentials (for credential_id resolution)
+        # Format: [{"credential_id": "cred-id", "type": "http_bearer", "data": {"token": "..."}}]
+        self._workflow_credentials: List[Dict[str, Any]] = workflow_credentials or []
+
+        # Node output storage
+        self._outputs: Dict[str, Dict[str, NodeOutput]] = {}
+
+        # Realtime data buffer
+        self._realtime_data: Dict[str, Any] = {}
+
+        # Providers
+        self._data_provider: Optional[DataProvider] = None
+        self._account_provider: Optional[AccountProvider] = None
+        self._order_executor: Optional[OrderExecutor] = None
+
+        # State
+        self._is_running = False
+        self._is_paused = False
+        self._is_failed = False
+        self._failure_reason: Optional[str] = None
+
+        # Event handlers
+        self._event_handlers: Dict[str, List[callable]] = {}
+
+        # Logs
+        self._logs: List[Dict[str, Any]] = []
+        
+        # === New: Event Queue for realtime updates ===
+        self._event_queue: asyncio.Queue[WorkflowEvent] = asyncio.Queue()
+        
+        # === New: Persistent node management ===
+        # Stores trackers/connections that should stay alive between flow executions
+        self._persistent_nodes: Dict[str, Any] = {}  # node_id -> tracker/connection
+        self._persistent_tasks: Dict[str, asyncio.Task] = {}  # node_id -> background task
+        self._schedule_tick_source: Optional[str] = None  # Only this timer may trigger the current cycle.
+        self._persistent_metadata: Dict[str, Dict[str, Any]] = {}  # node_id -> {key: value}
+        
+        # === New: Order Event Dispatcher ===
+        # Multiple RealOrderEventNodes can subscribe to same TR codes
+        # One master callback dispatches to all registered handlers
+        # {product: {tr_cd: [(node_id, event_filter, handler)]}}
+        self._order_event_handlers: Dict[str, Dict[str, List[tuple]]] = {}
+        self._order_event_real_client: Dict[str, Any] = {}  # {product: real_client}
+        # {product: {stream(TR): master_callable}} — 주문이벤트 노드가 SDK 에 건 마스터 콜백.
+        # 정리 때 **이 콜러블만** 떼야 같은 Real 객체를 공유하는 체결 원장 구독(on_sc1_event 등)이
+        # 살아남는다(finance 1.9.7 키당 다중 리스너 + on_remove_*_message(listener)).
+        self._order_event_masters: Dict[str, Dict[str, Callable]] = {}
+        
+        # === New: Cleanup on flow end (stay_connected=False) ===
+        # Stores trackers that should be cleaned up after each flow execution
+        self._cleanup_on_flow_end: Dict[str, Any] = {}  # node_id -> tracker/connection
+        
+        # === New: Execution Listeners (for UI/Server callbacks) ===
+        self._listeners: List[ExecutionListener] = []
+        
+        # === New: Workflow Position Tracker ===
+        # Tracks workflow positions separately using FIFO for competition ranking
+        self._workflow_position_tracker: Optional[Any] = None  # WorkflowPositionTracker (lazy init)
+        self._personal_metrics_cache: Optional[Tuple[tuple, float, dict]] = None
+        # Per-run o3105 exchange answers for futures account/pending rows
+        # (programgarden.futures_exchange creates it on first use).
+        self._futures_exchange_cache: Optional[Any] = None
+        self._workflow_risk_tracker: Optional[Any] = None  # WorkflowRiskTracker (lazy init)
+        self._workflow_broker_node_id: Optional[str] = None  # BrokerNode ID for PnL refresh
+        self._workflow_product: str = "overseas_stock"  # Product type for PnL refresh
+
+        # === New: WorkflowJob reference (for start datetime access) ===
+        self._workflow_job: Optional[Any] = None  # WorkflowJob
+        
+        # === New: Resource Context (for CPU/RAM/Disk throttling) ===
+        self._resource_context = resource_context
+        
+        # === New: DAG index for ancestor propagation ===
+        # Reverse adjacency list: {to_node: [from_nodes]}
+        self._reverse_adj: Dict[str, List[str]] = {}
+
+        # Resolved workflow nodes — feature-opt-in collectors (risk_tracker etc.)
+        # read this to inspect node classes and plugin names without re-resolving.
+        self._workflow_nodes_map: Dict[str, Any] = workflow_nodes or {}
+
+        # === New: 반복 컨텍스트 ===
+        # 자동 반복 실행 시 item, index, total 저장
+        self._iteration_item: Optional[Any] = None
+        self._iteration_index: int = 0
+        self._iteration_total: int = 0
+        # Node type mapping: {node_id: node_type}
+        self._node_types: Dict[str, str] = {}
+
+        # M-10: Risk halt flag - critical risk event 시 주문 중단
+        self._risk_halt: bool = False
+
+        # dry_run 종목 표본(K) 적용 기록 — get_state()["dry_run_sampling"] 로 노출.
+        # {"applied": bool, "k": int, "nodes": [{"node_id", "n", "k"}, ...]}
+        self._dry_run_sampling: Dict[str, Any] = {"applied": False, "k": self.dry_run_sample_size, "nodes": []}
+
+        # Shutdown flag: cleanup 진행 중/완료 시 실시간 콜백 차단
+        self._shutdown: bool = False
+
+        # deep_validate: unresolved {{ }} bindings collected during the virtual
+        # full-execution pass. Each entry: {"node_id", "expression", "reason"}.
+        # Drained by `executor.deep_validate` into DEEP_VALIDATION_BINDING_UNRESOLVED
+        # errors. Only populated in deep mode (runtime/dry_run keep the old
+        # warn-and-continue behaviour untouched).
+        self._deep_unresolved_bindings: List[Dict[str, str]] = []
+
+        # Authored node configs (deep copies of the workflow definition). Only a
+        # template still at its authored position is evaluated; everything a node
+        # run produces is data. See programgarden.binding_provenance.
+        self._authored_node_configs: Dict[str, Dict[str, Any]] = {}
+
+        self._build_dag_index(workflow_edges, workflow_nodes)
+
+    # === Authored config (expression provenance) ===
+
+    def register_authored_node_configs(self, workflow: Any) -> None:
+        """Snapshot every node's authored config from a resolved workflow."""
+        from programgarden.binding_provenance import authored_snapshot
+
+        nodes = getattr(workflow, "nodes", None)
+        if not isinstance(nodes, dict):
+            return
+        for node_id, node in nodes.items():
+            config = getattr(node, "config", None)
+            if not isinstance(config, dict):
+                continue
+            self._authored_node_configs[node_id] = authored_snapshot(
+                getattr(node, "node_type", ""), config, getattr(node, "fields", None),
+            )
+
+    def authored_node_config(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """Authored config snapshot of ``node_id``; None when the node has none."""
+        return self._authored_node_configs.get(node_id)
+
+    # === Storage Directory ===
+
+    def _resolve_db_path(self, db_filename: str) -> str:
+        """DB 파일 경로를 결정한다.
+
+        우선순위:
+        1. storage_dir (외부 사용자 지정)
+        2. /app/data (기본값 — GKE/Docker PVC 마운트 포인트)
+        3. ./app/data (로컬 폴백 — /app/data mkdir 권한이 없을 때만)
+        """
+        from pathlib import Path
+
+        if self._storage_dir:
+            db_dir = Path(self._storage_dir)
+            db_dir.mkdir(parents=True, exist_ok=True)
+            return str(db_dir / db_filename)
+
+        default = Path("/app/data")
+        try:
+            default.mkdir(parents=True, exist_ok=True)
+            return str(default / db_filename)
+        except (PermissionError, OSError):
+            fallback = Path("./app/data")
+            fallback.mkdir(parents=True, exist_ok=True)
+            return str(fallback / db_filename)
+
+    # === Dry Run ===
+
+    @property
+    def is_dry_run(self) -> bool:
+        """Workflow is running in dry_run mode (deep_validate is a superset).
+
+        When True, side-effectful nodes (주문/Realtime/알림) skip external calls
+        and return simulated responses. Query/백테스트 nodes still execute normally.
+
+        deep_validate is a strict superset of dry_run: enabling ``deep_validate``
+        turns this True so every existing dry_run guard (order simulation, event
+        loop skip, position/risk tracker skip, MESSAGING simulation, SQL write
+        block) fires automatically — there is no order/notify path that reaches a
+        real broker call in deep mode.
+
+        Enable via ``context_params={"dry_run": True}`` (or
+        ``{"deep_validate": True}``) in ``pg.run_async``.
+        """
+        return bool(
+            self.context_params.get("dry_run", False)
+            or self.context_params.get("deep_validate", False)
+        )
+
+    # dry_run 종목 표본 상한 기본값. 1이 아니라 3인 이유: 첫 종목이 데이터 없음/상장폐지면
+    # 흐름이 빈 리스트로 헛돌아 검증이 무의미해진다 — 3이면 그 위험이 거의 사라진다.
+    DRY_RUN_SAMPLE_SIZE_DEFAULT = 3
+
+    @property
+    def dry_run_sample_size(self) -> int:
+        """dry_run 에서 auto-iterate 아이템(종목 등)을 앞에서 몇 개로 절단할지. 0 = 전수.
+
+        ``context_params={"dry_run_sample_size": K}`` 로 지정(기본 3). deep_validate 와
+        runtime 에는 적용되지 않는다 — `dry_run_sampling_active` 참조.
+        """
+        raw = self.context_params.get("dry_run_sample_size", self.DRY_RUN_SAMPLE_SIZE_DEFAULT)
+        try:
+            k = int(raw)
+        except (TypeError, ValueError):
+            k = self.DRY_RUN_SAMPLE_SIZE_DEFAULT
+        return max(0, k)
+
+    @property
+    def dry_run_sampling_active(self) -> bool:
+        """표본 절단이 켜진 모드인가 — plain dry_run(＝deep 아님)이고 K>0."""
+        return self.is_dry_run and not self.is_deep_validate and self.dry_run_sample_size > 0
+
+    def record_dry_run_sampling(self, node_id: str, n: int, k: int) -> None:
+        """표본 절단이 실제로 일어났음을 기록(N중 K). get_state()["dry_run_sampling"] 로 노출."""
+        self._dry_run_sampling["applied"] = True
+        self._dry_run_sampling["k"] = self.dry_run_sample_size
+        self._dry_run_sampling["nodes"].append({"node_id": node_id, "n": int(n), "k": int(k)})
+        self.log(
+            "info",
+            f"[dry_run] {node_id}: {n} items → sampled {k} (dry_run_sample_size={self.dry_run_sample_size}; "
+            f"전수 검증은 dry_run_sample_size=0)",
+            node_id,
+        )
+
+    def get_dry_run_sampling(self) -> Dict[str, Any]:
+        return {
+            "applied": bool(self._dry_run_sampling.get("applied")),
+            "k": self.dry_run_sample_size,
+            "nodes": list(self._dry_run_sampling.get("nodes") or []),
+        }
+
+    @property
+    def is_deep_validate(self) -> bool:
+        """Workflow is running in deep_validate (virtual full-execution) mode.
+
+        Deep validate is the strict-blocking ``deep_validate`` superset of
+        dry_run. This property is True ONLY for deep mode (not plain dry_run), so
+        executors can take the deep-only branch: inject fixture data for
+        realtime/data nodes (so the flow completes without waiting for events
+        that never arrive) and accumulate per-node errors instead of aborting on
+        the first failure.
+
+        Enable via ``context_params={"deep_validate": True}``.
+        """
+        return bool(self.context_params.get("deep_validate", False))
+
+    def get_deep_fixture(self, node_id: str, node_type: str) -> Optional[Dict[str, Any]]:
+        """Return a caller-supplied deep-validate fixture override, if any.
+
+        Callers may pass ``context_params={"deep_fixtures": {key: {...}}}`` where
+        ``key`` is either a node id or a node type. Node id takes precedence over
+        node type. Returns None when no override exists (executor then uses its
+        own schema-based default fixture).
+        """
+        fixtures = self.context_params.get("deep_fixtures")
+        if not isinstance(fixtures, dict):
+            return None
+        override = fixtures.get(node_id)
+        if override is None:
+            override = fixtures.get(node_type)
+        return override if isinstance(override, dict) else None
+
+    def record_deep_unresolved_binding(self, node_id: str, expression: str, reason: str) -> None:
+        """Record a ``{{ }}`` binding that could not be evaluated during a
+        deep_validate pass. No-op outside deep mode so runtime/dry_run are
+        unaffected. Deduplicated on (node_id, expression) so an auto-iterate that
+        re-evaluates the same literal N times yields a single entry.
+        """
+        if not self.is_deep_validate:
+            return
+        for entry in self._deep_unresolved_bindings:
+            if entry.get("node_id") == node_id and entry.get("expression") == expression:
+                return
+        self._deep_unresolved_bindings.append(
+            {"node_id": node_id, "expression": expression, "reason": reason}
+        )
+
+    def get_deep_unresolved_bindings(self) -> List[Dict[str, str]]:
+        """Return the deduplicated unresolved-binding records gathered in deep mode."""
+        return list(self._deep_unresolved_bindings)
+
+    # === DAG Index Building ===
+
+    def _build_dag_index(
+        self,
+        edges: Optional[List[Any]],
+        nodes: Optional[Dict[str, Any]],
+    ) -> None:
+        """
+        Build reverse adjacency list from edges and node type mapping.
+        
+        This enables efficient backward traversal to find ancestor nodes.
+        
+        Args:
+            edges: List of ResolvedEdge or dict with from/to keys
+            nodes: Dict of node_id -> ResolvedNode or dict with type key
+        """
+        if edges:
+            for edge in edges:
+                # ResolvedEdge 또는 dict 형태 모두 처리
+                if hasattr(edge, 'from_node_id'):
+                    from_node = edge.from_node_id
+                    to_node = edge.to_node_id
+                else:
+                    from_node = edge.get("from") or edge.get("from_node_id")
+                    to_node = edge.get("to") or edge.get("to_node_id")
+                
+                if to_node and from_node:
+                    if to_node not in self._reverse_adj:
+                        self._reverse_adj[to_node] = []
+                    self._reverse_adj[to_node].append(from_node)
+        
+        if nodes:
+            for node_id, node_data in nodes.items():
+                # ResolvedNode 또는 dict 형태 모두 처리
+                if hasattr(node_data, 'node_type'):
+                    self._node_types[node_id] = node_data.node_type
+                else:
+                    self._node_types[node_id] = node_data.get("type", "")
+
+    # === DAG Ancestor Propagation ===
+
+    def find_parent_outputs(
+        self,
+        current_node_id: str,
+        target_node_type: str,
+    ) -> List[Tuple[str, int, Dict[str, Any]]]:
+        """
+        Find all ancestor nodes of a specific type using backward traversal.
+        
+        Traverses the DAG backwards from current_node_id to find all
+        nodes of target_node_type, returning them sorted by distance.
+        
+        Args:
+            current_node_id: The node to search from
+            target_node_type: The node type to find (e.g., "BrokerNode")
+            
+        Returns:
+            List of (node_id, distance, outputs) tuples, sorted by distance.
+            Empty list if no matching ancestors found.
+            
+        Example:
+            brokers = context.find_parent_outputs("watchlist", "BrokerNode")
+            for node_id, dist, outputs in brokers:
+                print(f"{node_id} (거리 {dist}): {outputs.get('product')}")
+        """
+        # DAG 인덱스가 없으면 기존 방식 fallback
+        if not self._reverse_adj:
+            legacy_result = self.get_upstream_output(target_node_type)
+            if legacy_result:
+                return [("unknown", 0, legacy_result)]
+            return []
+        
+        results: List[Tuple[str, int, Dict[str, Any]]] = []
+        found_nodes: set = set()  # 이미 결과에 추가된 노드 추적
+        visited = set()
+        queue = deque([(current_node_id, 0)])  # (node_id, distance)
+        
+        while queue:
+            node_id, distance = queue.popleft()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            
+            # 이 노드의 상위 노드들 확인
+            for parent_id in self._reverse_adj.get(node_id, []):
+                parent_distance = distance + 1
+                
+                # 타입 매칭되고 아직 결과에 없으면 추가
+                if self._node_types.get(parent_id) == target_node_type:
+                    if parent_id not in found_nodes:
+                        outputs = self._outputs.get(parent_id, {})
+                        if outputs:
+                            output_dict = {port: out.value for port, out in outputs.items()}
+                            results.append((parent_id, parent_distance, output_dict))
+                            found_nodes.add(parent_id)
+                
+                # 계속 탐색 (찾아도 멈추지 않고 더 상위로)
+                if parent_id not in visited:
+                    queue.append((parent_id, parent_distance))
+        
+        # 거리순 정렬
+        results.sort(key=lambda x: x[1])
+        return results
+
+    def find_parent_output(
+        self,
+        current_node_id: str,
+        target_node_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find the closest ancestor node output (convenience method).
+        
+        Returns only the outputs of the closest matching ancestor.
+        If multiple nodes are at the same distance, returns the first one.
+        Use find_parent_outputs() if you need all ancestors.
+        
+        Args:
+            current_node_id: The node to search from
+            target_node_type: The node type to find (e.g., "BrokerNode")
+            
+        Returns:
+            Output dict of the closest ancestor, or None if not found.
+            
+        Example:
+            broker_info = context.find_parent_output("watchlist", "BrokerNode")
+            if broker_info:
+                product = broker_info.get("product")
+        """
+        results = self.find_parent_outputs(current_node_id, target_node_type)
+        return results[0][2] if results else None
+
+    # === Provider Configuration ===
+
+    def set_data_provider(self, provider: DataProvider) -> None:
+        """Set data provider"""
+        self._data_provider = provider
+
+    def set_account_provider(self, provider: AccountProvider) -> None:
+        """Set account provider"""
+        self._account_provider = provider
+
+    def set_order_executor(self, executor: OrderExecutor) -> None:
+        """Set order executor"""
+        self._order_executor = executor
+
+    # === Secrets Management ===
+
+    def get_secret(self, key: str) -> Optional[Any]:
+        """
+        Get secret value by key
+
+        Args:
+            key: Secret key (e.g., 'credential_id', 'telegram_token')
+
+        Returns:
+            Secret value or None
+        """
+        return self._secrets.get(key)
+
+    def set_secret(self, key: str, value: Any) -> None:
+        """
+        Set secret value
+
+        Args:
+            key: Secret key (e.g., 'credential_id')
+            value: Secret value (e.g., {'appkey': '...', 'appsecret': '...'})
+        """
+        self._secrets[key] = value
+
+    def get_credential(self, credential_id: str = "credential_id") -> Optional[Dict[str, Any]]:
+        """
+        Get credential (appkey, appsecret) by credential_id
+
+        Args:
+            credential_id: Credential identifier (default: 'credential_id')
+
+        Returns:
+            Dict with 'appkey', 'appsecret' or None
+        """
+        return self._secrets.get(credential_id)
+
+    def get_workflow_credential(self, credential_id: str) -> Optional[Dict[str, Any]]:
+        """
+        워크플로우 JSON의 credentials 섹션에서 credential 데이터 조회
+
+        data가 list 형태 [{key, value, ...}, ...] 인 경우 dict로 변환하여 반환합니다.
+        이를 통해 _inject_credentials() 로직과 호환성을 유지합니다.
+
+        프로덕션 환경에서는 서버가 DB에서 암호화된 credentials를 복호화하여
+        워크플로우 JSON의 credentials 배열에 값을 주입한 후 실행합니다.
+
+        Args:
+            credential_id: credentials 배열에서 찾을 id (예: "broker-cred")
+
+        Returns:
+            Credential data dict (예: {"appkey": "...", "appsecret": "..."}) or None
+        """
+        # List에서 해당 id를 가진 credential 찾기
+        cred_ref = next(
+            (c for c in self._workflow_credentials if c.get("credential_id") == credential_id),
+            None
+        )
+        if not cred_ref:
+            return None
+
+        data = cred_ref.get("data", [])
+
+        # dict 형태인 경우 그대로 반환
+        if isinstance(data, dict):
+            return data if data else None
+
+        # list 형태인 경우 dict로 변환
+        if isinstance(data, list):
+            result = {}
+            for item in data:
+                if isinstance(item, dict) and "key" in item:
+                    key = item["key"]
+                    value = item.get("value")
+                    if value is not None:
+                        result[key] = value
+            if result:
+                return result
+
+        return None
+
+    def has_secret(self, key: str) -> bool:
+        """Check if secret exists"""
+        return key in self._secrets
+
+    # === Node Output Management ===
+
+    def set_output(
+        self,
+        node_id: str,
+        port_name: str,
+        value: Any,
+    ) -> None:
+        """Set node output"""
+        if node_id not in self._outputs:
+            self._outputs[node_id] = {}
+
+        self._outputs[node_id][port_name] = NodeOutput(
+            node_id=node_id,
+            port_name=port_name,
+            value=value,
+        )
+
+    def get_output(
+        self,
+        node_id: str,
+        port_name: Optional[str] = None,
+    ) -> Optional[Any]:
+        """Get node output"""
+        node_outputs = self._outputs.get(node_id, {})
+
+        if port_name:
+            output = node_outputs.get(port_name)
+            return output.value if output else None
+
+        # Return first output if no port name specified
+        if node_outputs:
+            first_output = list(node_outputs.values())[0]
+            return first_output.value
+
+        return None
+
+    def get_all_outputs(self, node_id: str) -> Dict[str, Any]:
+        """Get all outputs for a node as {port_name: value} dict"""
+        node_outputs = self._outputs.get(node_id, {})
+        return {port: output.value for port, output in node_outputs.items()}
+
+    def get_upstream_output(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Get output from upstream node by node type.
+        
+        .. deprecated::
+            Use `find_parent_outputs(current_node_id, target_node_type)` or
+            `find_parent_output(current_node_id, target_node_type)` instead.
+            This method uses name-based matching which is unreliable
+            when multiple nodes of the same type exist in the workflow.
+        
+        Searches all stored outputs for a node whose id contains the node type.
+        Returns the first matching node's outputs as a dict.
+        
+        Args:
+            node_type: Node type to search for (e.g., "BrokerNode")
+            
+        Returns:
+            Output dict if found, None otherwise
+        """
+        # node_id가 타입명을 포함하거나, 별도로 저장된 노드 타입 정보로 매칭
+        for node_id, outputs in self._outputs.items():
+            # 일반적인 패턴: node_id가 타입 기반이거나, 타입명을 포함
+            # 예: "broker", "BrokerNode", "broker_1" 등
+            node_id_lower = node_id.lower()
+            type_lower = node_type.lower().replace("node", "")
+            
+            if type_lower in node_id_lower or node_id.endswith(node_type):
+                # 모든 출력을 dict로 반환
+                return {port: output.value for port, output in outputs.items()}
+        
+        return None
+
+    def get_input(
+        self,
+        from_node_id: str,
+        from_port: Optional[str],
+    ) -> Optional[Any]:
+        """Get input value connected via edge"""
+        return self.get_output(from_node_id, from_port)
+
+    # === Realtime Data ===
+
+    def update_realtime_data(self, key: str, value: Any) -> None:
+        """Update realtime data"""
+        self._realtime_data[key] = value
+
+    def get_realtime_data(self, key: str) -> Optional[Any]:
+        """Get realtime data"""
+        return self._realtime_data.get(key)
+
+    # === Data Query (Provider Delegation) ===
+
+    async def get_price(self, symbol: str) -> Optional[float]:
+        """Get current price"""
+        if self._data_provider:
+            return await self._data_provider.get_price(symbol)
+        return None
+
+    async def get_ohlcv(
+        self,
+        symbol: str,
+        period: str = "1d",
+        count: int = 100,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get OHLCV data"""
+        if self._data_provider:
+            return await self._data_provider.get_ohlcv(symbol, period, count)
+        return None
+
+    async def get_balance(self) -> Dict[str, Any]:
+        """Get balance"""
+        if self._account_provider:
+            return await self._account_provider.get_balance()
+        return {}
+
+    async def get_positions(self) -> Dict[str, Any]:
+        """Get positions"""
+        if self._account_provider:
+            return await self._account_provider.get_positions()
+        return {}
+
+    async def get_open_orders(self) -> List[Dict[str, Any]]:
+        """Get open orders"""
+        if self._account_provider:
+            return await self._account_provider.get_open_orders()
+        return []
+
+    # === Order Execution (Executor Delegation) ===
+
+    async def submit_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: int,
+        order_type: str = "market",
+        price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Submit order"""
+        if self._order_executor:
+            return await self._order_executor.submit_order(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                order_type=order_type,
+                price=price,
+            )
+        return {"error": "Order executor not configured"}
+
+    async def modify_order(
+        self,
+        order_id: str,
+        price: Optional[float] = None,
+        quantity: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Modify order"""
+        if self._order_executor:
+            return await self._order_executor.modify_order(
+                order_id=order_id,
+                price=price,
+                quantity=quantity,
+            )
+        return {"error": "Order executor not configured"}
+
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        """Cancel order"""
+        if self._order_executor:
+            return await self._order_executor.cancel_order(order_id)
+        return {"error": "Order executor not configured"}
+
+    # === State Management ===
+
+    @property
+    def secrets(self) -> Dict[str, Any]:
+        """Get all secrets (read-only access)"""
+        return self._secrets
+
+    @property
+    def is_running(self) -> bool:
+        return self._is_running
+
+    @property
+    def is_paused(self) -> bool:
+        return self._is_paused
+
+    @property
+    def is_failed(self) -> bool:
+        return self._is_failed
+
+    @property
+    def failure_reason(self) -> Optional[str]:
+        return self._failure_reason
+
+    def start(self) -> None:
+        """Start execution"""
+        self._is_running = True
+        self._is_paused = False
+        self._is_failed = False
+        self._failure_reason = None
+
+    def pause(self) -> None:
+        """Pause execution"""
+        self._is_paused = True
+
+    def resume(self) -> None:
+        """Resume execution"""
+        self._is_paused = False
+
+    @property
+    def is_shutdown(self) -> bool:
+        """Whether cleanup is in progress or completed"""
+        return self._shutdown
+
+    def stop(self) -> None:
+        """Stop execution"""
+        self._is_running = False
+        self._shutdown = True
+
+    def fail(self, reason: str) -> None:
+        """Mark execution as failed"""
+        self._is_failed = True
+        self._is_running = False
+        self._failure_reason = reason
+        self.log("error", f"Job failed: {reason}")
+
+    # === Event Queue (for realtime updates) ===
+
+    async def emit_event(
+        self,
+        event_type: str,
+        source_node_id: str,
+        data: Any = None,
+        trigger_nodes: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Emit event to the queue (for realtime updates)
+        
+        Args:
+            event_type: Type of event (e.g., "realtime_update", "schedule_tick")
+            source_node_id: Node that generated the event
+            data: Event payload
+            trigger_nodes: List of node IDs to trigger (from edge trigger: "on_update")
+        """
+        if self._shutdown:
+            return
+        event = WorkflowEvent(
+            type=event_type,
+            source_node_id=source_node_id,
+            data=data,
+            trigger_nodes=trigger_nodes or [],
+        )
+        await self._event_queue.put(event)
+
+    async def wait_for_event(self, timeout: Optional[float] = None) -> Optional[WorkflowEvent]:
+        """
+        Wait for next event from queue
+        
+        Args:
+            timeout: Max seconds to wait (None = wait forever)
+            
+        Returns:
+            WorkflowEvent or None if timeout
+        """
+        try:
+            if timeout:
+                return await asyncio.wait_for(
+                    self._event_queue.get(),
+                    timeout=timeout,
+                )
+            return await self._event_queue.get()
+        except asyncio.TimeoutError:
+            return None
+
+    def has_pending_events(self) -> bool:
+        """Check if there are pending events"""
+        return not self._event_queue.empty()
+
+    # === Persistent Node Management ===
+
+    def register_persistent(self, node_id: str, tracker: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Register a persistent tracker/connection
+        
+        Args:
+            node_id: Node ID
+            tracker: StockAccountTracker or similar object with start()/stop()
+            metadata: Optional metadata (e.g., {"event_filter": "TC1"})
+        """
+        self._persistent_nodes[node_id] = tracker
+        if metadata:
+            self._persistent_metadata[node_id] = metadata
+        logger.debug(f"Registered persistent node: {node_id}, metadata={metadata}")
+
+    def get_persistent(self, node_id: str) -> Optional[Any]:
+        """Get registered persistent tracker"""
+        return self._persistent_nodes.get(node_id)
+
+    def has_persistent(self, node_id: str) -> bool:
+        """Check if node has persistent tracker"""
+        return node_id in self._persistent_nodes
+    
+    def get_persistent_metadata(self, node_id: str, key: str) -> Optional[Any]:
+        """Get metadata value for a persistent node"""
+        metadata = self._persistent_metadata.get(node_id, {})
+        return metadata.get(key)
+    
+    def set_node_state(self, node_id: str, key: str, value: Any) -> None:
+        """
+        Set a state value for a node (e.g., real_client, gsc, ovc)
+        
+        This is a convenient wrapper around persistent_metadata for storing
+        node-specific runtime state like WebSocket clients.
+        
+        Args:
+            node_id: Node ID
+            key: State key (e.g., "real_client", "gsc", "subscribe_symbols")
+            value: State value
+        """
+        if node_id not in self._persistent_metadata:
+            self._persistent_metadata[node_id] = {}
+        self._persistent_metadata[node_id][key] = value
+        logger.debug(f"Node state set: {node_id}.{key}")
+    
+    def get_node_state(self, node_id: str, key: str) -> Optional[Any]:
+        """
+        Get a state value for a node
+        
+        Args:
+            node_id: Node ID
+            key: State key
+            
+        Returns:
+            State value or None if not set
+        """
+        return self.get_persistent_metadata(node_id, key)
+    
+    def emit_realtime_update(self, node_id: str, data: Dict[str, Any]) -> None:
+        """
+        Emit a realtime update event from a node.
+        
+        Called by realtime nodes (RealMarketDataNode, RealAccountNode, etc.)
+        when new tick data arrives. This can trigger downstream node execution
+        or notify listeners of real-time data changes.
+        
+        Args:
+            node_id: The node emitting the update
+            data: The update payload (e.g., {"symbol": "AAPL", "price": 150.0})
+        """
+        # Log the realtime update
+        logger.debug(f"Realtime update from {node_id}: {data}")
+        
+        # Notify listeners if any are registered
+        if self._listeners:
+            log_event = LogEvent(
+                job_id=self._job_id or "",
+                node_id=node_id,
+                level="debug",
+                message=f"Realtime: {data.get('symbol', '')} price={data.get('price', '')} vol={data.get('volume', '')}",
+                data=data,
+            )
+            for listener in self._listeners:
+                try:
+                    result = listener.on_log(log_event)
+                    if asyncio.iscoroutine(result):
+                        asyncio.ensure_future(result)
+                except Exception as e:
+                    logger.warning(f"Error notifying listener of realtime update: {e}")
+        
+        # TODO: Future enhancement - trigger downstream nodes in real-time
+        # This would require an event-driven execution model where nodes
+        # can be re-executed when their input data changes.
+    
+    async def cleanup_persistent(self, node_id: str) -> None:
+        """
+        Cleanup a single persistent node (e.g., when event_filter changes)
+        
+        Args:
+            node_id: Node ID to cleanup
+        """
+        tracker = self._persistent_nodes.pop(node_id, None)
+        if tracker:
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                logger.debug(f"Stopped persistent node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping persistent node {node_id}: {e}")
+        
+        # Cleanup background task
+        task = self._persistent_tasks.pop(node_id, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            logger.debug(f"Cancelled persistent task: {node_id}")
+        
+        # Cleanup metadata
+        self._persistent_metadata.pop(node_id, None)
+        
+        # Cleanup order event handlers for this node
+        self._remove_order_event_handler(node_id)
+
+    def register_persistent_task(self, node_id: str, task: asyncio.Task) -> None:
+        """Register background task for persistent node"""
+        self._persistent_tasks[node_id] = task
+
+    # === Order Event Dispatcher ===
+    
+    def register_order_event_handler(
+        self,
+        product: str,
+        tr_cd: str,
+        node_id: str,
+        event_filter: str,
+        handler: Callable,
+    ) -> None:
+        """
+        Register a handler for order events.
+        
+        Multiple nodes can register handlers for the same TR code.
+        The master callback will dispatch to all registered handlers.
+        
+        Args:
+            product: 'overseas_futures' or 'overseas_stock'
+            tr_cd: TR code (TC1, TC2, TC3 for futures; AS0~AS4 for stocks)
+            node_id: Node ID
+            event_filter: 'all' or specific TR code
+            handler: Callback function(resp) -> None
+        """
+        if product not in self._order_event_handlers:
+            self._order_event_handlers[product] = {}
+        if tr_cd not in self._order_event_handlers[product]:
+            self._order_event_handlers[product][tr_cd] = []
+        
+        # Remove existing handler for this node (if any)
+        self._order_event_handlers[product][tr_cd] = [
+            h for h in self._order_event_handlers[product][tr_cd]
+            if h[0] != node_id
+        ]
+        
+        # Add new handler
+        self._order_event_handlers[product][tr_cd].append((node_id, event_filter, handler))
+        logger.debug(f"Registered order event handler: product={product}, tr_cd={tr_cd}, node_id={node_id}, filter={event_filter}")
+    
+    def _remove_order_event_handler(self, node_id: str) -> None:
+        """Remove all handlers for a specific node"""
+        for product in self._order_event_handlers:
+            for tr_cd in self._order_event_handlers[product]:
+                self._order_event_handlers[product][tr_cd] = [
+                    h for h in self._order_event_handlers[product][tr_cd]
+                    if h[0] != node_id
+                ]
+    
+    def get_order_event_handlers(self, product: str, tr_cd: str) -> List[tuple]:
+        """Get all handlers for a specific product and TR code"""
+        if product not in self._order_event_handlers:
+            return []
+        if tr_cd not in self._order_event_handlers[product]:
+            return []
+        return self._order_event_handlers[product][tr_cd]
+    
+    def has_order_event_subscription(self, product: str) -> bool:
+        """Check if there's already a master subscription for this product"""
+        return product in self._order_event_real_client
+    
+    def set_order_event_real_client(self, product: str, real_client: Any) -> None:
+        """Store the real_client for a product (for master subscription)"""
+        self._order_event_real_client[product] = real_client
+    
+    def get_order_event_real_client(self, product: str) -> Optional[Any]:
+        """Get the real_client for a product"""
+        return self._order_event_real_client.get(product)
+
+    def set_order_event_masters(self, product: str, masters: Dict[str, Callable]) -> None:
+        """주문이벤트 노드가 SDK 에 등록한 마스터 콜백을 스트림(TR)별로 기억한다.
+
+        정리(`cleanup_persistent_nodes`)가 `on_remove_<tr>_message(master)` 로 **이 콜러블만** 떼어,
+        같은 Real 객체에 걸린 체결 원장 리스너를 지우지 않게 한다. 같은 product 에 다시 부르면 갱신.
+        """
+        self._order_event_masters[product] = dict(masters)
+
+    def get_order_event_masters(self, product: str) -> Dict[str, Callable]:
+        """등록된 마스터 콜백 {stream: callable} (없으면 빈 dict)."""
+        return dict(self._order_event_masters.get(product, {}))
+
+    async def cleanup_persistent_nodes(self) -> None:
+        """
+        Cleanup all persistent nodes (call on job stop)
+
+        Cleanup 순서:
+        1. shutdown flag 설정 (신규 콜백 차단)
+        2. 실시간 심볼 구독 해제 (GSC/OVC/S3_/K3_)
+        3. SDK 메시지 콜백 제거 (on_remove_*_message)
+        4. Order event master callback SDK 해제
+        5. WebSocket close (tracker stop/close)
+        6. Background task 취소
+        7. 이벤트 큐 드레인
+        8. 메모리 정리
+        """
+        # 1. shutdown flag 설정 (콜백에서 run_coroutine_threadsafe 호출 차단)
+        self._shutdown = True
+        # 이미 큐에 들어간 코루틴이 shutdown 가드에 걸리도록 양보
+        await asyncio.sleep(0)
+
+        # 2-3. 실시간 구독 해제 + SDK 콜백 제거
+        for node_id in list(self._persistent_metadata.keys()):
+            metadata = self._persistent_metadata.get(node_id, {})
+            subscribe_symbols = metadata.get("subscribe_symbols", [])
+
+            # GSC 구독 해제 (해외주식 시세)
+            gsc = metadata.get("gsc")
+            if gsc and subscribe_symbols:
+                try:
+                    gsc.remove_gsc_symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed GSC subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing GSC symbols for {node_id}: {e}")
+                try:
+                    gsc.on_remove_gsc_message()
+                except RuntimeError:
+                    logger.debug(f"GSC callback already detached (WebSocket disconnected): {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove GSC callback for {node_id}: {e}")
+
+            # OVC 구독 해제 (해외선물 시세)
+            ovc = metadata.get("ovc")
+            if ovc and subscribe_symbols:
+                try:
+                    ovc.remove_ovc_symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed OVC subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing OVC symbols for {node_id}: {e}")
+                try:
+                    ovc.on_remove_ovc_message()
+                except RuntimeError:
+                    logger.debug(f"OVC callback already detached (WebSocket disconnected): {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove OVC callback for {node_id}: {e}")
+
+            # S3_ 구독 해제 (국내주식 KOSPI 시세)
+            s3 = metadata.get("s3")
+            if s3 and subscribe_symbols:
+                try:
+                    s3.remove_s3__symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed S3_ subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing S3_ symbols for {node_id}: {e}")
+                try:
+                    s3.on_remove_s3__message()
+                except RuntimeError:
+                    logger.debug(f"S3_ callback already detached: {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove S3_ callback for {node_id}: {e}")
+
+            # K3_ 구독 해제 (국내주식 KOSDAQ 시세)
+            k3 = metadata.get("k3")
+            if k3 and subscribe_symbols:
+                try:
+                    k3.remove_k3__symbols(symbols=subscribe_symbols)
+                    logger.debug(f"Removed K3_ subscription for {node_id}: {subscribe_symbols}")
+                except Exception as e:
+                    logger.warning(f"Error removing K3_ symbols for {node_id}: {e}")
+                try:
+                    k3.on_remove_k3__message()
+                except RuntimeError:
+                    logger.debug(f"K3_ callback already detached: {node_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove K3_ callback for {node_id}: {e}")
+
+        # 4. Order event master callback SDK 레벨 해제
+        for product, real_client in self._order_event_real_client.items():
+            masters = self._order_event_masters.get(product) or {}
+            if masters:
+                # 스트림별로 **우리 마스터만** 뗀다(리스너 인자). 리스너를 안 받는 구 SDK(<1.9.7)면
+                # 그 키 전체가 떨어지는 옛 동작으로 폴백 — 원장 구독이 같이 사라지므로 warning.
+                for stream, master in masters.items():
+                    try:
+                        client = getattr(real_client, stream)()
+                        remover = getattr(client, f"on_remove_{stream.lower()}_message")
+                        try:
+                            remover(master)
+                        except TypeError:
+                            remover()
+                            logger.warning(
+                                f"SDK on_remove_{stream.lower()}_message accepts no listener — "
+                                f"removed the whole {stream} key for {product} (ledger listener may be gone)"
+                            )
+                        logger.debug(f"Removed {stream} master callback for {product}")
+                    except RuntimeError:
+                        logger.debug(f"{stream} order event callback already detached for {product}")
+                    except (AttributeError, Exception) as e:
+                        logger.warning(f"Failed to remove {stream} order event callback for {product}: {e}")
+                continue
+            try:
+                if product == "overseas_stock":
+                    real_client.AS0().on_remove_as0_message()
+                    logger.debug(f"Removed AS0 master callback for {product}")
+                elif product == "overseas_futures":
+                    for tr_name, remove_method in [
+                        ("TC1", "on_remove_tc1_message"),
+                        ("TC2", "on_remove_tc2_message"),
+                        ("TC3", "on_remove_tc3_message"),
+                    ]:
+                        try:
+                            getattr(getattr(real_client, tr_name)(), remove_method)()
+                            logger.debug(f"Removed {tr_name} master callback for {product}")
+                        except (RuntimeError, AttributeError):
+                            pass
+                elif product == "korea_stock":
+                    real_client.SC0().on_remove_sc0_message()
+                    logger.debug(f"Removed SC0 master callback for {product}")
+            except RuntimeError:
+                logger.debug(f"Order event callback already detached for {product}")
+            except Exception as e:
+                logger.warning(f"Failed to remove order event callback for {product}: {e}")
+
+        self._order_event_handlers.clear()
+        self._order_event_real_client.clear()
+        self._order_event_masters.clear()
+
+        # 5. Stop/Close all trackers (WebSocket clients 등)
+        for node_id, tracker in self._persistent_nodes.items():
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                    logger.debug(f"Stopped persistent node: {node_id}")
+
+                if hasattr(tracker, 'close'):
+                    if asyncio.iscoroutinefunction(tracker.close):
+                        await tracker.close()
+                    else:
+                        tracker.close()
+                    logger.debug(f"Closed persistent node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping persistent node {node_id}: {e}")
+
+        # 6. Cancel all background tasks
+        for node_id, task in self._persistent_tasks.items():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                logger.debug(f"Cancelled persistent task: {node_id}")
+
+        # 7. 이벤트 큐 드레인 (cleanup 후 잔여 이벤트 제거)
+        while not self._event_queue.empty():
+            try:
+                self._event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        # 8. 메모리 정리
+        self._persistent_nodes.clear()
+        self._persistent_tasks.clear()
+        self._persistent_metadata.clear()
+        logger.debug("All persistent nodes cleaned up")
+
+    # === Cleanup on Flow End (stay_connected=False) ===
+
+    def register_cleanup_on_flow_end(self, node_id: str, tracker: Any) -> None:
+        """
+        Register a tracker to be cleaned up after each flow execution.
+        
+        Used for RealAccountNode with stay_connected=False:
+        - WebSocket 연결은 하지만, 플로우가 끝나면 종료
+        - persistent와 달리 스케줄 사이에는 유지되지 않음
+        
+        Args:
+            node_id: Node ID
+            tracker: StockAccountTracker or similar object with start()/stop()
+        """
+        self._cleanup_on_flow_end[node_id] = tracker
+        logger.debug(f"Registered cleanup_on_flow_end node: {node_id}")
+
+    async def cleanup_flow_end_nodes(self) -> None:
+        """
+        Cleanup nodes registered for flow-end cleanup.
+        
+        Called after each flow execution (before entering event loop).
+        """
+        if not self._cleanup_on_flow_end:
+            return
+        
+        logger.info(f"Cleaning up {len(self._cleanup_on_flow_end)} flow-end nodes")
+        
+        for node_id, tracker in self._cleanup_on_flow_end.items():
+            try:
+                if hasattr(tracker, 'stop'):
+                    if asyncio.iscoroutinefunction(tracker.stop):
+                        await tracker.stop()
+                    else:
+                        tracker.stop()
+                logger.debug(f"Stopped flow-end node: {node_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping flow-end node {node_id}: {e}")
+        
+        self._cleanup_on_flow_end.clear()
+
+    # === Events ===
+
+    def on(self, event_type: str, handler: callable) -> None:
+        """Register event handler"""
+        if event_type not in self._event_handlers:
+            self._event_handlers[event_type] = []
+        self._event_handlers[event_type].append(handler)
+
+    async def emit(self, event_type: str, data: Any = None) -> None:
+        """Emit event"""
+        handlers = self._event_handlers.get(event_type, [])
+        for handler in handlers:
+            if asyncio.iscoroutinefunction(handler):
+                await handler(data)
+            else:
+                handler(data)
+
+    # === Execution Listeners ===
+
+    def add_listener(self, listener: ExecutionListener) -> None:
+        """
+        Register an execution listener for state callbacks.
+        
+        Args:
+            listener: ExecutionListener implementation
+        """
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: ExecutionListener) -> None:
+        """
+        Remove a registered execution listener.
+        
+        Args:
+            listener: Listener to remove
+        """
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
+    def set_listeners(self, listeners: Optional[List[ExecutionListener]]) -> None:
+        """
+        Set listener list (replaces existing).
+
+        Args:
+            listeners: New listener list
+        """
+        self._listeners = list(listeners) if listeners else []
+
+    async def cleanup_listeners(self) -> None:
+        """
+        Cleanup all registered listeners on job stop/cancel.
+
+        Calls close()/dispose() if available, then clears the list.
+        Safe to call multiple times (idempotent).
+        """
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'close'):
+                    if asyncio.iscoroutinefunction(listener.close):
+                        await listener.close()
+                    else:
+                        listener.close()
+                elif hasattr(listener, 'dispose'):
+                    if asyncio.iscoroutinefunction(listener.dispose):
+                        await listener.dispose()
+                    else:
+                        listener.dispose()
+            except Exception as e:
+                logger.warning(f"Error cleaning up listener {type(listener).__name__}: {e}")
+
+        self._listeners.clear()
+        logger.debug("All listeners cleaned up")
+
+    def set_workflow_job(self, job: Any) -> None:
+        """
+        Set workflow job reference for start datetime access.
+
+        This enables notify_workflow_pnl to include workflow_start_datetime
+        and workflow_elapsed_days in events.
+
+        Args:
+            job: WorkflowJob instance
+        """
+        self._workflow_job = job
+
+    # ============================================================
+    # A-4: 주문 idempotency 위임 (WorkflowJob → ExecutionContext)
+    # 주문 executor가 context만 받으므로 context를 통해 job 메서드에 접근.
+    # ============================================================
+
+    def check_order_already_submitted(
+        self,
+        node_id: str,
+        item: Optional[Any] = None,
+    ) -> Optional[Any]:
+        """이미 제출된 주문인지 확인 (WorkflowJob.check_order_already_submitted 위임).
+
+        WorkflowJob이 없거나 idempotency가 비활성화된 경우 None 반환.
+
+        Args:
+            node_id: 주문 노드 ID
+            item: 주문 정보 dict (symbol, exchange, quantity, price 등)
+
+        Returns:
+            이미 제출된 경우 주문 결과 dict, 미제출/비활성이면 None
+        """
+        job = self._workflow_job
+        if job is None:
+            return None
+        check_fn = getattr(job, 'check_order_already_submitted', None)
+        if check_fn is None:
+            return None
+        # A-4: ordering 세대(_order_cycle) 사용. flow_executions 는 복구 시 드리프트
+        # 하므로 cycle 로 쓰면 realtime 복구가 동일 주문을 다른 키로 기록해 중복 차단
+        # 실패. _order_cycle 은 entry main flow(초기/복구 재실행) 에서 항상 0.
+        cycle = getattr(job, '_order_cycle', 0)
+        try:
+            return check_fn(node_id=node_id, cycle=cycle, item=item)
+        except Exception:
+            return None
+
+    def record_order_submitted(
+        self,
+        node_id: str,
+        order_result: Any,
+        item: Optional[Any] = None,
+    ) -> None:
+        """주문 제출 성공 후 idempotency 레지스트리에 기록 (WorkflowJob 위임).
+
+        WorkflowJob이 없거나 idempotency가 비활성화된 경우 무시.
+
+        Args:
+            node_id: 주문 노드 ID
+            order_result: 주문 결과 dict (success, order_no 포함)
+            item: 주문 정보 dict
+        """
+        job = self._workflow_job
+        if job is None:
+            return
+        record_fn = getattr(job, 'record_order_submitted', None)
+        if record_fn is None:
+            return
+        # A-4: check 와 동일한 _order_cycle 사용 (드리프트 방지 — 위 check 주석 참조).
+        cycle = getattr(job, '_order_cycle', 0)
+        try:
+            record_fn(node_id=node_id, cycle=cycle, item=item, order_result=order_result)
+        except Exception:
+            pass
+
+    async def notify_node_state(
+        self,
+        node_id: str,
+        node_type: str,
+        state: NodeState,
+        outputs: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        duration_ms: Optional[float] = None,
+        warnings: Optional[List[str]] = None,
+    ) -> None:
+        """Notify all listeners about node state change."""
+        logger.info(f"📡 notify_node_state: {node_id} ({node_type}) → {state.value}")
+
+        if not self._listeners:
+            logger.warning(f"⚠️ No listeners registered for node state notification!")
+            return
+
+        event = NodeStateEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            node_type=node_type,
+            state=state,
+            outputs=self._sanitize_outputs(outputs),
+            error=error,
+            duration_ms=duration_ms,
+            warnings=warnings,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_node_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_node_state_change: {e}")
+        
+        # 🆕 이벤트 루프에 제어권을 돌려줘서 SSE 스트림이 전송될 수 있도록 함
+        await asyncio.sleep(0)
+
+    async def notify_edge_state(
+        self,
+        from_node_id: str,
+        from_port: str,
+        to_node_id: str,
+        to_port: str,
+        state: EdgeState,
+        data: Any = None,
+    ) -> None:
+        """Notify all listeners about edge state change."""
+        logger.debug(f"📡 notify_edge_state: {from_node_id}.{from_port} → {to_node_id}.{to_port} ({state.value})")
+        
+        if not self._listeners:
+            return
+        
+        # Truncate data preview for security
+        data_preview = None
+        if data is not None:
+            preview = str(data)
+            data_preview = preview[:200] + "..." if len(preview) > 200 else preview
+        
+        event = EdgeStateEvent(
+            job_id=self.job_id,
+            from_node_id=from_node_id,
+            from_port=from_port,
+            to_node_id=to_node_id,
+            to_port=to_port,
+            state=state,
+            data_preview=data_preview,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_edge_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_edge_state_change: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
+
+    async def notify_log(
+        self,
+        level: str,
+        message: str,
+        node_id: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Notify all listeners about log entry."""
+        if not self._listeners:
+            return
+        
+        event = LogEvent(
+            job_id=self.job_id,
+            level=level,
+            message=message,
+            node_id=node_id,
+            data=data,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_log(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_log: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
+
+    async def notify_job_state(self, state: str, stats: Optional[Dict[str, Any]] = None) -> None:
+        """Notify all listeners about job state change."""
+        if not self._listeners:
+            return
+        
+        event = JobStateEvent(
+            job_id=self.job_id,
+            state=state,
+            stats=stats,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_job_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_job_state_change: {e}")
+        
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
+
+    async def notify_output_update(
+        self,
+        node_id: str,
+        node_type: str,
+        outputs: Dict[str, Any],
+    ) -> None:
+        """
+        Notify all listeners about realtime output update.
+        
+        Used for realtime nodes (RealAccountNode, RealMarketDataNode) to
+        broadcast output changes without changing node state.
+        """
+        if self._shutdown:
+            return
+
+        logger.debug(f"📡 notify_output_update: {node_id} outputs={list(outputs.keys())}")
+
+        if not self._listeners:
+            return
+        
+        # Use NodeStateEvent with 'running' state to indicate realtime update
+        event = NodeStateEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            node_type=node_type,
+            state=NodeState.RUNNING,  # Still running (realtime mode)
+            outputs=self._sanitize_outputs(outputs),
+            error=None,
+            duration_ms=None,
+        )
+        
+        for listener in self._listeners:
+            try:
+                await listener.on_node_state_change(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_output_update: {e}")
+
+    async def notify_display_data(
+        self,
+        node_id: str,
+        chart_type: str,
+        title: Optional[str],
+        data: Any,
+        x_label: Optional[str] = None,
+        y_label: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+        data_schema: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Notify all listeners about display data from DisplayNode."""
+        # dry_run/deep_validate: suppress outbound display notifications centrally
+        # (no listener side-effects during virtual validation runs).
+        if self.is_dry_run:
+            return
+        logger.debug(f"📡 notify_display_data: {node_id} ({chart_type})")
+
+        if not self._listeners:
+            return
+
+        event = DisplayDataEvent(
+            job_id=self.job_id,
+            node_id=node_id,
+            chart_type=chart_type,
+            title=title,
+            data=data,
+            x_label=x_label,
+            y_label=y_label,
+            options=options,
+            data_schema=data_schema,
+        )
+        
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_display_data'):
+                    await listener.on_display_data(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_display_data: {e}")
+
+    async def notify_retry(self, event: RetryEvent) -> None:
+        """
+        Notify all listeners about retry event.
+
+        UI에서 "재시도 중 (2/3)..." 표시용.
+
+        Args:
+            event: RetryEvent with attempt count, error type, next retry delay, etc.
+        """
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_retry'):
+                    await listener.on_retry(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_retry: {e}")
+
+    async def notify_llm_stream(self, event: LLMStreamEvent) -> None:
+        """LLM 토큰 스트리밍 이벤트 전파. UI 실시간 타이핑 효과용."""
+        # dry_run/deep_validate: suppress outbound stream notifications centrally.
+        if self.is_dry_run:
+            return
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_llm_stream'):
+                    await listener.on_llm_stream(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_llm_stream: {e}")
+
+    async def notify_token_usage(self, event: TokenUsageEvent) -> None:
+        """토큰 사용량 이벤트 전파. 비용 추적 및 모니터링용."""
+        # dry_run/deep_validate: suppress outbound token-usage notifications.
+        if self.is_dry_run:
+            return
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_token_usage'):
+                    await listener.on_token_usage(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_token_usage: {e}")
+
+    async def notify_ai_tool_call(self, event: AIToolCallEvent) -> None:
+        """AI Tool 호출 이벤트 전파. UI에서 Tool 호출 상태 표시용."""
+        # dry_run/deep_validate: suppress outbound tool-call notifications.
+        if self.is_dry_run:
+            return
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_ai_tool_call'):
+                    await listener.on_ai_tool_call(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_ai_tool_call: {e}")
+
+    @property
+    def is_risk_halted(self) -> bool:
+        """M-10: critical risk event에 의해 주문이 중단되었는지 여부."""
+        return self._risk_halt
+
+    async def notify_restart(self, event: RestartEvent) -> None:
+        """워크플로우 복구 이벤트 전파. 체크포인트 복원/실패 시 호출."""
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_restart'):
+                    await listener.on_restart(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_restart: {e}")
+
+    async def notify_risk_event(self, event: RiskEvent) -> None:
+        """위험 이벤트 전파. UI에서 위험 알림 표시용."""
+        # M-10: severity=critical + action_hint=halt_orders → 주문 중단
+        if event.severity == "critical" and getattr(event, "action_hint", "advisory") == "halt_orders":
+            self._risk_halt = True
+            logger.warning(
+                f"RISK HALT activated: {event.event_type} - 모든 주문 실행이 중단됩니다."
+            )
+
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_risk_event'):
+                    await listener.on_risk_event(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_risk_event: {e}")
+
+        # Informational broker facts (the paper futures waiting notice) are not
+        # risk alerts: screens get them through on_risk_event above, but they
+        # never become a RISK_ALERT notification (telegram/kakao/AI consumers).
+        from programgarden.paper_futures_business_date import INFORMATIONAL_BROKER_EVENT_TYPES
+        if event.event_type in INFORMATIONAL_BROKER_EVENT_TYPES:
+            return
+
+        # RISK_ALERT 자동 래핑: risk_event → notification
+        try:
+            risk_sev = NotificationSeverity.CRITICAL if event.severity == "critical" else (
+                NotificationSeverity.WARNING if event.severity == "warning" else NotificationSeverity.INFO
+            )
+            symbol_tag = f" [{event.symbol}]" if event.symbol else ""
+            await self.notify_notification(NotificationEvent(
+                job_id=self.job_id,
+                category=NotificationCategory.RISK_ALERT,
+                severity=risk_sev,
+                title=f"Risk {event.severity}: {event.event_type}{symbol_tag}",
+                message=str(event.details),
+                data={
+                    "event_type": event.event_type,
+                    "severity": event.severity,
+                    "symbol": event.symbol,
+                    "exchange": event.exchange,
+                    "details": event.details,
+                    "action_hint": event.action_hint,
+                },
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to wrap risk_event as notification: {e}")
+
+    async def notify_notification(self, event: NotificationEvent) -> None:
+        """투자자 알림 이벤트 전파.
+
+        on_log와 달리 변화가 있을 때만 발행되는 공지 성격.
+        소비자: 투자자, 외부 메시징 (텔레그램/카톡), 외부 AI 모델.
+        """
+        if not self._listeners:
+            return
+        for listener in self._listeners:
+            try:
+                if hasattr(listener, 'on_notification'):
+                    await listener.on_notification(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_notification: {e}")
+
+    async def send_notification(
+        self,
+        category: NotificationCategory,
+        severity: NotificationSeverity,
+        title: str,
+        message: str,
+        node_id: Optional[str] = None,
+        node_type: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """편의 메서드: NotificationEvent 생성 및 전파."""
+        # dry_run/deep_validate: suppress outbound notifications centrally so no
+        # external messaging (telegram/kakao/AI) is dispatched during a virtual
+        # validation run. Covers workflow lifecycle (started/completed/failed) and
+        # all convenience-method emitters in one place.
+        if self.is_dry_run:
+            return
+        event = NotificationEvent(
+            job_id=self.job_id,
+            category=category,
+            severity=severity,
+            title=title,
+            message=message,
+            node_id=node_id,
+            node_type=node_type,
+            data=data or {},
+        )
+        await self.notify_notification(event)
+
+    async def notify_workflow_pnl(
+        self,
+        broker_node_id: str,
+        product: str,
+        provider: str,
+        current_prices: Dict[str, float],
+        account_positions: Optional[Dict[str, Any]],
+        currency: Optional[str] = "USD",
+        account_valuation: Optional[Dict[str, Any]] = None,
+        account_snapshot: Optional[Dict[str, Any]] = None,
+        account_daily_snapshots: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Notify all listeners about workflow P&L update (확장 버전).
+        
+        BrokerNode의 AccountTracker에서 틱마다 호출됩니다.
+        WorkflowPositionTracker를 사용하여 워크플로우 포지션과 그 외 포지션을 분리하고
+        각각의 수익률을 계산하여 리스너에 전달합니다.
+        
+        리스너별로 다른 pnl_start_date를 적용하여 각각의 대회 기준 이벤트를 생성합니다.
+        
+        Args:
+            broker_node_id: BrokerNode ID
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
+            provider: 증권사 (ls-sec.co.kr)
+            current_prices: 현재가 {symbol: price}
+            account_positions: 계좌 전체 포지션 {symbol: {quantity, buy_price, current_price, pnl_rate}}
+            currency: 통화 (기본 USD)
+        """
+        if not self._listeners:
+            return
+
+        # ━━━ Risk Tracker 실시간 가격 연동 ━━━
+        if self._workflow_risk_tracker and current_prices:
+            for symbol, price in current_prices.items():
+                self._workflow_risk_tracker.update_price(
+                    symbol=symbol,
+                    exchange="",  # 거래소 정보는 이미 등록 시 저장됨
+                    price=price,
+                )
+
+        # 메타 정보 준비
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        workflow_start = None
+        elapsed_days = None
+        
+        if self._workflow_job is not None:
+            workflow_start = getattr(self._workflow_job, 'workflow_start_datetime', None)
+            if workflow_start:
+                elapsed_days = (now - workflow_start).days
+        
+        # 1. 기본 워크플로우 수익률 계산 (전체 기간)
+        base_workflow_result = self._calculate_workflow_pnl(
+            current_prices=current_prices,
+            all_positions=account_positions,
+            product=product,
+            start_date=None,  # 전체 기간
+        )
+        from .valuation import workflow_valuation_snapshot
+
+        workflow_valuation = workflow_valuation_snapshot(
+            base_workflow_result,
+            account_positions if account_positions is not None else ({} if account_valuation else None),
+            now, product)
+        
+        # 2. 계좌 전체 수익률 계산
+        account_result = self._calculate_account_pnl(
+            account_positions=account_positions,
+            start_date=None,
+        )
+        if product == "overseas_futures":
+            from .futures_pnl import unavailable_account_pnl
+
+            account_result = unavailable_account_pnl()
+
+        personal_metrics = None
+        tracker = self._workflow_position_tracker
+        if (tracker is not None and getattr(tracker, "product", None) == product
+                and getattr(tracker, "provider", None) == provider
+                and getattr(tracker, "broker_node_id", None) == broker_node_id):
+            try:
+                # Price ticks do not change retained executions. Bound full
+                # history reads to the durable reporting cadence and preserve
+                # the original observation timestamp when reusing a snapshot.
+                # 🔴 다만 **체결은 바꾼다** — 원장의 fill_revision 을 키에 실어,
+                # 체결이 하나라도 기록되면 10초 창이 남아 있어도 다시 읽는다.
+                # (실측 2026-09-10: 체결 0.5초 전에 계산된 봉투가 그대로 저장돼
+                #  원장에 체결 1건이 있는데 체결 주문 수가 0 으로 남았다.)
+                cache_key = (id(tracker), tracker.product, tracker.provider,
+                             tracker.trading_mode, getattr(tracker, "fill_revision", 0))
+                cache = self._personal_metrics_cache
+                if cache is not None and cache[0] == cache_key and time.monotonic() - cache[1] < 10:
+                    personal_metrics = cache[2]
+                else:
+                    personal_metrics = _honest_execution_count(
+                        tracker.personal_metrics(), product, self.order_lifecycle_handler)
+                    self._personal_metrics_cache = (cache_key, time.monotonic(), personal_metrics)
+            except Exception:
+                self._personal_metrics_cache = None
+                logger.warning("Personal workflow ledger metrics unavailable")
+        
+        # 3. 리스너별 이벤트 생성 및 전달
+        for listener in self._listeners:
+            try:
+                if not hasattr(listener, 'on_workflow_pnl_update'):
+                    continue
+                
+                # 리스너별 start_date 확인
+                listener_start_date = getattr(listener, 'pnl_start_date', None)
+                
+                # 기본 이벤트 데이터
+                event_data = {
+                    "job_id": self.job_id,
+                    "broker_node_id": broker_node_id,
+                    "product": product,
+                    "paper_trading": getattr(self, '_workflow_paper_trading', False),
+                    "timestamp": now,
+                    
+                    # 워크플로우 기본 (전체)
+                    # 🔴 `.get(..., 0.0)` 의 기본값은 **키가 아예 없을 때만** 쓰인다.
+                    # 계산부는 값을 못 낼 때 키를 빼지 않고 `None` 을 담는다 — 그래서
+                    # None 이 그대로 흐른다. **키를 빼는 순간 0.0 이 되살아나** "모름" 이
+                    # 다시 "실측 0%" 가 된다. 계산부를 고칠 때 이 규약을 깨지 말 것.
+                    "workflow_pnl_rate": base_workflow_result.get("workflow_pnl_rate", 0.0),
+                    "workflow_rate_unavailable_reason": base_workflow_result.get(
+                        "workflow_rate_unavailable_reason"
+                    ),
+                    "workflow_eval_amount": base_workflow_result.get("workflow_eval_amount", 0.0),
+                    "workflow_buy_amount": base_workflow_result.get("workflow_buy_amount", 0.0),
+                    "workflow_pnl_amount": base_workflow_result.get("workflow_pnl_amount", 0.0),
+                    
+                    # 기존 other/total 필드
+                    "other_pnl_rate": base_workflow_result.get("other_pnl_rate", 0.0),
+                    "other_eval_amount": base_workflow_result.get("other_eval_amount", 0.0),
+                    "other_buy_amount": base_workflow_result.get("other_buy_amount", 0.0),
+                    "other_pnl_amount": base_workflow_result.get("other_pnl_amount", 0.0),
+                    "total_pnl_rate": base_workflow_result.get("total_pnl_rate", 0.0),
+                    "total_eval_amount": base_workflow_result.get("total_eval_amount", 0.0),
+                    "total_buy_amount": base_workflow_result.get("total_buy_amount", 0.0),
+                    "total_pnl_amount": base_workflow_result.get("total_pnl_amount", 0.0),
+                    
+                    "workflow_positions": base_workflow_result.get("workflow_positions", []),
+                    "other_positions": base_workflow_result.get("other_positions", []),
+                    "trust_score": base_workflow_result.get("trust_score", 0),
+                    "anomaly_count": base_workflow_result.get("anomaly_count", 0),
+                    "currency": currency,
+                    "personal_metrics": personal_metrics,
+                    "account_valuation": account_valuation,
+                    "workflow_valuation": workflow_valuation,
+                    "account_snapshot": deepcopy(account_snapshot) if product == "overseas_futures" else None,
+                    "account_daily_snapshots": deepcopy(account_daily_snapshots) if product == "overseas_futures" else None,
+                    
+                    # 신규 필드: 워크플로우 상품별
+                    "workflow_overseas_stock_pnl_rate": base_workflow_result.get("workflow_overseas_stock_pnl_rate"),
+                    "workflow_overseas_stock_pnl_amount": base_workflow_result.get("workflow_overseas_stock_pnl_amount"),
+                    "workflow_overseas_futures_pnl_rate": base_workflow_result.get("workflow_overseas_futures_pnl_rate"),
+                    "workflow_overseas_futures_pnl_amount": base_workflow_result.get("workflow_overseas_futures_pnl_amount"),
+                    "workflow_korea_stock_pnl_rate": base_workflow_result.get("workflow_korea_stock_pnl_rate"),
+                    "workflow_korea_stock_pnl_amount": base_workflow_result.get("workflow_korea_stock_pnl_amount"),
+
+                    # 신규 필드: 계좌 전체/상품별
+                    "account_total_pnl_rate": account_result.get("account_total_pnl_rate"),
+                    "account_total_pnl_amount": account_result.get("account_total_pnl_amount"),
+                    "account_total_eval_amount": account_result.get("account_total_eval_amount"),
+                    "account_total_buy_amount": account_result.get("account_total_buy_amount"),
+                    "account_overseas_stock_pnl_rate": account_result.get("account_overseas_stock_pnl_rate"),
+                    "account_overseas_stock_pnl_amount": account_result.get("account_overseas_stock_pnl_amount"),
+                    "account_overseas_futures_pnl_rate": account_result.get("account_overseas_futures_pnl_rate"),
+                    "account_overseas_futures_pnl_amount": account_result.get("account_overseas_futures_pnl_amount"),
+                    "account_korea_stock_pnl_rate": account_result.get("account_korea_stock_pnl_rate"),
+                    "account_korea_stock_pnl_amount": account_result.get("account_korea_stock_pnl_amount"),
+
+                    # 총 포지션 수 (AccountPnLEvent.position_count 대체)
+                    "total_position_count": len(account_positions) if account_positions else 0,
+                    
+                    # 메타 정보
+                    "workflow_start_datetime": workflow_start,
+                    "workflow_elapsed_days": elapsed_days,
+                }
+                
+                # 대회 기준 필드 (start_date가 있는 리스너만)
+                if listener_start_date:
+                    # 대회 기준 재계산
+                    competition_workflow = self._calculate_workflow_pnl(
+                        current_prices=current_prices,
+                        all_positions=account_positions,
+                        product=product,
+                        start_date=listener_start_date,
+                    )
+                    competition_account = self._calculate_account_pnl(
+                        account_positions=account_positions,
+                        start_date=listener_start_date,
+                    )
+                    if product == "overseas_futures":
+                        competition_account = unavailable_account_pnl()
+                    
+                    event_data.update({
+                        "competition_start_date": listener_start_date,
+                        "competition_workflow_pnl_rate": competition_workflow.get("workflow_pnl_rate"),
+                        "competition_workflow_pnl_amount": competition_workflow.get("workflow_pnl_amount"),
+                        "competition_workflow_overseas_stock_pnl_rate": competition_workflow.get("workflow_overseas_stock_pnl_rate"),
+                        "competition_workflow_overseas_stock_pnl_amount": competition_workflow.get("workflow_overseas_stock_pnl_amount"),
+                        "competition_workflow_overseas_futures_pnl_rate": competition_workflow.get("workflow_overseas_futures_pnl_rate"),
+                        "competition_workflow_overseas_futures_pnl_amount": competition_workflow.get("workflow_overseas_futures_pnl_amount"),
+                        "competition_workflow_korea_stock_pnl_rate": competition_workflow.get("workflow_korea_stock_pnl_rate"),
+                        "competition_workflow_korea_stock_pnl_amount": competition_workflow.get("workflow_korea_stock_pnl_amount"),
+                        "competition_account_pnl_rate": competition_account.get("account_total_pnl_rate"),
+                        "competition_account_pnl_amount": competition_account.get("account_total_pnl_amount"),
+                        "competition_account_overseas_stock_pnl_rate": competition_account.get("account_overseas_stock_pnl_rate"),
+                        "competition_account_overseas_stock_pnl_amount": competition_account.get("account_overseas_stock_pnl_amount"),
+                        "competition_account_overseas_futures_pnl_rate": competition_account.get("account_overseas_futures_pnl_rate"),
+                        "competition_account_overseas_futures_pnl_amount": competition_account.get("account_overseas_futures_pnl_amount"),
+                        "competition_account_korea_stock_pnl_rate": competition_account.get("account_korea_stock_pnl_rate"),
+                        "competition_account_korea_stock_pnl_amount": competition_account.get("account_korea_stock_pnl_amount"),
+                    })
+                
+                if product == "overseas_futures":
+                    from .futures_pnl import futures_pnl_metadata
+
+                    event_data.update(futures_pnl_metadata(account_positions))
+                event = WorkflowPnLEvent(**event_data)
+                await listener.on_workflow_pnl_update(event)
+                
+            except Exception as e:
+                logger.warning(f"Listener error on_workflow_pnl_update: {e}")
+        
+        # 디버그 로그
+        wf_rate = base_workflow_result.get("workflow_pnl_rate", 0.0)
+        logger.debug("notify_workflow_pnl: %s (%s) workflow_rate=%s", broker_node_id, product, wf_rate)
+
+    def _calculate_workflow_pnl(
+        self,
+        current_prices: Dict[str, float],
+        all_positions: Optional[Dict[str, Any]],
+        product: str = "overseas_stock",
+        start_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """워크플로우 수익률 계산 (start_date 필터 지원).
+        
+        Args:
+            current_prices: 현재가 {symbol: price}
+            all_positions: 전체 포지션
+            product: 현재 상품 유형 (overseas_stock, overseas_futures)
+            start_date: 필터 시작일 (YYYYMMDD)
+        
+        Returns:
+            워크플로우 수익률 데이터 dict
+        """
+        if product == "overseas_futures":
+            from .futures_pnl import unavailable_workflow_pnl
+
+            # Native estimates do not prove workflow ownership, opening capital,
+            # realized PnL or fees. Do not infer these from the local legacy FIFO.
+            return unavailable_workflow_pnl()
+
+        if product == "korea_stock":
+            from math import isfinite
+            from decimal import Decimal
+            reason = "price_unreported" if all_positions is None else None
+            for position in (all_positions or {}).values():
+                for field in ("quantity", "buy_price", "current_price"):
+                    value = position.get(field)
+                    if (isinstance(value, bool) or not isinstance(value, (int, float, Decimal))
+                            or not isfinite(value) or value <= 0):
+                        reason = "price_unreported" if field == "current_price" else "basis_unreported"
+            if reason:
+                # Missing observations cannot enter legacy arithmetic or become
+                # an empty, measured-zero workflow valuation after a refresh error.
+                return dict.fromkeys(
+                    f"{scope}_{metric}" for scope in ("workflow", "other", "total")
+                    for metric in ("pnl_rate", "pnl_amount", "eval_amount", "buy_amount")
+                ) | {"workflow_rate_unavailable_reason": reason,
+                     "workflow_positions": [], "other_positions": [],
+                     "trust_score": 0, "anomaly_count": 0}
+
+        # 트래커 없으면 기본값 (모든 포지션이 "other")
+        if self._workflow_position_tracker is None:
+            # 트래커 없음 = 모든 포지션이 "other"
+            total_eval = 0.0
+            total_buy = 0.0
+            total_pnl = 0.0
+            other_positions_list = []
+
+            if all_positions:
+                for symbol, pos in all_positions.items():
+                    qty = pos.get("quantity", 0)
+                    buy_price = pos.get("buy_price", 0)
+                    current_price = pos.get("current_price", 0)
+                    pnl_rate = pos.get("pnl_rate", 0)
+
+                    eval_amt = qty * current_price
+                    buy_amt = qty * buy_price
+                    # 승수 반영된 브로커 제공 손익금액 우선 (선물 승수 누락 시 금액이
+                    # 1/N 로 축소되는 것을 방지). 없을 때만 산술 폴백.
+                    pnl_amount_raw = pos.get("pnl_amount")
+                    # truthy 검사: 기본 0.0 placeholder 를 권위값으로 오인해 실손익을
+                    # 0 으로 무음 소거하는 것을 방지 (0 은 산술 폴백).
+                    if pnl_amount_raw:
+                        try:
+                            pnl_amt = float(pnl_amount_raw)
+                        except (TypeError, ValueError):
+                            pnl_amt = eval_amt - buy_amt
+                    else:
+                        pnl_amt = eval_amt - buy_amt
+
+                    total_eval += eval_amt
+                    total_buy += buy_amt
+                    total_pnl += pnl_amt
+
+                    other_positions_list.append(PositionDetail(
+                        symbol=symbol,
+                        exchange=pos.get("exchange", ""),
+                        quantity=qty,
+                        avg_price=buy_price,
+                        current_price=current_price,
+                        pnl_amount=pnl_amt,
+                        pnl_rate=pnl_rate,
+                    ))
+
+            # 금액은 pnl_amount 합(브로커 제공 우선), 비율은 승수 무관 eval/buy 비율.
+            total_pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
+            
+            return {
+                # 🔴 트래커가 없다 = **어느 포지션이 이 워크플로우 것인지 판정할 근거가 0**.
+                # 종전엔 그 상태에서 `0.0` 을 발행해 "이 워크플로우는 0% 로 측정됐다" 로
+                # 읽히게 했다. 워크플로우 몫을 모르는 것이지 0인 게 아니다.
+                "workflow_pnl_rate": None,
+                "workflow_rate_unavailable_reason": "no_tracker",
+                "workflow_eval_amount": 0.0,
+                "workflow_buy_amount": 0.0,
+                "workflow_pnl_amount": 0.0,
+                "other_pnl_rate": total_pnl_rate,
+                "other_eval_amount": total_eval,
+                "other_buy_amount": total_buy,
+                "other_pnl_amount": total_pnl,
+                "total_pnl_rate": total_pnl_rate,
+                "total_eval_amount": total_eval,
+                "total_buy_amount": total_buy,
+                "total_pnl_amount": total_pnl,
+                "workflow_positions": [],
+                "other_positions": other_positions_list,
+                "trust_score": 0,
+                "anomaly_count": 0,
+                # 상품별 필드는 tracker에서 채움 (여기서는 None)
+                "workflow_overseas_stock_pnl_rate": None,
+                "workflow_overseas_stock_pnl_amount": None,
+                "workflow_overseas_futures_pnl_rate": None,
+                "workflow_overseas_futures_pnl_amount": None,
+                "workflow_korea_stock_pnl_rate": None,
+                "workflow_korea_stock_pnl_amount": None,
+            }
+        
+        # WorkflowPositionTracker로 FIFO 기반 분리 계산
+        try:
+            return self._workflow_position_tracker.calculate_pnl(
+                current_prices=current_prices,
+                all_positions=all_positions or {},
+                start_date=start_date,  # 날짜 필터
+            )
+        except Exception as e:
+            # 🔴 계산이 실패한 것을 **"수익률 0%" 라는 측정값**으로 바꿔 내보내던 자리다.
+            # 가장 조용한 거짓말 경로 — 예외를 삼키고 0 을 발행하면 아래 계층 어디에서도
+            # 실패였다는 사실을 알 수 없다. 비율은 None(모름), 금액만 0 으로 남긴다.
+            # (금액 0 은 "포지션 없음" 과 같은 모양이라 하류 합산을 깨지 않는다.)
+            logger.exception("calculate_workflow_pnl failed: %s", e)
+            return {
+                "workflow_pnl_rate": None,
+                "workflow_rate_unavailable_reason": "computation_failed",
+                "workflow_eval_amount": 0.0,
+                "workflow_buy_amount": 0.0,
+                "workflow_pnl_amount": 0.0,
+                "other_pnl_rate": None,
+                "other_eval_amount": 0.0,
+                "other_buy_amount": 0.0,
+                "other_pnl_amount": 0.0,
+                "total_pnl_rate": None,
+                "total_eval_amount": 0.0,
+                "total_buy_amount": 0.0,
+                "total_pnl_amount": 0.0,
+                "workflow_positions": [],
+                "other_positions": [],
+                "trust_score": 0,
+                "anomaly_count": 0,
+            }
+
+    def _calculate_account_pnl(
+        self,
+        account_positions: Optional[Dict[str, Any]],
+        start_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """계좌 전체 수익률 계산.
+        
+        Args:
+            account_positions: 계좌 전체 포지션
+            start_date: 필터 시작일 (현재 미사용, 향후 확장)
+        
+        Returns:
+            계좌 수익률 데이터 dict
+        """
+        if not account_positions:
+            return {}
+
+        # Domestic observations keep missing costs/prices distinct from zeros.
+        # A single incomplete holding invalidates the account-level estimate.
+        for position in account_positions.values():
+            if position.get("product") == "korea_stock":
+                from math import isfinite
+                from decimal import Decimal
+                for field in ("quantity", "buy_price", "current_price", "pnl_amount"):
+                    value = position.get(field)
+                    if (isinstance(value, bool) or not isinstance(value, (int, float, Decimal))
+                            or not isfinite(value) or (field != "pnl_amount" and value <= 0)):
+                        return {}
+
+        if any(pos.get("product") == "overseas_futures" for pos in account_positions.values()):
+            from .futures_pnl import unavailable_account_pnl
+
+            # Current native gross estimates are exposed separately by currency.
+            # A price-times-quantity fallback is not a futures capital basis.
+            return unavailable_account_pnl()
+        
+        # 상품별 분류
+        overseas_stock_positions = {}
+        overseas_futures_positions = {}
+        korea_stock_positions = {}
+
+        for symbol, pos in account_positions.items():
+            pos_product = pos.get("product", "overseas_stock")
+            if pos_product == "overseas_stock":
+                overseas_stock_positions[symbol] = pos
+            elif pos_product == "overseas_futures":
+                overseas_futures_positions[symbol] = pos
+            elif pos_product == "korea_stock":
+                korea_stock_positions[symbol] = pos
+
+        # 상품별 수익률 계산
+        def calc_pnl(positions: Dict[str, Any]) -> Dict[str, float]:
+            total_eval = 0.0
+            total_buy = 0.0
+            total_pnl = 0.0
+            for pos in positions.values():
+                qty = pos.get("quantity", 0) or pos.get("qty", 0)
+                buy_price = pos.get("buy_price", 0) or pos.get("avg_price", 0)
+                current_price = pos.get("current_price", buy_price)
+                eval_amt = qty * current_price
+                buy_amt = qty * buy_price
+                total_eval += eval_amt
+                total_buy += buy_amt
+                # 승수(contract multiplier)가 반영된 브로커 제공 손익금액이 있으면
+                # 그것을 우선 합산한다. 자체 산술 qty×(현재가-평단) 은 선물 승수를
+                # 무시해 평가손익이 1/N 로 축소된다(예: HKEX 승수 10 → 1/10). 없을
+                # 때만 산술 폴백. pnl_rate 는 승수가 분자·분모에서 소거되는
+                # eval/buy 비율로 계속 계산하므로 정확하다(금액과 별개로 안전).
+                pnl_amount_raw = pos.get("pnl_amount")
+                # truthy 검사: 여러 포지션 빌더가 pnl_amount 를 기본 0.0 placeholder 로
+                # 채우므로, 명시적 0/0.0 은 권위값이 아니라고 보고 산술 폴백한다
+                # (실손익을 0 으로 무음 소거하는 것을 방지). 진짜 0 손익도 산술이
+                # ≈0 을 내므로 결과 동일.
+                if pnl_amount_raw or (pos.get("product") == "korea_stock" and pnl_amount_raw == 0):
+                    try:
+                        total_pnl += float(pnl_amount_raw)
+                    except (TypeError, ValueError):
+                        total_pnl += eval_amt - buy_amt
+                else:
+                    total_pnl += eval_amt - buy_amt
+            pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
+            return {
+                "eval": total_eval,
+                "buy": total_buy,
+                "pnl_amount": total_pnl,
+                "pnl_rate": pnl_rate,
+            }
+
+        os_result = calc_pnl(overseas_stock_positions)
+        of_result = calc_pnl(overseas_futures_positions)
+        ks_result = calc_pnl(korea_stock_positions)
+
+        # 전체 합산 — 금액은 상품별 pnl_amount(브로커 제공 우선) 합, 비율은
+        # 승수 무관한 eval/buy 비율로 산출.
+        total_eval = os_result["eval"] + of_result["eval"] + ks_result["eval"]
+        total_buy = os_result["buy"] + of_result["buy"] + ks_result["buy"]
+        total_pnl = os_result["pnl_amount"] + of_result["pnl_amount"] + ks_result["pnl_amount"]
+        total_pnl_rate = ((total_eval - total_buy) / total_buy * 100) if total_buy > 0 else 0.0
+
+        return {
+            "account_total_pnl_rate": total_pnl_rate,
+            "account_total_pnl_amount": total_pnl,
+            "account_total_eval_amount": total_eval,
+            "account_total_buy_amount": total_buy,
+            "account_overseas_stock_pnl_rate": os_result["pnl_rate"],
+            "account_overseas_stock_pnl_amount": os_result["pnl_amount"],
+            "account_overseas_futures_pnl_rate": of_result["pnl_rate"],
+            "account_overseas_futures_pnl_amount": of_result["pnl_amount"],
+            "account_korea_stock_pnl_rate": ks_result["pnl_rate"],
+            "account_korea_stock_pnl_amount": ks_result["pnl_amount"],
+        }
+
+    def init_workflow_position_tracker(
+        self,
+        broker_node_id: str,
+        product: str = "overseas_stock",
+        provider: str = "ls",
+        paper_trading: bool = False,
+    ) -> None:
+        """Initialize workflow position tracker for FIFO-based position tracking.
+
+        on_workflow_pnl_update 리스너가 등록된 경우에만 트래커를 초기화합니다.
+        주문 발생 시 자동으로 포지션을 기록하고, 틱마다 워크플로우 수익률을 계산합니다.
+
+        모의투자/실전투자 모드별로 데이터를 분리 저장하여, 모드 전환 시에도
+        기존 수익률 데이터가 보존됩니다.
+
+        Args:
+            broker_node_id: BrokerNode ID (로그용)
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
+            provider: 증권사 (ls, kiwoom, ...)
+            paper_trading: 모의투자 모드 (True: 모의, False: 실전)
+        """
+        # 리스너 중 on_workflow_pnl_update를 구현한 것이 있는지 확인
+        has_workflow_listener = any(
+            hasattr(listener, 'on_workflow_pnl_update')
+            and callable(getattr(listener, 'on_workflow_pnl_update', None))
+            for listener in self._listeners
+        )
+
+        if not has_workflow_listener and self.execution_key is None:
+            logger.debug("No workflow_pnl listener registered, skipping tracker init")
+            return
+
+        if self.is_dry_run:
+            logger.debug("dry_run 모드 — position tracker 초기화 스킵 (DB 쓰기 차단)")
+            return
+
+        if self._workflow_position_tracker is not None:
+            logger.debug("Workflow position tracker already initialized")
+            return
+
+        try:
+            from programgarden.database import WorkflowPositionTracker
+
+            trading_mode = "paper" if paper_trading else "live"
+
+            db_filename = self.engine_db_filename
+            db_path = self._resolve_db_path(db_filename)
+
+            self._workflow_position_tracker = WorkflowPositionTracker(
+                db_path=db_path,
+                execution_key=self.execution_key,
+                job_id=self.job_id,
+                broker_node_id=broker_node_id,
+                product=product,
+                provider=provider,
+                trading_mode=trading_mode,
+            )
+
+            # 거래 모드 메타데이터 기록 (데이터 초기화 없이 모드만 업데이트)
+            self._workflow_position_tracker.update_trading_mode(trading_mode)
+
+            # 체결 확정 → on_order_fill 리스너 연결. 즉시/버퍼/타임아웃 경로가
+            # 모두 원장의 단일 지점을 거치므로 여기서 한 번만 연결한다.
+            self._workflow_position_tracker.set_fill_classified_callback(
+                self._on_tracker_fill_classified
+            )
+
+            # PnL refresh용 정보 저장
+            self._workflow_broker_node_id = broker_node_id
+            self._workflow_product = product
+            self._workflow_provider = provider
+            self._workflow_paper_trading = paper_trading
+
+            identifier = f"{product}/{provider}"
+            logger.info(f"Workflow position tracker initialized: {db_path} ({identifier}, trading_mode={trading_mode})")
+
+        except Exception as e:
+            logger.warning(f"Failed to init workflow position tracker: {e}")
+            self._workflow_position_tracker = None
+            if self.execution_key is not None:
+                raise RuntimeError("Execution storage could not be verified") from e
+
+    # ============================================================
+    # Risk Tracker
+    # ============================================================
+
+    @property
+    def risk_tracker(self) -> Optional[Any]:
+        """위험관리 추적기. 관련 노드/플러그인이 없으면 None."""
+        return self._workflow_risk_tracker
+
+    def init_risk_tracker(
+        self,
+        features: set,
+        product: str,
+        provider: str,
+        paper_trading: bool,
+    ) -> None:
+        """선언된 feature 기반으로 RiskTracker 초기화.
+
+        Args:
+            features: 노드/플러그인이 선언한 risk feature 집합
+            product: 상품 유형 (overseas_stock, overseas_futures, korea_stock)
+            provider: 증권사 (ls, kiwoom, ...)
+            paper_trading: 모의투자 모드
+        """
+        if not features:
+            return
+        if self.is_dry_run:
+            logger.debug("dry_run 모드 — risk tracker 초기화 스킵 (DB 쓰기 차단)")
+            return
+        if self._workflow_risk_tracker is not None:
+            return
+
+        try:
+            from programgarden.database import WorkflowRiskTracker
+
+            trading_mode = "paper" if paper_trading else "live"
+
+            db_filename = self.engine_db_filename
+            db_path = self._resolve_db_path(db_filename)
+
+            self._workflow_risk_tracker = WorkflowRiskTracker(
+                db_path=db_path,
+                job_id=self.job_id,
+                product=product,
+                provider=provider,
+                trading_mode=trading_mode,
+                features=features,
+            )
+
+            # 재시작 검증 (hwm feature + 기존 HWM 데이터가 있으면)
+            if "hwm" in features and self._workflow_risk_tracker.has_hwm_data():
+                if self._workflow_position_tracker:
+                    results = self._workflow_risk_tracker.validate_hwm_on_restart(
+                        self._workflow_position_tracker
+                    )
+                    for r in results:
+                        if r.action != "kept" and "events" in features:
+                            self._workflow_risk_tracker.record_risk_event(
+                                event_type=f"hwm_{r.action}",
+                                severity="info",
+                                symbol=r.symbol,
+                                details={
+                                    "reason": r.reason,
+                                    "old_hwm": str(r.old_hwm) if r.old_hwm else None,
+                                    "new_hwm": str(r.new_hwm) if r.new_hwm else None,
+                                },
+                            )
+
+            self._workflow_risk_tracker.start_flush_loop()
+
+            logger.info(
+                f"Risk tracker initialized: features={features}, "
+                f"product={product}, trading_mode={trading_mode}"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to init risk tracker: {e}")
+            self._workflow_risk_tracker = None
+
+    def has_workflow_order_ledger(self) -> bool:
+        """이 실행에 **워크플로우 주문 원장이 존재하는가**(행이 있는지가 아니다).
+
+        트래커는 워크플로우에 PnL 리스너가 하나라도 있을 때만 만들어진다
+        (init_workflow_position_tracker 의
+        ``any(hasattr(l, 'on_workflow_pnl_update') ...)`` 게이트). 리스너 0개로
+        엔진을 라이브러리처럼 직접 구동하거나 초기화가 예외로 끝나면 트래커는
+        None 이고, 그러면 record_workflow_order 는 **no-op** 이라 원장에 행이
+        생길 수 없고 find_workflow_order 는 영원히 None 이다.
+
+        정정(ModifyOrder) 경로가 '원장에 행이 없다' 와 '원장 자체가 없다' 를
+        갈라 말하려고 쓴다 — 앞은 "그 주문을 우리가 기록한 적 없다", 뒤는
+        "이 구성에서는 어떤 주문도 조회할 수 없다" 로 운영자 조치가 다르다.
+        """
+        return self._workflow_position_tracker is not None
+
+    def record_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        symbol: str,
+        exchange: str,
+        side: str,
+        quantity: int,
+        price: float,
+        node_id: str,
+        *,
+        register_risk: bool = True,
+    ) -> None:
+        """Record workflow order for FIFO tracking.
+        
+        NewOrderNode에서 주문 성공 시 호출하여 주문을 기록합니다.
+        나중에 체결 시 이 정보로 워크플로우 주문 여부를 판단합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            symbol: 종목코드
+            exchange: 거래소
+            side: 매매구분 ("buy" | "sell")
+            quantity: 수량
+            price: 가격
+            node_id: 주문을 실행한 노드 ID
+            register_risk: 리스크 트래커(HWM) 부수효과를 낼지 여부.
+                기본 True 는 **신규 주문** 의미다 — buy 면 HWM 을 등록하고
+                (register_symbol: 수량 누적 + 평단 갱신), 전량 매도면 해제한다.
+                정정(ModifyOrder)처럼 *이미 접수된 같은 주문의 새 주문번호* 를
+                남기는 경로는 False 로 불러야 한다. 정정은 새 포지션이 아니므로
+                HWM 에 수량을 한 번 더 더하거나(같은 물량 이중계상),
+                아직 체결되지도 않은 매도 정정으로 HWM 을 풀어버리면 안 된다.
+                원장 행 자체는 체결 분류((order_no, order_date) 대조)에 필요하므로
+                기록은 그대로 하고 리스크 부수효과만 끈다.
+        """
+        if self._workflow_position_tracker is None:
+            # 원장 자체가 없는 구성(PnL 리스너 0개 / 초기화 실패)이다. 조용히
+            # 지나가면 나중에 find_workflow_order 가 영원히 None 인 이유를 알 수
+            # 없으므로 최소한 흔적은 남긴다(주문마다 나므로 debug).
+            logger.debug(
+                "Workflow order ledger unavailable; not recording order %s (%s %s %s)",
+                order_no, symbol, side, quantity,
+            )
+            return
+        
+        try:
+            self._workflow_position_tracker.record_order(
+                order_no=order_no,
+                order_date=order_date,
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=quantity,
+                price=price,
+                job_id=self.job_id,
+                node_id=node_id,
+            )
+            logger.debug(f"Recorded workflow order: {order_no} ({symbol} {side} {quantity})")
+
+            # ━━━ Risk Tracker 체결 연동 ━━━
+            # register_risk=False 는 "이 행은 새 포지션이 아니다"(정정 경로).
+            if register_risk and self._workflow_risk_tracker:
+                if side == "buy":
+                    self._workflow_risk_tracker.register_symbol(
+                        symbol=symbol,
+                        exchange=exchange,
+                        entry_price=price,
+                        qty=quantity,
+                    )
+                elif side == "sell":
+                    # 전량 매도 시 HWM 해제
+                    positions = self._workflow_position_tracker.get_workflow_positions()
+                    pos = positions.get(symbol) if isinstance(positions, dict) else None
+                    remaining = getattr(pos, 'quantity', 0) if pos else 0
+                    if remaining <= 0:
+                        self._workflow_risk_tracker.unregister_symbol(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to record workflow order: {e}")
+
+    def find_workflow_order(
+        self,
+        order_no: str,
+        order_date: Optional[str] = None,
+        *,
+        symbol: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """원장에 기록된 워크플로우 주문 1건을 **읽기 전용**으로 조회한다.
+
+        정정(ModifyOrder) 경로가 원 주문의 방향(side)·종목·수량·가격을 승계하기
+        위해 쓴다. ModifyOrder 계열 노드 스키마에는 side 필드가 아예 없어
+        (core/programgarden_core/nodes/order.py:245-263 = connection /
+        original_order_id / symbol / exchange), config 에서 읽으면 사실상 항상
+        "buy" 가 된다. 그 값으로 record_workflow_order 를 부르면 보유하지도 않은
+        종목에 롱 HWM 이 등록되고(register_symbol), 이후 그 종목 신규 매수가
+        drawdown 게이트에 막힌다. 방향은 **추측하지 않고 원장에서 승계**한다.
+
+        조회 범위는 이 원장의 product/provider/trading_mode 로 한정한다.
+        주문번호는 정확히 일치하는 행을 먼저 보고, 없으면 0-패딩 차이를 흡수한
+        정규화 형태로 맞춘다(ACK 의 "0000123" 과 체결 프레임의 "123").
+
+        order_date 를 주면 **같은 날짜의 행을 먼저** 본다 — 브로커 주문번호는
+        날짜 안에서만 유일하므로, 날짜가 다른 행을 아무렇게나 집으면 어제 다른
+        주문의 방향을 승계한다.
+
+        그래도 자정을 관통하는 정정(장 마감 직전 접수 → 자정 이후 정정)은 살려야
+        한다. 종전에는 그걸 **전 기간 스캔 + 후보 정확히 1건**으로 풀었는데, 그건
+        워크플로우 DB 가 며칠~몇 주 누적되는 한 거의 항상 실패한다 — 브로커
+        주문번호는 **영업일마다 리셋**되므로(근거: database/workflow_position_tracker.py
+        모듈 독스트링 — 창 가드 수용조건 ④의 근거로 쓰이는 사실) 같은 번호가
+        과거 날짜에 또 있는 순간 후보가 2건이 돼 None → side 미해결 → 브로커 호출
+        0회 거부가 된다.
+
+        그래서 전 기간 폴백을 버리고, 트래커가 이미 세운 **D±1 창 규약**을 그대로
+        쓴다(_order_date_window 와 같은 조건: D-1·D+1 두 칸만, D±2 이상은 보지
+        않는다). 창 후보가 여러 건이면 **종목 일치**로 가른다(tracker 의 창 수용
+        조건 ② 와 같은 조건 — 종목이 다른 후보는 남의 주문번호 재발급이다).
+        종목까지 같은 후보가 둘 이상이면 모호하므로 None — '방향을 추측하지
+        않는다' 는 안전성은 그대로다. 정확일치(같은 날짜) 경로의 의미는 건들지
+        않는다 — 거긴 (주문번호, 주문일자) 동시 일치가 더 강한 증거다(tracker 모듈
+        독스트링과 같은 분배).
+
+        Args:
+            symbol: 주어지면 **창 경로의 후보 판정에만** 쓰인다(정확일치 경로는
+                종전 그대로). 비워두면 창 후보가 정확히 1건일 때만 수용한다.
+
+        Returns:
+            {"order_no", "order_date", "symbol", "exchange", "side",
+             "quantity", "price", "node_id", "job_id"} 또는 None(미발견/조회 실패).
+        """
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return None
+
+        def _norm(value: Any) -> Optional[str]:
+            # workflow_position_tracker._normalize_identifier 의 숫자 규칙과 같은
+            # 접음(0-패딩 제거). 사설 메서드를 건드리지 않으려고 여기서 최소 구현.
+            text = str(value).strip() if value is not None else ""
+            if not text:
+                return None
+            return (text.lstrip("0") or None) if text.isdigit() else text
+
+        def _window(date: Any) -> List[str]:
+            """정확일치가 실패했을 때만 훑는 후보 날짜 — **D-1 과 D+1, 두 칸**.
+
+            workflow_position_tracker._order_date_window 와 **같은 규약**이다(근거는
+            그 모듈 독스트링: 실시간 체결 프레임의 로컬 날짜 채움 → D-1, LS 야간
+            세션의 전 영업일 파일링 → D+1). 사설 메서드를 건드리지 않으려고 여기
+            최소 구현한다(위 _norm 과 같은 이유). 날짜가 YYYYMMDD 가 아니면 창을
+            넓히지 않는다 — 근거 없는 매칭을 만들지 않기 위해서다.
+            """
+            try:
+                base = datetime.strptime(str(date or "").strip(), "%Y%m%d")
+            except (TypeError, ValueError):
+                return []
+            return [
+                (base - timedelta(days=1)).strftime("%Y%m%d"),
+                (base + timedelta(days=1)).strftime("%Y%m%d"),
+            ]
+
+        def _symbol_matches(row_symbol: Any) -> bool:
+            # tracker._normalize_symbol 과 같은 규칙(strip + upper).
+            return (str(row_symbol or "").strip().upper()
+                    == str(symbol or "").strip().upper())
+
+        wanted = _norm(order_no)
+        if wanted is None:
+            return None
+
+        want_symbol = bool(str(symbol or "").strip())
+
+        import sqlite3
+
+        columns = ("order_no, order_date, symbol, exchange, side, "
+                   "quantity, price, node_id, job_id")
+
+        def _matching_rows(scope: Tuple[Any, ...], db_path: str,
+                           date: Optional[str]) -> list:
+            # 0-패딩 차이는 SQL 로 접을 수 없어(정규화가 파이썬 규칙) 후보를 읽어
+            # 와서 거른다. 날짜를 주면 그날 주문으로 범위를 묶어 스캔을 줄인다.
+            sql = (f"SELECT {columns} FROM workflow_orders "
+                   "WHERE product = ? AND provider = ? AND trading_mode = ?")
+            params: Tuple[Any, ...] = scope
+            if date:
+                sql += " AND order_date = ?"
+                params = scope + (date,)
+            sql += " ORDER BY created_at DESC"
+            with sqlite3.connect(db_path) as conn:
+                return [r for r in conn.execute(sql, params).fetchall()
+                        if _norm(r[0]) == wanted]
+
+        try:
+            # 🔴 트래커 속성 독출도 try 안에 둔다. 독스트링이 'None(미발견/조회
+            # 실패)' 를 약속하는데, product/provider/trading_mode/db_path 중 하나라도
+            # 없는 트래커(테스트 더블·구판 트래커)를 물면 AttributeError 가 호출자
+            # (정정 경로)로 그대로 올라가 정정 자체를 죽인다. 조회 실패는 None 이다.
+            scope = (tracker.product, tracker.provider, tracker.trading_mode)
+            db_path = tracker.db_path
+
+            def _rows(date: Optional[str]) -> list:
+                return _matching_rows(scope, db_path, date)
+
+            row = None
+            if order_date:
+                same_date = _rows(order_date)
+                if same_date:
+                    row = same_date[0]
+                else:
+                    # 장 마감 직전 주문 → 자정 이후 정정(자정 관통). 전 기간을 훑지
+                    # 않고 **D±1 두 칸**만 본다 — 주문번호는 영업일마다 리셋되므로
+                    # 누적된 DB 에서 전체 유일성을 요구하면 멀지않아 항상 거부된다.
+                    widened = [r for d in _window(order_date) for r in _rows(d)]
+                    if want_symbol:
+                        # 창 후보는 '날짜가 한 칸 어긋났을 것' 이라는 추론이다.
+                        # 종목이 다른 후보는 남의 주문번호 재발급이므로 버린다
+                        # (tracker 창 수용조건 ② 와 같은 조건).
+                        widened = [r for r in widened if _symbol_matches(r[2])]
+                    if len(widened) != 1:
+                        return None
+                    row = widened[0]
+                    logger.warning(
+                        "find_workflow_order: order %s recorded on %s but looked up "
+                        "for %s; using the single D±1 match (symbol=%s)",
+                        order_no, row[1], order_date, row[2],
+                    )
+            else:
+                anywhere = _rows(None)
+                if not anywhere:
+                    return None
+                row = anywhere[0]
+        except Exception as e:
+            logger.warning(f"find_workflow_order failed: {e}")
+            return None
+
+        return {
+            "order_no": row[0],
+            "order_date": row[1],
+            "symbol": row[2],
+            "exchange": row[3],
+            "side": row[4],
+            "quantity": row[5],
+            "price": row[6],
+            "node_id": row[7],
+            "job_id": row[8],
+        }
+
+    def update_workflow_order_fill_price(
+        self,
+        order_no: str,
+        order_date: str,
+        fill_price: float,
+    ) -> bool:
+        """Update fill price for market orders.
+        
+        시장가 주문은 주문 시점에 가격을 알 수 없으므로,
+        체결 이벤트 수신 시 실제 체결 가격으로 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            fill_price: 체결 가격
+            
+        Returns:
+            업데이트 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.update_order_fill_price(
+                order_no=order_no,
+                order_date=order_date,
+                fill_price=fill_price,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update order fill price: {e}")
+            return False
+
+    async def _annotate_workflow_fill_currency(self, *, currency: str, **fill_kwargs: Any) -> bool:
+        """Preserve post-refresh currency without replaying the AS1 execution."""
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return False
+        fill_kwargs["fill_time"] = fill_kwargs.get("fill_time") or UNKNOWN_FILL_TIME
+        try:
+            return await tracker.annotate_fill_currency(currency=currency, **fill_kwargs)
+        except ValueError:
+            # Unusable/conflicting identity must never cause another fill write.
+            logger.warning("Cannot attach currency evidence to the retained execution")
+            return False
+
+    async def record_workflow_fill(
+        self,
+        order_no: str,
+        order_date: str,
+        symbol: str,
+        exchange: str,
+        side: str,
+        quantity: int,
+        price: float,
+        fill_time: str,
+        commda_code: str = "",
+        *,
+        execution_id: Optional[str | int] = None,
+        account_avg_price: Optional[float] = None,
+        currency: Optional[str] = None,
+    ) -> str:
+        """Record fill event for FIFO position tracking.
+        
+        체결 이벤트 수신 시 호출하여 포지션 로트를 생성/청산합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            symbol: 종목코드
+            exchange: 거래소
+            side: 매매구분 ("buy" | "sell")
+            quantity: 체결 수량
+            price: 체결 가격
+            fill_time: 체결시각 (HHMMSSsss). 프레임이 체결시각을 싣지 않았으면
+                **빈 문자열**을 넘긴다 — 값을 합성하면 하류(호스팅 플랫폼)가 그걸
+                거래소 체결시각으로 승격시킨다. 원장 쪽 표기는 이 메서드가
+                UNKNOWN_FILL_TIME 으로 바꿔 넣고, 서버로 나가는 이벤트에서는
+                다시 빈 문자열로 되돌린다(_on_tracker_fill_classified).
+            commda_code: 매체구분코드 — **프레임 값 그대로**. 기본값은 ""(= 프레임이
+                말하지 않음)이다. 종전 기본값 "40"(OPEN API)은 관측되지 않은 값을
+                원장에 증거처럼 남기는 조작값이었다(tracker.detect_anomalies 가
+                `WHERE commda_code='40'` 을 unknown_api 비율 분모로 쓴다).
+            execution_id: Optional broker execution number, preserved for durable replay detection.
+            account_avg_price: Optional account average purchase price for this
+                symbol at fill time; only a workflow sell's residual tail uses it.
+            currency: Explicit broker unit at fill time; no product default.
+
+        Returns:
+            분류 결과: "workflow" | "manual" | "unknown_api" | "pending"
+        """
+        if self._workflow_position_tracker is None:
+            logger.debug("Workflow position tracker not initialized, skipping record_fill")
+            return "skipped"
+        
+        # 빈 체결시각은 원장 정렬/날짜필터에서 위험하다(UNKNOWN_FILL_TIME 주석 참고).
+        # 원장에만 비숫자 표식을 넣고, 서버로 나가는 값은 비워둔다.
+        ledger_fill_time = fill_time if str(fill_time or "").strip() else UNKNOWN_FILL_TIME
+
+        try:
+            # 🔴 중복방지 키(execution_id)는 **체결 보존보다 우선하지 않는다**.
+            # tracker.record_fill 은 본문 첫 줄에서 _execution_key(fill) 를 계산하고
+            # (workflow_position_tracker.py 의 record_fill — PendingFill 생성 직후, 버퍼
+            # 락도 DB 연결도 잡기 전), 그 안의 _normalize_identifier 가
+            #   · 체결번호가 정수가 아닌 수치 문자열("0.0"/"-0"/"12.5")이면
+            #     ValueError("Numeric execution/order identity must be a positive integer")
+            #   · str/int 가 아니면 ValueError("Execution/order identity must be a string or integer")
+            #   · 체결번호는 쓸 만한데 주문번호/주문일자가 비면
+            #     ValueError("Explicit execution identity requires an order number and date")
+            # 를 올린다. 종전에는 그 예외를 아래 광역 except 가 삼켜 "error" 만
+            # 반환했고 — trade_history · workflow_position_lots 에 **아무것도 남지
+            # 않았다**. 체결 한 건이 통째로 사라지는 것보다 중복방지를 포기하는 쪽이
+            # 언제나 낫다. 그래서 identity 축이 깨지면 체결번호 없이 한 번 더 부른다.
+            # (executor._usable_execution_identity 는 '가능하면 미리 거른다' 는 최적화로
+            #  남아 있지만, 그건 (주문번호, 주문일자) 축만 본다 — 체결번호 자체가
+            #  비정수 수치 문자열인 경우는 여기서만 닫힌다.)
+            #
+            # ⚠️ 재시도가 이중 기록을 만들지 않는 근거(코드 확인,
+            #    database/workflow_position_tracker.py):
+            #   · record_fill 은 `fill = PendingFill(...)` 다음 줄이 곧바로
+            #     `identity = self._execution_key(fill)` 다. 그 사이에 쓰기가 없다.
+            #   · 그 뒤의 ValueError 발생 지점(_find_execution → _execution_facts,
+            #     _process_fill_internal 의 payload 구성)도 전부 INSERT/UPDATE 보다
+            #     앞이고, _process_fill_internal 의 쓰기는 `BEGIN IMMEDIATE` 트랜잭션
+            #     안이라 예외 시 롤백된다. 버퍼(_pending_fills) 등록도 그 모든
+            #     분기보다 뒤다. 즉 첫 호출이 ValueError 로 끝났다면 이 체결은
+            #     원장에도 버퍼에도 흔적이 없다.
+            #   · 단 하나의 예외가 ExecutionIdentityConflictError(ValueError 서브클래스)다.
+            #     이건 "같은 체결번호가 **이미 기록돼 있는데** 체결 사실이 다르다" 는
+            #     신호라, 체결번호를 떼고 다시 넣으면 같은 브로커 체결이 두 번
+            #     기록된다. 그래서 재시도 대상에서 제외하고 종전대로 "error" 로 둔다.
+            #
+            # 🔴 잡는 범위는 **ExecutionIdentityError 하나**다(모든 ValueError 가
+            #    아니다). 종전에는 광역 `except ValueError` 였는데, 그러면
+            #    execution_id 가 실려 있기만 하면 identity 와 무관한 tracker 예외까지
+            #    삼켜 체결번호 없이 재기록했다 — 실제로 닿는 경로가 있다:
+            #    _execution_facts 의 유한성 가드(수량/가격이 inf·nan 이면 plain
+            #    ValueError). 그건 체결번호를 뗀다고 나아지지 않는 **체결 사실의
+            #    문제**라 원장에 비유한 값을 남기는 대신 "error" 로 끝나야 한다.
+            from programgarden.database.workflow_position_tracker import (
+                ExecutionIdentityConflictError,
+                ExecutionIdentityError,
+            )
+
+            base_kwargs: Dict[str, Any] = dict(
+                order_no=order_no,
+                order_date=order_date,
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                quantity=quantity,
+                price=price,
+                fill_time=ledger_fill_time,
+                commda_code=commda_code,
+            )
+            if account_avg_price is not None:
+                # 재시도에도 유지한다 — identity 축이 아니고, 매도 잔량 추정의
+                # 유일한 근거다.
+                base_kwargs["account_avg_price"] = account_avg_price
+            if currency is not None:
+                base_kwargs["currency"] = currency
+
+            try:
+                result = await self._workflow_position_tracker.record_fill(
+                    **base_kwargs,
+                    **({"execution_id": execution_id} if execution_id is not None else {}),
+                )
+            except ExecutionIdentityConflictError:
+                # ExecutionIdentityError 의 서브클래스가 아니라 아래 절에 걸리지
+                # 않지만, "충돌은 재시도하지 않는다" 는 의도를 코드로 못박아 둔다
+                # (누군가 상속 관계를 바꾸면 이 절이 이중 기록을 막는다).
+                raise
+            except ExecutionIdentityError as identity_err:
+                if execution_id is None:
+                    # 체결번호를 싣지도 않았는데 난 ValueError 는 identity 축이
+                    # 아니다 — 떼어낼 것이 없으므로 종전대로 처리한다.
+                    raise
+                logger.warning(
+                    "Execution identity unusable for fill %s/%s (execution_id=%r): %s "
+                    "— retrying without it (replay protection dropped, fill preserved)",
+                    order_date, order_no, execution_id, identity_err,
+                )
+                result = await self._workflow_position_tracker.record_fill(**base_kwargs)
+            logger.info(f"Recorded workflow fill: {order_no} ({symbol} {side} {quantity}@{price}) → {result}")
+
+            # 체결 후 PnL refresh 트리거
+            if result == "workflow" and self._workflow_broker_node_id:
+                try:
+                    # 현재가로 PnL 계산 (체결가 사용)
+                    current_prices = {symbol: price}
+                    currency = (
+                        None if self._workflow_product == "overseas_futures" else
+                        "KRW" if self._workflow_product == "korea_stock" else "USD"
+                    )
+                    await self.notify_workflow_pnl(
+                        broker_node_id=self._workflow_broker_node_id,
+                        product=self._workflow_product,
+                        provider="ls-sec.co.kr",
+                        current_prices=current_prices,
+                        account_positions=None,  # 전체 포지션은 나중에 업데이트됨
+                        currency=currency,
+                    )
+                    logger.info(f"PnL refresh triggered after fill: {symbol}")
+                except Exception as pnl_err:
+                    logger.warning(f"Failed to trigger PnL refresh: {pnl_err}")
+
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to record workflow fill: {e}")
+            return "error"
+
+    async def _on_tracker_fill_classified(self, fill, classification: str) -> None:
+        """Bridge a newly recorded ledger fill to on_order_fill listeners.
+
+        The tracker invokes this exactly once per new fill — for immediate,
+        buffered, and timeout-resolved classifications alike — so notification
+        happens whether ``record_workflow_fill`` returned a final classification
+        or "pending" that only settled after the arrival-buffering timeout.
+        Facts only: no monetary computation. Manual/unknown_api/other fills have
+        no matching workflow order, so node_id stays None.
+        """
+        tracker = self._workflow_position_tracker
+        if tracker is None:
+            return
+
+        job_id = self.job_id
+        node_id = None
+        try:
+            identity = tracker.lookup_order_identity(fill.order_no, fill.order_date)
+            if identity is not None:
+                row_job_id, node_id = identity
+                if row_job_id:
+                    job_id = row_job_id
+        except Exception as e:
+            logger.warning(f"Failed to resolve order identity for fill: {e}")
+
+        received_at = getattr(fill, "received_at", None)
+        received_iso = (
+            received_at.isoformat() if hasattr(received_at, "isoformat")
+            else datetime.now(timezone.utc).isoformat()
+        )
+
+        event = OrderFillEvent(
+            job_id=job_id,
+            node_id=node_id,
+            order_no=fill.order_no,
+            order_date=fill.order_date,
+            execution_id=fill.execution_id,
+            symbol=fill.symbol,
+            exchange=fill.exchange,
+            side=fill.side,
+            quantity=fill.quantity,
+            price=fill.price,
+            # 원장 전용 표식은 서버로 내보내지 않는다 — 빈 fill_time 이어야
+            # 호스팅 플랫폼의 `and fill_time` 가드가 걸려 executed_at 이 정직한
+            # received_at 폴백(+ executed_at_source 태그)이 된다.
+            fill_time=("" if fill.fill_time == UNKNOWN_FILL_TIME else fill.fill_time),
+            product=tracker.product,
+            provider=tracker.provider,
+            classification=classification,
+            commda_code=fill.commda_code,
+            trading_mode=tracker.trading_mode,
+            received_at=received_iso,
+        )
+        await self.notify_order_fill(event)
+
+    async def notify_order_fill(self, event: OrderFillEvent) -> None:
+        """Notify all listeners about a confirmed order fill (facts only)."""
+        if not self._listeners:
+            return
+
+        for listener in self._listeners:
+            try:
+                await listener.on_order_fill(event)
+            except Exception as e:
+                logger.warning(f"Listener error on_order_fill: {e}")
+
+        # SSE 스트림 전송을 위해 이벤트 루프에 제어권 양보
+        await asyncio.sleep(0)
+
+    async def cancel_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+    ) -> bool:
+        """Cancel a workflow order (mark as cancelled).
+        
+        취소 완료 이벤트 수신 시 호출하여 주문 상태를 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            
+        Returns:
+            취소 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.cancel_order(order_no, order_date)
+        except Exception as e:
+            logger.warning(f"Failed to cancel workflow order: {e}")
+            return False
+
+    async def modify_workflow_order(
+        self,
+        order_no: str,
+        order_date: str,
+        new_quantity: Optional[int] = None,
+        new_price: Optional[float] = None,
+    ) -> bool:
+        """Modify a workflow order (update quantity/price).
+        
+        정정 완료 이벤트 수신 시 호출하여 주문 정보를 업데이트합니다.
+        
+        Args:
+            order_no: 주문번호
+            order_date: 주문일자 (YYYYMMDD)
+            new_quantity: 새 수량 (None이면 변경 안함)
+            new_price: 새 가격 (None이면 변경 안함)
+            
+        Returns:
+            정정 성공 여부
+        """
+        if self._workflow_position_tracker is None:
+            return False
+        
+        try:
+            return self._workflow_position_tracker.modify_order(
+                order_no, order_date, new_quantity, new_price
+            )
+        except Exception as e:
+            logger.warning(f"Failed to modify workflow order: {e}")
+            return False
+
+    def get_workflow_orders_without_fill_price(self) -> list:
+        """Get orders without fill price (for fallback sync).
+        
+        연결 끊김 등으로 체결 이벤트를 놓친 경우,
+        체결내역 조회로 가격을 복구하기 위해 사용합니다.
+        
+        Returns:
+            가격이 0인 주문 목록
+        """
+        if self._workflow_position_tracker is None:
+            return []
+        
+        try:
+            return self._workflow_position_tracker.get_orders_without_fill_price()
+        except Exception as e:
+            logger.warning(f"Failed to get orders without fill price: {e}")
+            return []
+
+    def sync_workflow_fill_prices_from_history(
+        self,
+        fill_history: list,
+    ) -> int:
+        """Sync fill prices from trade history API (fallback).
+        
+        체결내역 API 응답으로 시장가 주문의 가격을 복구합니다.
+        
+        Args:
+            fill_history: 체결내역 리스트
+                [{"order_no": "123", "order_date": "20260123", "fill_price": 2.82}, ...]
+            
+        Returns:
+            업데이트된 주문 수
+        """
+        if self._workflow_position_tracker is None:
+            return 0
+        
+        try:
+            return self._workflow_position_tracker.sync_fill_prices_from_history(fill_history)
+        except Exception as e:
+            logger.warning(f"Failed to sync fill prices from history: {e}")
+            return 0
+
+    def sync_workflow_fills_from_history(
+        self,
+        fill_history: list,
+    ) -> int:
+        """Sync fills and create positions from trade history API (fallback).
+        
+        체결내역 API 응답으로 FIFO 포지션을 생성합니다.
+        이 메서드는 실시간 체결 이벤트를 놓친 경우 fallback으로 사용합니다.
+        
+        Args:
+            fill_history: 체결내역 리스트
+                [{
+                    "order_no": "123",
+                    "order_date": "20260123",
+                    "symbol": "AAPL",
+                    "exchange": "NASDAQ",
+                    "side": "buy",
+                    "quantity": 10,
+                    "price": 192.50,
+                    "fill_time": "093000000"
+                }, ...]
+            
+        Returns:
+            처리된 체결 수
+        """
+        if self._workflow_position_tracker is None:
+            return 0
+        
+        try:
+            return self._workflow_position_tracker.sync_fills_from_history(fill_history)
+        except Exception as e:
+            logger.warning(f"Failed to sync fills from history: {e}")
+            return 0
+
+    # 노드 출력에 실려 외부로 나가면 안 되는 키 (부분일치, 소문자 비교).
+    # BrokerNode 는 `connection.appkey/appsecret` 을 하류 노드에 넘기기 위해 **출력에 싣는다**
+    # (내부 전송 경로라 지울 수 없다). 따라서 외부로 나가는 모든 경계에서 가려야 한다.
+    SENSITIVE_OUTPUT_KEYS = frozenset(
+        {"appkey", "appsecret", "secret", "password", "token", "api_key", "apikey", "private_key"}
+    )
+
+    def _sanitize_value(self, value: Any) -> Any:
+        """dict/list 를 재귀적으로 훑어 민감 키를 가린다."""
+        if isinstance(value, dict):
+            return self._sanitize_outputs(value)
+        if isinstance(value, (list, tuple)):
+            # 리스트 안의 dict 도 가려야 한다 (예: credentials[] 배열).
+            sanitized_items = [self._sanitize_value(item) for item in value]
+            return type(value)(sanitized_items) if isinstance(value, tuple) else sanitized_items
+        return value
+
+    def _sanitize_outputs(self, outputs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Remove sensitive information from outputs."""
+        # None은 None으로 반환, 빈 딕셔너리 {}는 그대로 유지
+        if outputs is None:
+            return None
+
+        sanitized = {}
+        for k, v in outputs.items():
+            if any(sk in str(k).lower() for sk in self.SENSITIVE_OUTPUT_KEYS):
+                sanitized[k] = "[REDACTED]"
+            else:
+                sanitized[k] = self._sanitize_value(v)
+
+        return sanitized
+
+    def get_all_outputs_sanitized(self, node_id: str) -> Dict[str, Any]:
+        """외부로 내보낼 노드 출력 — 민감 키가 가려진 사본.
+
+        내부 전송(바인딩 해석 · broker connection auto-inject)은 `get_all_outputs()` 의
+        raw 값을 그대로 쓰고, **외부 노출면**(리스너 이벤트 · `get_state()`)만 이걸 쓴다.
+        """
+        return self._sanitize_outputs(self.get_all_outputs(node_id)) or {}
+
+    # === Logging ===
+
+    def log(
+        self,
+        level: str,
+        message: str,
+        node_id: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record log entry and notify listeners"""
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "level": level,
+            "message": message,
+            "node_id": node_id,
+            "data": data,
+        }
+        self._logs.append(log_entry)
+        
+        # Notify listeners (async, fire-and-forget)
+        if self._listeners:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.notify_log(level, message, node_id, data))
+            except RuntimeError:
+                pass  # No event loop running
+
+    def get_logs(
+        self,
+        level: Optional[str] = None,
+        node_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Get logs"""
+        logs = self._logs
+
+        if level:
+            logs = [l for l in logs if l["level"] == level]
+        if node_id:
+            logs = [l for l in logs if l["node_id"] == node_id]
+
+        return logs[-limit:]
+
+    # === Expression Context ===
+
+    def get_expression_context(self) -> ExpressionContext:
+        """
+        Create expression evaluation context
+
+        Converts all node outputs to be accessible in expressions.
+        Also provides `input` variable for workflow inputs.
+
+        Available variables in expressions:
+        - {{ nodes.nodeId.port }}: Node output values (the `nodes.` prefix is
+          required — a bare `{{ nodeId.port }}` is an undefined variable)
+        - {{ nodes.nodeId.method() }}: Node output with method chaining
+        - {{ item }}, {{ item.field }}: Current iteration item
+        - {{ index }}, {{ total }}: Iteration context
+        - {{ input.xxx }}: Workflow input parameters
+        - {{ context.xxx }}: Runtime context parameters
+        """
+        expr_context = ExpressionContext()
+
+        # Add node outputs
+        for node_id, outputs in self._outputs.items():
+            for port_name, output in outputs.items():
+                expr_context.set_node_output(node_id, port_name, output.value)
+
+        # === 반복 컨텍스트 ===
+        if self._iteration_item is not None:
+            expr_context.set_iteration_context(
+                self._iteration_item,
+                self._iteration_index,
+                self._iteration_total,
+            )
+
+        # Add realtime data
+        expr_context.variables.update(self._realtime_data)
+
+        # Add workflow inputs (merged: defaults + user overrides)
+        merged_inputs = self._merge_inputs_with_defaults()
+        expr_context.variables["input"] = merged_inputs
+
+        # Add context parameters (for backward compatibility)
+        expr_context.variables["context"] = self.context_params
+
+        return expr_context
+
+    def set_iteration_context(self, item: Any, index: int, total: int) -> None:
+        """
+        반복 컨텍스트 설정
+
+        자동 반복 실행 시 Executor가 각 아이템마다 호출합니다.
+        {{ item }}, {{ index }}, {{ total }} 표현식에서 사용됩니다.
+        """
+        self._iteration_item = item
+        self._iteration_index = index
+        self._iteration_total = total
+
+    def clear_iteration_context(self) -> None:
+        """반복 컨텍스트 초기화"""
+        self._iteration_item = None
+        self._iteration_index = 0
+        self._iteration_total = 0
+
+    def _merge_inputs_with_defaults(self) -> Dict[str, Any]:
+        """
+        Merge workflow input defaults with user-provided context_params.
+        
+        Priority: context_params > inputs[].default
+        """
+        result = {}
+        
+        # 1. Extract defaults from workflow inputs schema
+        for name, schema in self._workflow_inputs.items():
+            if isinstance(schema, dict):
+                default_value = schema.get("default")
+                if default_value is not None:
+                    result[name] = default_value
+        
+        # 2. Override with user-provided context_params
+        result.update(self.context_params)
+        
+        return result
+
+    # === Resource Management ===
+
+    @property
+    def resource(self):
+        """
+        Get resource context for throttling and resource management.
+        
+        Returns:
+            ResourceContext or None if not configured
+        """
+        return self._resource_context
+    
+    def set_resource_context(self, resource_context) -> None:
+        """
+        Set resource context
+        
+        Args:
+            resource_context: ResourceContext instance
+        """
+        self._resource_context = resource_context
+    
+    async def check_resources_before_task(
+        self,
+        task_type: str = "default",
+        weight: float = 1.0,
+        is_order: bool = False,
+        timeout: Optional[float] = 30.0,
+    ) -> Dict[str, Any]:
+        """
+        Check resources and acquire execution permission before running a task.
+        
+        This method should be called before executing CPU/memory intensive tasks
+        like condition evaluation or backtesting.
+        
+        Args:
+            task_type: Task/node type (e.g., "ConditionNode", "BacktestEngineNode")
+            weight: Task weight (1.0=normal, 2.0=heavy)
+            is_order: Whether this is an order-related task (gets priority)
+            timeout: Maximum wait time in seconds
+        
+        Returns:
+            Dict with:
+                - can_proceed: bool
+                - waited: float (seconds waited)
+                - recommended_delay: float
+                - recommended_batch_size: int
+                - throttle_level: str
+                - reason: str or None (if can_proceed=False)
+        
+        Example:
+            >>> check = await context.check_resources_before_task("ConditionNode", weight=1.0)
+            >>> if check["can_proceed"]:
+            ...     # Apply recommended settings
+            ...     batch_size = check["recommended_batch_size"]
+            ...     await asyncio.sleep(check["recommended_delay"])
+            ...     # Execute task
+        """
+        if self._resource_context:
+            return await self._resource_context.before_task(
+                task_type=task_type,
+                weight=weight,
+                is_order=is_order,
+                timeout=timeout,
+            )
+        
+        # No resource context - always allow
+        return {
+            "can_proceed": True,
+            "waited": 0.0,
+            "recommended_delay": 0.0,
+            "recommended_batch_size": 10,
+            "throttle_level": "none",
+            "reason": None,
+        }
+    
+    async def release_resources_after_task(
+        self,
+        task_type: str = "default",
+        weight: float = 1.0,
+    ) -> None:
+        """
+        Release resources after task completion.
+        
+        Must be called after check_resources_before_task() when task completes.
+        
+        Args:
+            task_type: Task/node type (same as before_task)
+            weight: Task weight (same as before_task)
+        """
+        if self._resource_context:
+            await self._resource_context.after_task(
+                task_type=task_type,
+                weight=weight,
+            )
+    
+    def get_resource_expression_context(self) -> Dict[str, Any]:
+        """
+        Get resource variables for expression evaluation.
+        
+        Available in expressions as {{ resource.xxx }}
+        
+        Returns:
+            Dict with resource info (recommended_batch_size, max_symbols, etc.)
+        """
+        if self._resource_context:
+            return self._resource_context.get_expression_context()
+        
+        # Default values when no resource context
+        return {
+            "recommended_batch_size": 10,
+            "max_symbols": 100,
+            "max_backtest_days": 1095,
+            "max_workers": 4,
+            "throttle_level": "none",
+            "cpu_percent": 0.0,
+            "memory_percent": 0.0,
+            "is_healthy": True,
+        }

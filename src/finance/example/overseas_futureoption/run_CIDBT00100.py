@@ -1,0 +1,46 @@
+import logging
+import os
+from dotenv import load_dotenv
+import asyncio
+from programgarden_finance import LS, CIDBT00100
+import logging
+logger = logging.getLogger(__name__)
+from datetime import datetime
+
+load_dotenv()
+
+
+async def test_req_CIDBT00100():
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    ls = LS()
+
+    login_result = ls.login(
+        appkey=os.getenv("APPKEY_FUTURE_FAKE"),
+        appsecretkey=os.getenv("APPSECRET_FUTURE_FAKE"),
+        paper_trading=True,
+    )
+
+    if login_result is False:
+        logger.error("로그인 실패")
+        return
+
+    ord_dt = datetime.now().strftime("%Y%m%d")
+
+    req = ls.overseas_futureoption().order().CIDBT00100(
+        body=CIDBT00100.CIDBT00100InBlock1(
+            OrdDt=ord_dt,
+            IsuCodeVal="ADZ25",
+            FutsOrdTpCode="1",
+            BnsTpCode="1",
+            AbrdFutsOrdPtnCode="2",
+            OvrsDrvtOrdPrc=0.64935,
+            CndiOrdPrc=0,
+            OrdQty=1,
+        )
+    )
+    print(await req.req_async())
+
+if __name__ == "__main__":
+    asyncio.run(test_req_CIDBT00100())

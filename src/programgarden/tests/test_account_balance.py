@@ -1,0 +1,657 @@
+"""
+AccountNode 잔고 정보 확장 테스트
+
+- 해외주식: COSOQ02701 (외화예수금/주문가능금액) 추가
+- 해외선물: CIDBQ03000 → CIDBQ05300 교체 (증거금/마진콜율 추가)
+"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+def _complete_futures_fixtures(ls):
+    """Supply actual SDK envelopes around these historical monetary fixtures."""
+    from futures_response_fixtures import parsed_response, position_request
+    from programgarden_finance import CIDBQ05300
+    accno = ls.overseas_futureoption().accno()
+    requests = {"CIDBQ01500": position_request(), "CIDBQ05300": CIDBQ05300.CIDBQ05300InBlock1(RecCnt=1, OvrsAcntTpCode="1", CrcyCode="ALL")}
+    for tr, request in requests.items():
+        call = getattr(accno, tr).return_value
+        old = call.req_async.return_value
+        rows = [{key: value for key, value in vars(row).items() if not key.startswith("_")} for row in old.block2]
+        result = parsed_response(tr, request, rows, code="00707" if tr == "CIDBQ01500" and not rows else "00136")
+        if tr == "CIDBQ05300":
+            fields = {key: value for key, value in vars(old.block3).items() if not key.startswith("_")}
+            result.block3 = CIDBQ05300.CIDBQ05300OutBlock3(**fields)
+        call.req_async.return_value = result
+
+
+def _make_mock_context():
+    """간이 ExecutionContext mock"""
+    ctx = MagicMock()
+    ctx.log = MagicMock()
+    ctx.job_id = "test-job"
+    ctx.is_running = True
+    return ctx
+
+
+def _make_executor():
+    """AccountNodeExecutor 인스턴스 생성"""
+    from programgarden.executor import AccountNodeExecutor
+    return AccountNodeExecutor()
+
+
+# ── 해외주식 테스트 ──
+
+
+@pytest.mark.asyncio
+async def test_stock_balance_includes_orderable():
+    """주식 balance에 orderable_amount/foreign_cash/exchange_rate 포함 확인"""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    # COSOQ00201 mock
+    mock_block2 = MagicMock()
+    mock_block2.ErnRat = 5.5
+    mock_block2.WonDpsBalAmt = 10000000
+    mock_block2.StkConvEvalAmt = 50000000
+    mock_block2.WonEvalSumAmt = 60000000
+    mock_block2.ConvEvalPnlAmt = 5000000
+
+    cosoq00201_response = MagicMock()
+    cosoq00201_response.error_msg = None
+    cosoq00201_response.block2 = mock_block2
+    cosoq00201_response.block4 = []
+
+    mock_cosoq00201 = MagicMock()
+    mock_cosoq00201.req_async = AsyncMock(return_value=cosoq00201_response)
+
+    # COSOQ02701 mock
+    mock_block3_item = MagicMock()
+    mock_block3_item.CrcyCode = "USD"
+    mock_block3_item.FcurrOrdAbleAmt = 15000.50
+    mock_block3_item.FcurrDps = 20000.00
+    mock_block3_item.BaseXchrat = 1350.00
+
+    mock_block4 = MagicMock()
+    mock_block4.MnyoutAbleAmt = 8000000
+    mock_block4.OvrsMgn = 3000000
+
+    cosoq02701_response = MagicMock()
+    cosoq02701_response.error_msg = None
+    cosoq02701_response.block3 = [mock_block3_item]
+    cosoq02701_response.block4 = mock_block4
+
+    mock_cosoq02701 = MagicMock()
+    mock_cosoq02701.req_async = AsyncMock(return_value=cosoq02701_response)
+
+    # LS 체인 mock
+    mock_accno = MagicMock()
+    mock_accno.cosoq00201 = MagicMock(return_value=mock_cosoq00201)
+    mock_accno.cosoq02701 = MagicMock(return_value=mock_cosoq02701)
+    mock_overseas_stock = MagicMock()
+    mock_overseas_stock.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_stock = MagicMock(return_value=mock_overseas_stock)
+
+    result = await executor._ls_overseas_stock(ls, "account1", ctx)
+
+    balance = result["balance"]
+    # 기존 필드
+    assert balance["total_pnl_rate"] == 5.5
+    assert balance["cash_krw"] == 10000000
+    assert balance["stock_eval_krw"] == 50000000
+    assert balance["total_eval_krw"] == 60000000
+    assert balance["total_pnl_krw"] == 5000000
+    # 신규 필드 (COSOQ02701)
+    assert balance["orderable_amount"] == 15000.50
+    assert balance["foreign_cash"] == 20000.00
+    assert balance["exchange_rate"] == 1350.00
+    assert balance["withdrawable_krw"] == 8000000
+    assert balance["overseas_margin"] == 3000000
+
+
+@pytest.mark.asyncio
+async def test_stock_balance_cosoq02701_failure_graceful():
+    """COSOQ02701 실패 시 기존 데이터 유지 (graceful degradation)"""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    # COSOQ00201 mock (정상)
+    mock_block2 = MagicMock()
+    mock_block2.ErnRat = 3.0
+    mock_block2.WonDpsBalAmt = 5000000
+    mock_block2.StkConvEvalAmt = 30000000
+    mock_block2.WonEvalSumAmt = 35000000
+    mock_block2.ConvEvalPnlAmt = 2000000
+
+    cosoq00201_response = MagicMock()
+    cosoq00201_response.error_msg = None
+    cosoq00201_response.block2 = mock_block2
+    cosoq00201_response.block4 = []
+
+    mock_cosoq00201 = MagicMock()
+    mock_cosoq00201.req_async = AsyncMock(return_value=cosoq00201_response)
+
+    # COSOQ02701 mock (실패)
+    cosoq02701_response = MagicMock()
+    cosoq02701_response.error_msg = "rate limit exceeded"
+    cosoq02701_response.block3 = []
+    cosoq02701_response.block4 = None
+
+    mock_cosoq02701 = MagicMock()
+    mock_cosoq02701.req_async = AsyncMock(return_value=cosoq02701_response)
+
+    # LS 체인 mock
+    mock_accno = MagicMock()
+    mock_accno.cosoq00201 = MagicMock(return_value=mock_cosoq00201)
+    mock_accno.cosoq02701 = MagicMock(return_value=mock_cosoq02701)
+    mock_overseas_stock = MagicMock()
+    mock_overseas_stock.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_stock = MagicMock(return_value=mock_overseas_stock)
+
+    result = await executor._ls_overseas_stock(ls, "account1", ctx)
+
+    balance = result["balance"]
+    # 기존 필드는 정상
+    assert balance["total_pnl_rate"] == 3.0
+    assert balance["cash_krw"] == 5000000
+    # orderable_amount 는 partial-failure 신호로 None 으로 명시 노출 —
+    # silent 0.0 흡수를 차단하기 위해 키 자체는 보존 (Phase 2)
+    assert balance["orderable_amount"] is None
+    assert "foreign_cash" not in balance
+    assert "exchange_rate" not in balance
+    # partial-failure flag (Phase 2): consumer 가 명시적 실패로 처리
+    assert balance["_partial_failure"] is True
+    assert balance["_failure_codes"] == ["COSOQ02701"]
+    assert "rate limit exceeded" in balance["_failure_reason"]
+    # warning 로그 확인
+    ctx.log.assert_any_call("warning", "COSOQ02701 조회 실패: rate limit exceeded", "account1")
+
+
+# ── 해외선물 테스트 ──
+
+
+@pytest.mark.asyncio
+async def test_futures_balance_includes_margin():
+    """선물 balance에 margin/maintenance_margin/margin_call_rate 포함 확인"""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    # CIDBQ01500 mock (빈 포지션)
+    cidbq01500_response = MagicMock()
+    cidbq01500_response.rsp_cd = "00707"  # 조회할 내역 없음
+    cidbq01500_response.rsp_msg = "조회할 내역이 없습니다"
+    cidbq01500_response.block2 = []
+
+    mock_cidbq01500 = MagicMock()
+    mock_cidbq01500.req_async = AsyncMock(return_value=cidbq01500_response)
+
+    # CIDBQ05300 mock
+    mock_b2_item = MagicMock()
+    mock_b2_item.CrcyCode = "USD"
+    mock_b2_item.OvrsFutsDps = 50000.0
+    mock_b2_item.AbrdFutsOrdAbleAmt = 40000.0
+    mock_b2_item.AbrdFutsWthdwAbleAmt = 35000.0
+    mock_b2_item.AbrdFutsEvalPnlAmt = 1200.0
+
+    mock_b3 = MagicMock()
+    mock_b3.AbrdFutsCsgnMgn = 10000.0
+    mock_b3.OvrsFutsMaintMgn = 8000.0
+    mock_b3.MgnclRat = 125.5
+    mock_b3.AbrdFutsEvalDpstgTotAmt = 55000.0
+    mock_b3.AbrdFutsLqdtPnlAmt = 3000.0
+
+    cidbq05300_response = MagicMock()
+    cidbq05300_response.block2 = [mock_b2_item]
+    cidbq05300_response.block3 = mock_b3
+
+    mock_cidbq05300 = MagicMock()
+    mock_cidbq05300.req_async = AsyncMock(return_value=cidbq05300_response)
+
+    # LS 체인 mock
+    mock_accno = MagicMock()
+    mock_accno.CIDBQ01500 = MagicMock(return_value=mock_cidbq01500)
+    mock_accno.CIDBQ05300 = MagicMock(return_value=mock_cidbq05300)
+    mock_futures = MagicMock()
+    mock_futures.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_futureoption = MagicMock(return_value=mock_futures)
+
+    _complete_futures_fixtures(ls)
+    result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
+
+    balance = result["balance"]
+    # 기존 필드 (하위 호환)
+    assert balance["deposit"] == 50000.0
+    assert balance["orderable_amount"] == 40000.0
+    assert balance["total_orderable"] == 40000.0
+    assert "by_currency" in balance
+    assert "USD" in balance["by_currency"]
+    # 신규 필드 (CIDBQ05300 block3)
+    assert balance["margin"] == 10000.0
+    assert balance["maintenance_margin"] == 8000.0
+    assert balance["margin_call_rate"] == 125.5
+    assert balance["total_eval"] == 55000.0
+    assert balance["settlement_pnl"] == 3000.0
+
+
+@pytest.mark.asyncio
+async def test_futures_balance_by_currency_compat():
+    """by_currency 구조 하위호환 확인 (CIDBQ03000 → CIDBQ05300)"""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    # CIDBQ01500 mock
+    cidbq01500_response = MagicMock()
+    cidbq01500_response.rsp_cd = "00707"
+    cidbq01500_response.rsp_msg = ""
+    cidbq01500_response.block2 = []
+
+    mock_cidbq01500 = MagicMock()
+    mock_cidbq01500.req_async = AsyncMock(return_value=cidbq01500_response)
+
+    # CIDBQ05300 mock (다중 통화)
+    mock_usd = MagicMock()
+    mock_usd.CrcyCode = "USD"
+    mock_usd.OvrsFutsDps = 30000.0
+    mock_usd.AbrdFutsOrdAbleAmt = 25000.0
+    mock_usd.AbrdFutsWthdwAbleAmt = 20000.0
+    mock_usd.AbrdFutsEvalPnlAmt = 500.0
+
+    mock_eur = MagicMock()
+    mock_eur.CrcyCode = "EUR"
+    mock_eur.OvrsFutsDps = 10000.0
+    mock_eur.AbrdFutsOrdAbleAmt = 8000.0
+    mock_eur.AbrdFutsWthdwAbleAmt = 7000.0
+    mock_eur.AbrdFutsEvalPnlAmt = 200.0
+
+    mock_b3 = MagicMock()
+    mock_b3.AbrdFutsCsgnMgn = 5000.0
+    mock_b3.OvrsFutsMaintMgn = 4000.0
+    mock_b3.MgnclRat = 110.0
+    mock_b3.AbrdFutsEvalDpstgTotAmt = 45000.0
+    mock_b3.AbrdFutsLqdtPnlAmt = 700.0
+
+    cidbq05300_response = MagicMock()
+    cidbq05300_response.block2 = [mock_usd, mock_eur]
+    cidbq05300_response.block3 = mock_b3
+
+    mock_cidbq05300 = MagicMock()
+    mock_cidbq05300.req_async = AsyncMock(return_value=cidbq05300_response)
+
+    # LS 체인 mock
+    mock_accno = MagicMock()
+    mock_accno.CIDBQ01500 = MagicMock(return_value=mock_cidbq01500)
+    mock_accno.CIDBQ05300 = MagicMock(return_value=mock_cidbq05300)
+    mock_futures = MagicMock()
+    mock_futures.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_futureoption = MagicMock(return_value=mock_futures)
+
+    _complete_futures_fixtures(ls)
+    result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
+
+    balance = result["balance"]
+
+    # by_currency 구조 확인 (기존 CIDBQ03000과 동일 키)
+    assert "USD" in balance["by_currency"]
+    assert "EUR" in balance["by_currency"]
+    usd = balance["by_currency"]["USD"]
+    assert usd["deposit"] == 30000.0
+    assert usd["orderable_amount"] == 25000.0
+    assert usd["withdrawable_amount"] == 20000.0
+    assert usd["eval_pnl"] == 500.0
+    # 다중 통화 합산
+    assert balance["total_orderable"] == 33000.0  # 25000 + 8000
+    assert balance["deposit"] == 40000.0  # 30000 + 10000
+    # USD 기준 orderable_amount
+    assert balance["orderable_amount"] == 25000.0
+
+
+@pytest.mark.asyncio
+async def test_futures_cidbq05300_replaces_cidbq03000():
+    """CIDBQ05300 교체 후 기존 필드 유지 확인 + CIDBQ03000 미호출 검증"""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    # CIDBQ01500 mock
+    cidbq01500_response = MagicMock()
+    cidbq01500_response.rsp_cd = "00000"
+    cidbq01500_response.rsp_msg = ""
+
+    mock_position = MagicMock()
+    mock_position.IsuCodeVal = "CLH26"
+    mock_position.BnsTpCode = "2"  # long
+    mock_position.BalQty = 2
+    mock_position.OvrsDrvtNowPrc = 72.50
+    mock_position.PchsPrc = 70.00
+    mock_position.AbrdFutsEvalPnlAmt = 500.0
+    mock_position.CrcyCodeVal = "USD"
+    mock_position.IsuNm = "WTI Crude Oil"
+    cidbq01500_response.block2 = [mock_position]
+
+    mock_cidbq01500 = MagicMock()
+    mock_cidbq01500.req_async = AsyncMock(return_value=cidbq01500_response)
+
+    # CIDBQ05300 mock
+    mock_b2 = MagicMock()
+    mock_b2.CrcyCode = "USD"
+    mock_b2.OvrsFutsDps = 100000.0
+    mock_b2.AbrdFutsOrdAbleAmt = 80000.0
+    mock_b2.AbrdFutsWthdwAbleAmt = 70000.0
+    mock_b2.AbrdFutsEvalPnlAmt = 5000.0
+
+    mock_b3 = MagicMock()
+    mock_b3.AbrdFutsCsgnMgn = 20000.0
+    mock_b3.OvrsFutsMaintMgn = 15000.0
+    mock_b3.MgnclRat = 150.0
+    mock_b3.AbrdFutsEvalDpstgTotAmt = 120000.0
+    mock_b3.AbrdFutsLqdtPnlAmt = 8000.0
+
+    cidbq05300_response = MagicMock()
+    cidbq05300_response.block2 = [mock_b2]
+    cidbq05300_response.block3 = mock_b3
+
+    mock_cidbq05300 = MagicMock()
+    mock_cidbq05300.req_async = AsyncMock(return_value=cidbq05300_response)
+
+    # LS 체인 mock
+    mock_accno = MagicMock()
+    mock_accno.CIDBQ01500 = MagicMock(return_value=mock_cidbq01500)
+    mock_accno.CIDBQ05300 = MagicMock(return_value=mock_cidbq05300)
+    # CIDBQ03000은 호출되면 안됨
+    mock_accno.CIDBQ03000 = MagicMock()
+    mock_futures = MagicMock()
+    mock_futures.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_futureoption = MagicMock(return_value=mock_futures)
+
+    _complete_futures_fixtures(ls)
+    result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
+
+    # CIDBQ03000 미호출 검증
+    mock_accno.CIDBQ03000.assert_not_called()
+
+    # 포지션 확인
+    assert len(result["positions"]) == 1
+    pos = result["positions"][0]
+    assert pos["symbol"] == "CLH26"
+    assert pos["direction"] == "long"
+    assert pos["quantity"] == 2
+    # E2: 이 TR 에는 수익률이 없으므로 진입가/현재가로 직접 산출 (승수 무관)
+    #     long: (72.50 - 70.00) / 70.00 * 100 = 3.5714...%
+    assert pos["pnl_rate"] == pytest.approx((72.50 - 70.00) / 70.00 * 100)
+
+    # balance 기존 필드 + 신규 필드 확인
+    balance = result["balance"]
+    assert balance["deposit"] == 100000.0
+    assert balance["orderable_amount"] == 80000.0
+    assert balance["margin"] == 20000.0
+    assert balance["maintenance_margin"] == 15000.0
+    assert balance["margin_call_rate"] == 150.0
+    assert balance["total_eval"] == 120000.0
+    assert balance["settlement_pnl"] == 8000.0
+
+
+# ── Phase 3: Consumer hardening ──
+
+
+def _make_sizing_context(dry_run: bool = False):
+    """PositionSizing 노드 통합용 mock ExecutionContext."""
+    ctx = MagicMock()
+    ctx.log = MagicMock()
+    ctx.job_id = "test-job"
+    ctx.is_running = True
+    ctx.is_dry_run = dry_run
+    expr_ctx = MagicMock()
+    ctx.get_expression_context = MagicMock(return_value=expr_ctx)
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_raises_on_partial_failure_balance():
+    """Phase 3.2: balance._partial_failure=True 시 BalanceUnavailableError raise."""
+    from programgarden.executor import PositionSizingNodeExecutor
+    from programgarden_core import BalanceUnavailableError
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "COSOQ02701 error: rate limit exceeded",
+            "orderable_amount": None,
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    with pytest.raises(BalanceUnavailableError) as exc_info:
+        await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+
+    assert exc_info.value.failure_codes == ["COSOQ02701"]
+    assert "rate limit" in exc_info.value.failure_reason
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_dry_run_absorbs_partial_failure():
+    """Phase 3.2: dry_run 모드에서는 _partial_failure 가드 비활성 (mock 환경 호환)."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=True)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "rate limit",
+            "orderable_amount": None,
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    # raise 가 아니라 empty_result (orderable_amount=None → 0 → warning) 반환
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    assert "orders" in result or "symbols" in result
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_fixed_quantity_exempt_from_partial_failure_guard():
+    """Phase 3.2: fixed_quantity 모드는 balance 미사용이라 가드 면제."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {
+            "_partial_failure": True,
+            "_failure_codes": ["COSOQ02701"],
+            "_failure_reason": "rate limit",
+        },
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_quantity",
+        "fixed_quantity": 5,
+    }
+
+    # raise 없음 — fixed_quantity 는 balance 와 무관
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    assert "orders" in result or "symbols" in result
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_partial_failure_balance_blocks_position_sizing():
+    """Phase 4 integration: AccountNode 의 mock COSOQ02701 실패가
+    그대로 PositionSizing 에 propagate 되어 silent sizing=0 을 차단함."""
+    from programgarden.executor import PositionSizingNodeExecutor
+    from programgarden_core import BalanceUnavailableError
+
+    # Step 1: AccountNode mock 잔고 (COSOQ02701 실패 시나리오 동일)
+    account_executor = _make_executor()
+    account_ctx = _make_mock_context()
+    ls = MagicMock()
+
+    mock_block2 = MagicMock()
+    mock_block2.ErnRat = 3.0
+    mock_block2.WonDpsBalAmt = 5000000
+    mock_block2.StkConvEvalAmt = 30000000
+    mock_block2.WonEvalSumAmt = 35000000
+    mock_block2.ConvEvalPnlAmt = 2000000
+
+    cosoq00201_response = MagicMock()
+    cosoq00201_response.error_msg = None
+    cosoq00201_response.block2 = mock_block2
+    cosoq00201_response.block4 = []
+    mock_cosoq00201 = MagicMock()
+    mock_cosoq00201.req_async = AsyncMock(return_value=cosoq00201_response)
+
+    cosoq02701_response = MagicMock()
+    cosoq02701_response.error_msg = "rate limit exceeded"
+    cosoq02701_response.block3 = []
+    cosoq02701_response.block4 = None
+    mock_cosoq02701 = MagicMock()
+    mock_cosoq02701.req_async = AsyncMock(return_value=cosoq02701_response)
+
+    mock_accno = MagicMock()
+    mock_accno.cosoq00201 = MagicMock(return_value=mock_cosoq00201)
+    mock_accno.cosoq02701 = MagicMock(return_value=mock_cosoq02701)
+    mock_overseas_stock = MagicMock()
+    mock_overseas_stock.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_stock = MagicMock(return_value=mock_overseas_stock)
+
+    account_result = await account_executor._ls_overseas_stock(ls, "account1", account_ctx)
+    # AccountNode 자체는 정상 완료, 단 balance 에 partial_failure 플래그
+    assert account_result["balance"]["_partial_failure"] is True
+
+    # Step 2: 그 balance 를 PositionSizing 에 그대로 넘김 → raise 차단
+    sizing_executor = PositionSizingNodeExecutor()
+    sizing_ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": account_result["balance"],
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    with pytest.raises(BalanceUnavailableError) as exc_info:
+        await sizing_executor.execute("sizing1", "PositionSizingNode", config, sizing_ctx)
+
+    # Step 3: ExecutionError 상속 확인 (외부 try/except 흡수 가능)
+    from programgarden_core import ExecutionError
+    assert isinstance(exc_info.value, ExecutionError)
+    assert exc_info.value.failure_codes == ["COSOQ02701"]
+
+
+@pytest.mark.asyncio
+async def test_position_sizing_normal_balance_unaffected():
+    """Phase 3.2: 정상 balance 는 raise 없이 기존 동작 그대로."""
+    from programgarden.executor import PositionSizingNodeExecutor
+
+    executor = PositionSizingNodeExecutor()
+    ctx = _make_sizing_context(dry_run=False)
+
+    config = {
+        "symbols": [{"symbol": "AAPL", "exchange": "NASDAQ"}],
+        "balance": {"orderable_amount": 10000.0},  # _partial_failure 키 없음
+        "price_data": {"AAPL": {"price": 100.0}},
+        "method": "fixed_percent",
+        "max_percent": 10.0,
+    }
+
+    result = await executor.execute("sizing1", "PositionSizingNode", config, ctx)
+    # 정상 sizing 결과 반환
+    assert result is not None
+
+
+# ── E2: 해외선물 REST 포지션 pnl_rate 산출 (부호 규약 포함) ──
+
+
+def _make_futures_position_mock(bns_tp_code, entry_price, current_price):
+    """CIDBQ01500 block2 항목 mock (한 종목)."""
+    item = MagicMock()
+    item.IsuCodeVal = "HSIQ26"
+    item.BnsTpCode = bns_tp_code  # "2"=long, "1"=short
+    item.BalQty = 3
+    item.OvrsDrvtNowPrc = current_price
+    item.PchsPrc = entry_price
+    item.AbrdFutsEvalPnlAmt = 1600.0
+    item.CrcyCodeVal = "HKD"
+    item.IsuNm = "HSI Future"
+    return item
+
+
+async def _run_futures_serialization(position_item):
+    """빈 잔고(CIDBQ05300) + 주어진 포지션으로 _ls_overseas_futureoption 실행."""
+    executor = _make_executor()
+    ctx = _make_mock_context()
+    ls = MagicMock()
+
+    cidbq01500_response = MagicMock()
+    cidbq01500_response.rsp_cd = "00000"
+    cidbq01500_response.rsp_msg = ""
+    cidbq01500_response.block2 = [position_item]
+    mock_cidbq01500 = MagicMock()
+    mock_cidbq01500.req_async = AsyncMock(return_value=cidbq01500_response)
+
+    cidbq05300_response = MagicMock()
+    cidbq05300_response.block2 = []
+    cidbq05300_response.block3 = MagicMock()
+    mock_cidbq05300 = MagicMock()
+    mock_cidbq05300.req_async = AsyncMock(return_value=cidbq05300_response)
+
+    mock_accno = MagicMock()
+    mock_accno.CIDBQ01500 = MagicMock(return_value=mock_cidbq01500)
+    mock_accno.CIDBQ05300 = MagicMock(return_value=mock_cidbq05300)
+    mock_futures = MagicMock()
+    mock_futures.accno = MagicMock(return_value=mock_accno)
+    ls.overseas_futureoption = MagicMock(return_value=mock_futures)
+
+    _complete_futures_fixtures(ls)
+    result = await executor._ls_overseas_futureoption(ls, "account1", ctx)
+    return result["positions"][0]
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_long_verification_case():
+    """검증 케이스: entry 8547.67 / current 8601 / long → 명목가 대비 +0.62%.
+
+    (승수 10 이면 LS 금액 1,600 HKD 지만 pnl_rate 는 승수와 무관)
+    """
+    item = _make_futures_position_mock("2", entry_price=8547.67, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    expected = (8601.0 - 8547.67) / 8547.67 * 100
+    assert pos["pnl_rate"] == pytest.approx(expected)
+    assert pos["pnl_rate"] > 0  # long, 현재가 > 진입가 → 이익
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_short_sign_reversed():
+    """숏 포지션은 부호 반전: 현재가 > 진입가면 손실(음수)."""
+    item = _make_futures_position_mock("1", entry_price=8547.67, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    expected = -((8601.0 - 8547.67) / 8547.67 * 100)
+    assert pos["pnl_rate"] == pytest.approx(expected)
+    assert pos["pnl_rate"] < 0  # short, 현재가 > 진입가 → 손실
+    assert pos["direction"] == "short"
+    assert pos["close_side"] == "buy"
+
+
+@pytest.mark.asyncio
+async def test_futures_position_pnl_rate_zero_entry_safe():
+    """진입가 0(비정상)이면 계산 불가 → 0.0 (크래시 없음)."""
+    item = _make_futures_position_mock("2", entry_price=0.0, current_price=8601.0)
+    pos = await _run_futures_serialization(item)
+    assert pos["pnl_rate"] == 0.0

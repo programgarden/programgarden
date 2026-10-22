@@ -1,0 +1,1114 @@
+"""
+ProgramGarden Core - 노드 베이스 클래스
+
+모든 노드의 기반이 되는 BaseNode와 공통 타입 정의
+"""
+
+from enum import Enum
+from typing import Optional, Dict, Any, List, Literal, ClassVar, Set
+from pydantic import BaseModel, ConfigDict, Field
+
+from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+from programgarden_core.models.resilience import (
+    ResilienceConfig,
+    RetryableError,
+    FallbackMode,
+)
+from programgarden_core.models.connection_rule import ConnectionRule, RateLimitConfig
+
+
+class ProductScope(str, Enum):
+    """노드가 지원하는 상품 범위"""
+    STOCK = "overseas_stock"        # 해외주식 전용
+    FUTURES = "overseas_futures"    # 해외선물 전용
+    KOREA_STOCK = "korea_stock"    # 국내주식 전용
+    ALL = "all"                     # 상품 무관 (범용)
+
+
+class BrokerProvider(str, Enum):
+    """지원 증권사"""
+    LS = "ls-sec.co.kr"             # LS증권
+    ALL = "all"                     # 증권사 무관 (범용)
+
+
+class NodeCategory(str, Enum):
+    """
+    노드 카테고리 (11개 - 금융 도메인 기준)
+
+    투자자가 직관적으로 이해할 수 있는 금융 용어 기반 분류
+    """
+
+    # 인프라: 워크플로우 시작점, 브로커 연결
+    INFRA = "infra"
+
+    # 계좌: 잔고, 포지션, 체결 내역 (실시간/REST)
+    ACCOUNT = "account"
+
+    # 시장: 시세, 종목 목록, 과거 데이터
+    MARKET = "market"
+
+    # 조건: 매매 조건 판단 (기술적 분석, 로직 조합)
+    CONDITION = "condition"
+
+    # 주문: 신규/정정/취소 주문, 포지션 사이징
+    ORDER = "order"
+
+    # 리스크: 리스크 관리, 포트폴리오 배분
+    RISK = "risk"
+
+    # 스케줄: 시간 기반 트리거, 거래시간 필터
+    SCHEDULE = "schedule"
+
+    # 데이터: 외부 DB/API 연동 (SQLite, Postgres, HTTP)
+    DATA = "data"
+
+    # 분석: 백테스트, 성과 계산
+    ANALYSIS = "analysis"
+
+    # 디스플레이: 차트, 테이블, 요약 시각화
+    DISPLAY = "display"
+
+    # 시스템: Job 제어, 서브플로우
+    SYSTEM = "system"
+
+    # 메시징: 텔레그램, 슬랙, 디스코드 등 알림
+    MESSAGING = "messaging"
+
+    # AI: AI 에이전트, LLM 모델 연결
+    AI = "ai"
+
+
+class Position(BaseModel):
+    """클라이언트 UI용 노드 위치"""
+
+    x: float = 0.0
+    y: float = 0.0
+
+
+class InputPort(BaseModel):
+    """입력 포트 정의"""
+
+    name: str
+    type: str
+    display_name: Optional[str] = None  # 사용자 표시용 이름 (i18n 키 또는 직접 값)
+    description: Optional[str] = None
+    required: bool = True
+    multiple: bool = False  # 여러 엣지 연결 가능 여부
+    min_connections: Optional[int] = None  # 최소 연결 수
+
+
+class OutputPort(BaseModel):
+    """출력 포트 정의"""
+
+    name: str
+    type: str
+    display_name: Optional[str] = None  # 사용자 표시용 이름 (i18n 키 또는 직접 값)
+    description: Optional[str] = None
+    fields: Optional[List[Dict[str, Any]]] = None  # 구조화된 서브필드 정의
+    # 출력 값의 shape 예시 — LLM 이 `nodes.X.{port}` 표현식 작성 시
+    # 어떤 키/타입이 나오는지 즉시 파악하도록 노출. fields 만으로는 중첩
+    # 구조나 array 여부를 시각화하기 어려운 한계 보완.
+    example: Optional[Any] = None
+
+
+# === OutputPort.fields 공통 상수 ===
+#
+# 🔴 **상수 공유는 노드가 같은 키를 내보낼 때만 한다.**
+# resolver 는 이 선언으로 `nodes.<id>.<port>.<field>` 의 필드 존재를 **정적 검증**한다.
+# 그래서 선언이 런타임과 어긋나면 검증이 양방향으로 다 틀린다:
+#   실제 있는 필드를 바인딩 → INVALID_EXPRESSION_REF 로 **부당 거부** (동작하는 워크플로우를 막음)
+#   실제 없는 필드를 바인딩 → **통과** 시킨 뒤 런타임에 조용히 None (표에 '-' 만 찍힘)
+# 노드 하나를 맞추려고 공유 상수에 필드를 더하면 **다른 노드가 반대 방향으로 거짓말**한다.
+# → 런타임 키가 다르면 **노드별 상수로 쪼갠다.** 증명은 `tests/test_output_schema_contract.py`
+#   (executor 의 런타임 dict 리터럴을 AST 로 뽑아 선언과 대조).
+
+# WatchlistNode / SymbolFilterNode / ExclusionListNode / 계좌 노드의 held_symbols —
+# 정말로 exchange+symbol 둘만 내보내는 포트 전용.
+SYMBOL_LIST_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (NASDAQ, NYSE, CME 등)"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+]
+
+# ── 해외주식 계좌 held_symbols (2026-07-14 결함3) ──
+# 공유 SYMBOL_LIST_FIELDS 와 달리 exchange=영문 표시명, exchange_code=LS 코드 를 **둘 다**
+# 실어 표시(이름)와 구독·주문(코드) 소비자를 동시에 정확히 먹인다. 해외주식 계좌 노드
+# (OverseasStockAccountNode / OverseasStockRealAccountNode) 전용 — 국내/선물은 종전대로
+# SYMBOL_LIST_FIELDS 를 쓴다(전역 네이밍 통일은 후속).
+OVERSEAS_STOCK_HELD_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81=NYSE/AMEX, 82=NASDAQ) — 구독·주문용"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+]
+
+# ── ScreenerNode.symbols (조건 검색 결과) ──
+# LS(g3101 enrich) 분기와 yfinance 분기가 **같은 키 집합**을 내보낸다.
+SCREENER_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명 (상류 종목 리스트가 줬거나 yfinance 조회로 채움)"},
+    {"name": "market", "type": "string", "description": "시장 구분 (상류가 준 값 통과 — 예: KOSPI/KOSDAQ)"},
+    {"name": "price", "type": "number", "description": "현재가 (필터 시점)"},
+    {"name": "market_cap", "type": "number", "description": "시가총액"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "sector", "type": "string", "description": "섹터 (yfinance 분기에서만 채워짐 — LS 분기는 빈 문자열)"},
+]
+
+# ── MarketUniverseNode.symbols (지수 구성종목) ──
+MARKET_UNIVERSE_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+]
+
+# ── OverseasStockSymbolQueryNode.symbols (g3190 마스터) ──
+OVERSEAS_STOCK_SYMBOL_QUERY_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 이름 (NASDAQ, NYSE 등)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명 (한글 우선, 없으면 영문)"},
+    {"name": "isin", "type": "string", "description": "ISIN 코드"},
+    {"name": "price", "type": "number", "description": "전일 종가"},
+    {"name": "market_cap", "type": "number", "description": "시가총액"},
+    {"name": "shares_outstanding", "type": "number", "description": "상장 주식 수"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    {"name": "suspend", "type": "string", "description": "거래정지 여부 (Y/N)"},
+    {"name": "sellonly", "type": "string", "description": "매도전용 여부 (Y/N)"},
+]
+
+# ── KoreaStockSymbolQueryNode.symbols (t9945 마스터) ──
+KOREA_STOCK_SYMBOL_QUERY_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (항상 KRX)"},
+    {"name": "market", "type": "string", "description": "시장 구분 (KOSPI / KOSDAQ)"},
+    {"name": "symbol", "type": "string", "description": "종목코드 (6자리)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "is_etf", "type": "boolean", "description": "ETF 여부"},
+    {"name": "product", "type": "string", "description": "상품 구분 (항상 korea_stock)"},
+]
+
+# ── KoreaStockRankingNode.rankings (t1441 / t1452 / t1463 / t1444) ──
+# Values are consumed as returned by LS; units are named, never converted.
+KOREA_STOCK_RANKING_FIELDS: List[Dict[str, str]] = [
+    {"name": "rank", "type": "integer", "description": "1-based rank in this result"},
+    {"name": "symbol", "type": "string", "description": "6-digit KRX code (shcode)"},
+    {"name": "exchange", "type": "string", "description": "Always KRX"},
+    {"name": "market", "type": "string", "description": "KOSPI/KOSDAQ when the request named a market; null for market=all"},
+    {"name": "name", "type": "string", "description": "Issue name (hname)"},
+    {"name": "price", "type": "number", "description": "Current price"},
+    {"name": "open", "type": "number", "description": "Session open (t1441 only; null otherwise)"},
+    {"name": "high", "type": "number", "description": "Session high (t1441 only; null otherwise)"},
+    {"name": "low", "type": "number", "description": "Session low (t1441 only; null otherwise)"},
+    {"name": "sign", "type": "string", "description": "Raw LS direction code (1 upper limit, 2 up, 3 unchanged, 4 lower limit, 5 down)"},
+    {"name": "change", "type": "number", "description": "Change vs previous close, signed from the sign code"},
+    {"name": "change_pct", "type": "number", "description": "Change percent vs previous close, signed from the sign code"},
+    {"name": "volume", "type": "number", "description": "Cumulative volume (shares)"},
+    {"name": "trading_value", "type": "number", "description": "Trading value as returned (t1441/t1463; null otherwise)"},
+    {"name": "trading_value_unit", "type": "string", "description": "as_returned (t1441) or KRW_million (t1463); null when trading_value is null"},
+    {"name": "market_cap", "type": "number", "description": "Market capitalisation as returned (t1441/t1463/t1444; null for t1452)"},
+    {"name": "market_cap_unit", "type": "string", "description": "as_returned (t1441), KRW_million (t1463) or KRW_100million (t1444); null when market_cap is null"},
+    {"name": "product", "type": "string", "description": "Always korea_stock"},
+    {"name": "source_tr", "type": "string", "description": "LS TR that produced the row (t1441/t1452/t1463/t1444)"},
+]
+
+# ── KoreaStockRankingNode.symbols ──
+KOREA_STOCK_RANKING_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "Always KRX"},
+    {"name": "market", "type": "string", "description": "KOSPI/KOSDAQ when the request named a market; null for market=all"},
+    {"name": "symbol", "type": "string", "description": "6-digit KRX code"},
+    {"name": "name", "type": "string", "description": "Issue name"},
+    {"name": "product", "type": "string", "description": "Always korea_stock"},
+]
+
+# ── OverseasStockRankingNode.rankings (g3112) ──
+OVERSEAS_STOCK_RANKING_FIELDS: List[Dict[str, str]] = [
+    {"name": "rank", "type": "integer", "description": "1-based rank in this result"},
+    {"name": "symbol", "type": "string", "description": "Ticker symbol"},
+    {"name": "exchange", "type": "string", "description": "NYSE or NASDAQ from the LS key symbol prefix (81/82); null when unavailable"},
+    {"name": "exchange_source", "type": "string", "description": "keysymbol when derived from the LS key symbol, otherwise unavailable"},
+    {"name": "name", "type": "string", "description": "Korean issue name (korname)"},
+    {"name": "exchange_name", "type": "string", "description": "LS exchange label and symbol as returned (exsymbol, e.g. '나스닥 AEHL')"},
+    {"name": "keysymbol", "type": "string", "description": "LS key symbol as returned"},
+    {"name": "price", "type": "number", "description": "Current price"},
+    {"name": "sign", "type": "string", "description": "Raw LS direction code"},
+    {"name": "change", "type": "number", "description": "Change vs previous close, signed from the sign code"},
+    {"name": "change_pct", "type": "number", "description": "Change percent vs previous close, signed from the sign code"},
+    {"name": "volume", "type": "number", "description": "Volume"},
+    {"name": "trading_value", "type": "number", "description": "Trading value as returned by LS (unit not declared)"},
+    {"name": "trading_value_unit", "type": "string", "description": "as_returned; null when trading_value is null"},
+    {"name": "turnover", "type": "number", "description": "Turnover as returned by LS"},
+    {"name": "market_cap", "type": "number", "description": "Market capitalisation as returned by LS (unit not declared)"},
+    {"name": "market_cap_unit", "type": "string", "description": "as_returned; null when market_cap is null"},
+    {"name": "high_52w", "type": "number", "description": "52-week high"},
+    {"name": "low_52w", "type": "number", "description": "52-week low"},
+    {"name": "product", "type": "string", "description": "Always overseas_stock"},
+    {"name": "source_tr", "type": "string", "description": "Always g3112"},
+]
+
+# ── OverseasStockRankingNode.symbols ── (rows without a known exchange are omitted)
+OVERSEAS_STOCK_RANKING_SYMBOL_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "NYSE or NASDAQ"},
+    {"name": "symbol", "type": "string", "description": "Ticker symbol"},
+    {"name": "name", "type": "string", "description": "Korean issue name"},
+    {"name": "product", "type": "string", "description": "Always overseas_stock"},
+]
+
+# ── OverseasFuturesSymbolQueryNode.symbols (o3101 마스터) ──
+OVERSEAS_FUTURES_SYMBOL_QUERY_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (CME, HKEX 등 — 주문에 쓰는 값)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (exchange 와 동일)"},
+    {"name": "exchange_name", "type": "string", "description": "거래소 한글명 (표시용 — 주문에 쓰면 안 된다)"},
+    {"name": "symbol", "type": "string", "description": "종목코드 (월물 포함)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "base_product", "type": "string", "description": "기초상품 코드 (예: ES)"},
+    {"name": "base_product_name", "type": "string", "description": "기초상품명"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    {"name": "contract_month", "type": "string", "description": "월물 (YYYYMM)"},
+]
+
+# ── Partial-failure metadata (internal) ──
+# Balance dicts may include these underscore-prefixed keys when the
+# upstream API call partially fails. Consumers (PositionSizingNode,
+# PortfolioNode, etc.) must check `_partial_failure` before treating
+# the balance as authoritative — a missing/None orderable_amount
+# must not be silently coerced to 0.0 when this flag is True.
+PARTIAL_FAILURE_FIELDS: List[Dict[str, str]] = [
+    {"name": "_partial_failure", "type": "boolean", "description": "True when one or more balance fields could not be fetched."},
+    {"name": "_failure_codes", "type": "list", "description": "TR codes that failed (e.g. ['COSOQ02701'])."},
+    {"name": "_failure_reason", "type": "string", "description": "Human-readable reason for the partial failure."},
+]
+
+# ── 해외주식 REST AccountNode 전용 ──
+OVERSEAS_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "cash_krw", "type": "number", "description": "원화예수금"},
+    {"name": "stock_eval_krw", "type": "number", "description": "주식환산평가금액"},
+    {"name": "total_eval_krw", "type": "number", "description": "원화평가합계"},
+    {"name": "total_pnl_krw", "type": "number", "description": "환산평가손익"},
+    {"name": "orderable_amount", "type": "number", "description": "외화주문가능금액 (USD)"},
+    {"name": "foreign_cash", "type": "number", "description": "외화예수금 (USD)"},
+    {"name": "exchange_rate", "type": "number", "description": "기준환율"},
+    *PARTIAL_FAILURE_FIELDS,
+]
+
+# ── 해외선물 REST AccountNode 전용 ──
+OVERSEAS_FUTURES_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "deposit", "type": "number", "description": "예수금"},
+    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+    {"name": "total_orderable", "type": "number", "description": "전체 주문가능금액 합산"},
+    {"name": "margin", "type": "number", "description": "위탁증거금"},
+    {"name": "maintenance_margin", "type": "number", "description": "유지증거금"},
+    {"name": "margin_call_rate", "type": "number", "description": "마진콜율 (%)"},
+    {"name": "total_eval", "type": "number", "description": "평가예탁총금액"},
+    {"name": "settlement_pnl", "type": "number", "description": "청산손익"},
+    *PARTIAL_FAILURE_FIELDS,
+]
+
+# ── 해외주식 RealAccountNode 전용 ──
+OVERSEAS_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+]
+
+# ── 해외선물 RealAccountNode 전용 ──
+OVERSEAS_FUTURES_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드 (USD 등)"},
+]
+
+# ── 국내주식 REST AccountNode 전용 ──
+KOREA_STOCK_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "cash", "type": "number", "description": "예수금"},
+    {"name": "total_eval", "type": "number", "description": "총평가금액"},
+    {"name": "stock_eval", "type": "number", "description": "주식평가금액"},
+    {"name": "total_pnl", "type": "number", "description": "평가손익합계"},
+    {"name": "total_pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "orderable_amount", "type": "number", "description": "주문가능금액"},
+    *PARTIAL_FAILURE_FIELDS,
+]
+
+# ── 국내주식 RealAccountNode 전용 ──
+KOREA_STOCK_REAL_BALANCE_FIELDS: List[Dict[str, str]] = [
+    {"name": "total", "type": "number", "description": "총 예수금"},
+    {"name": "available", "type": "number", "description": "매수 가능 금액"},
+]
+
+# ── 국내주식 시세 전용 (t1102 기반) ──
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_korea_stock`
+# (해외와 같은 이름 규칙을 쓴다 — 예전 선언의 current_price/open_price/market_cap 은 런타임에 없었다.)
+KOREA_STOCK_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드 (6자리)"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (KRX)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "price", "type": "number", "description": "현재가 (원)"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
+    {"name": "per", "type": "number", "description": "PER"},
+    {"name": "pbr", "type": "number", "description": "PBR"},
+]
+
+# ── 국내주식 펀더멘털 전용 ──
+KOREA_STOCK_FUNDAMENTAL_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "per", "type": "number", "description": "PER"},
+    {"name": "eps", "type": "number", "description": "EPS"},
+    {"name": "pbr", "type": "number", "description": "PBR"},
+    {"name": "market_cap", "type": "number", "description": "시가총액 (억원)"},
+    {"name": "shares_outstanding", "type": "number", "description": "상장주식수"},
+    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
+    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
+    {"name": "industry", "type": "string", "description": "업종명"},
+]
+
+# ── 보유 포지션 (positions 포트) ──
+# 🔴 옛 공유 상수 `POSITION_FIELDS` 는 `pnl` / `pnl_percent` 를 선언했으나 **런타임에 그런 키는 없다**
+# (실제는 `pnl_amount` / `pnl_rate`). 챗봇이 카탈로그를 보고 `pnl` 을 바인딩하면 정적 검증은
+# 통과하고 런타임엔 조용히 None 이 됐다. 상품별로 키가 다르므로 노드별로 쪼갠다.
+
+# 해외주식 REST 계좌 (COSOQ00201 block4)
+OVERSEAS_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81/82) — 구독·주문용"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "qty", "type": "number", "description": "보유 수량"},
+    {"name": "quantity", "type": "number", "description": "보유 수량 (주문 노드 호환 별칭)"},
+    {"name": "sellable_qty", "type": "number", "description": "Observed COSOQ00201 sellable quantity; null when the broker field is absent"},
+    {"name": "direction", "type": "string", "description": "포지션 방향 (주식은 항상 long)"},
+    {"name": "close_side", "type": "string", "description": "청산 주문 방향 (주식은 항상 sell)"},
+    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "eval_amount", "type": "number", "description": "평가 금액"},
+    {"name": "purchase_amount", "type": "number", "description": "매입 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    {"name": "market", "type": "string", "description": "시장 구분명"},
+]
+
+# Domestic REST account: observed CSPAQ12300 evidence plus executor aliases.
+KOREA_STOCK_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (항상 KRX)"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "quantity", "type": "number", "description": "보유 수량"},
+    {"name": "price", "type": "number", "description": "현재가 (주문 노드 호환 별칭)"},
+    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "sellable_qty", "type": "number", "description": "매도 가능 수량"},
+    {"name": "eval_amount", "type": "number", "description": "평가 금액"},
+    {"name": "product", "type": "string", "description": "상품 구분 (항상 korea_stock)"},
+    {"name": "symbol_name", "type": "string", "description": "Observed instrument name; name alias uses the same value"},
+    {"name": "currency", "type": "string", "description": "Valuation currency: KRW"},
+    {"name": "buy_price", "type": "number", "description": "Observed average acquisition price; null when unavailable"},
+    {"name": "average_price", "type": "number", "description": "Observed average acquisition price; null when unavailable"},
+    {"name": "acquisition_amount", "type": "number", "description": "Observed acquisition amount; null when unavailable"},
+    {"name": "purchase_amount", "type": "number", "description": "Acquisition amount alias; null when unavailable"},
+    {"name": "pnl_rate_basis", "type": "string", "description": "Broker average cost basis, commission excluded"},
+    {"name": "pnl_rate_status", "type": "string", "description": "available or unavailable; missing evidence is not zero return"},
+    {"name": "pnl_status", "type": "string", "description": "available or unavailable"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "Missing P&L evidence reason; null when available"},
+    {"name": "cost_basis", "type": "string", "description": "Broker average cost basis, commission excluded"},
+    {"name": "cost_status", "type": "string", "description": "available or unavailable"},
+    {"name": "cost_unavailable_reason", "type": "string", "description": "Missing acquisition evidence reason; null when available"},
+    {"name": "observed_at", "type": "string", "description": "UTC ISO observation timestamp"},
+]
+
+# 해외선물 REST 계좌 (CIDBQ01500 block2)
+# 주의: 이 TR 응답 자체에는 수익률 필드가 없다 — 손익 금액(pnl_amount)만 온다.
+# pnl_rate 는 진입가/현재가로 직접 계산해 실었다(승수 무관, RealAccountNode 와
+# 동일 공식). StopLoss/ProfitTarget 이 pnl_rate 를 소비하므로 반드시 필요.
+OVERSEAS_FUTURES_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드 (월물 포함)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "direction", "type": "string", "description": "포지션 방향 (long / short)"},
+    {"name": "close_side", "type": "string", "description": "청산 주문 방향 (sell / buy)"},
+    {"name": "quantity", "type": "number", "description": "보유 계약 수"},
+    {"name": "price", "type": "number", "description": "현재가 (주문 노드 호환 별칭)"},
+    {"name": "entry_price", "type": "number", "description": "진입 가격"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "명목가 대비 수익률 (%) — 진입가/현재가로 산출 (승수 무관)"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    # ── 손익 증거 메타 (v1.34.0 선물 monetary 작업에서 런타임에 추가됐는데 **선언이 안 따라왔다**) ──
+    # 선언에 없으면 `{{ nodes.account.positions[0].pnl_status }}` 같은 바인딩이
+    # INVALID_EXPRESSION_REF 로 **부당하게 거부된다** — 노드가 실제로 내보내는 값인데도.
+    # 이 값들이 있어야 "손익을 모른다" 와 "손익이 0" 을 사용자가 구분할 수 있다.
+    {"name": "pnl_status", "type": "string", "description": "손익 산출 가능 여부 (available / unavailable)"},
+    {"name": "pnl_basis", "type": "string", "description": "손익 산출 근거 (예: estimated_gross_price_change)"},
+    {"name": "pnl_currency", "type": "string", "description": "손익 금액의 통화 코드"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "손익을 못 낸 사유 (pnl_status=unavailable 일 때)"},
+    {"name": "broker_pnl_amount", "type": "number", "description": "증권사가 보고한 평가손익 원문 (검증 전 값)"},
+    {"name": "broker_pnl_basis", "type": "string", "description": "증권사 보고 손익의 근거 표기 (예: broker_reported_unconfirmed)"},
+]
+
+# ── 실시간 계좌 포지션 (RealAccountNode.positions) ──
+# 실시간 노드는 두 갈래로 positions 를 내보낸다: ① REST 스냅샷 직렬화 ② WebSocket tracker.
+# 둘의 키가 다르면 **같은 포트인데 순간마다 다른 필드**가 나온다 → 두 갈래를 같은 키로 통일했다.
+OVERSEAS_STOCK_REAL_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 영문 표시명 (NASDAQ/NYSE/AMEX)"},
+    {"name": "exchange_code", "type": "string", "description": "LS 거래소 코드 (81/82) — 구독·주문용"},
+    {"name": "market_code", "type": "string", "description": "LS 시장 코드 (후속: exchange_code 로 수렴/제거)"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "qty", "type": "number", "description": "보유 수량"},
+    {"name": "quantity", "type": "number", "description": "보유 수량 (주문 노드 호환 별칭)"},
+    {"name": "price", "type": "number", "description": "현재가 (주문 노드 호환 별칭)"},
+    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "eval_amount", "type": "number", "description": "평가 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    {"name": "product", "type": "string", "description": "상품 구분 (항상 overseas_stock)"},
+]
+
+KOREA_STOCK_REAL_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드 (항상 KRX)"},
+    {"name": "market_code", "type": "string", "description": "시장 구분 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "qty", "type": "number", "description": "보유 수량"},
+    {"name": "quantity", "type": "number", "description": "보유 수량 (주문 노드 호환 별칭)"},
+    {"name": "price", "type": "number", "description": "현재가 (주문 노드 호환 별칭)"},
+    {"name": "avg_price", "type": "number", "description": "평균 매입가"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "eval_amount", "type": "number", "description": "평가 금액"},
+    {"name": "currency", "type": "string", "description": "통화 코드 (항상 KRW)"},
+    {"name": "product", "type": "string", "description": "상품 구분 (항상 korea_stock)"},
+]
+
+OVERSEAS_FUTURES_REAL_POSITION_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드 (월물 포함)"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "direction", "type": "string", "description": "포지션 방향 (long / short)"},
+    {"name": "close_side", "type": "string", "description": "청산 주문 방향 (sell / buy)"},
+    {"name": "qty", "type": "number", "description": "보유 계약 수"},
+    {"name": "quantity", "type": "number", "description": "보유 계약 수 (주문 노드 호환 별칭)"},
+    {"name": "price", "type": "number", "description": "현재가 (주문 노드 호환 별칭)"},
+    {"name": "entry_price", "type": "number", "description": "진입 가격"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "pnl_amount", "type": "number", "description": "평가 손익 (금액)"},
+    {"name": "pnl_rate", "type": "number", "description": "수익률 (%)"},
+    {"name": "currency", "type": "string", "description": "통화 코드"},
+    {"name": "product", "type": "string", "description": "상품 구분 (항상 overseas_futures)"},
+    # ── 손익 증거 메타 — REST 계좌(OVERSEAS_FUTURES_POSITION_FIELDS)와 **같은 세트**다.
+    # 두 노드가 같은 직렬화 헬퍼(`_serialize_futures_tracker_position`)를 쓰므로 선언도
+    # 어긋나면 안 된다. v1.34.0 에서 런타임만 늘고 선언이 안 따라와 바인딩이 거부됐다.
+    {"name": "pnl_status", "type": "string", "description": "손익 산출 가능 여부 (available / unavailable)"},
+    {"name": "pnl_basis", "type": "string", "description": "손익 산출 근거 (예: estimated_gross_price_change)"},
+    {"name": "pnl_currency", "type": "string", "description": "손익 금액의 통화 코드"},
+    {"name": "pnl_unavailable_reason", "type": "string", "description": "손익을 못 낸 사유 (pnl_status=unavailable 일 때)"},
+    {"name": "broker_pnl_amount", "type": "number", "description": "증권사가 보고한 평가손익 원문 (검증 전 값)"},
+    {"name": "broker_pnl_basis", "type": "string", "description": "증권사 보고 손익의 근거 표기 (예: broker_reported_unconfirmed)"},
+]
+
+ORDER_RESULT_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "status", "type": "string", "description": "주문 상태"},
+]
+
+# ⚠️ 이 선언은 **런타임이 실제로 내보내는 키와 정확히 같아야 한다.**
+# resolver 가 이 이름들로 필드 존재를 정적 검증하므로, 어긋나면 두 방향으로 다 틀린다:
+#   실제 있는 필드를 바인딩 → INVALID_EXPRESSION_REF 로 **거부**
+#   실제 없는 필드를 바인딩 → **통과**시킨 뒤 런타임에 조용히 None
+# (2026-07-13 실측: 선언이 current_price/change_percent 였으나 런타임은 price/change_pct 였다.)
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_overseas_stock`
+PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "price", "type": "number", "description": "현재가"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
+    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
+    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+]
+
+# ── 해외선물 시세 전용 (o3105 기반) ──
+# 해외주식과 모양이 다르다(symbol_name 있음 / per·eps 없음). 상수를 공유하면 드리프트가 난다.
+# 런타임 정본: executor.py `MarketDataNodeExecutor._fetch_overseas_futures`
+OVERSEAS_FUTURES_PRICE_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드 (월물 심볼)"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol_name", "type": "string", "description": "종목명"},
+    {"name": "price", "type": "number", "description": "현재가"},
+    {"name": "change", "type": "number", "description": "전일대비 (하락이면 음수)"},
+    {"name": "change_pct", "type": "number", "description": "등락률 (%)"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (현재가와 동일)"},
+]
+
+FUNDAMENTAL_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "영문 종목명"},
+    {"name": "industry", "type": "string", "description": "업종명"},
+    {"name": "nation", "type": "string", "description": "국가명"},
+    {"name": "exchange_name", "type": "string", "description": "거래소명"},
+    {"name": "current_price", "type": "number", "description": "현재가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+    {"name": "change_percent", "type": "number", "description": "등락률 (%)"},
+    {"name": "per", "type": "number", "description": "PER (주가수익비율)"},
+    {"name": "eps", "type": "number", "description": "EPS (주당순이익)"},
+    {"name": "market_cap", "type": "number", "description": "시가총액"},
+    {"name": "shares_outstanding", "type": "number", "description": "발행주식수"},
+    {"name": "high_52w", "type": "number", "description": "52주 최고가"},
+    {"name": "low_52w", "type": "number", "description": "52주 최저가"},
+    {"name": "exchange_rate", "type": "number", "description": "환율"},
+]
+
+HISTORICAL_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "날짜 (YYYYMMDD)"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+]
+
+# Outer shape of HistoricalDataNode's `value` port. The runtime payload
+# is {symbol, exchange, time_series: [HISTORICAL_DATA_FIELDS, ...]}.
+# Previously the schema attached HISTORICAL_DATA_FIELDS directly to the
+# `value` port, which (correctly) declared the bar shape but (incorrectly)
+# made expressions like `{{ nodes.historical.value.time_series }}`
+# look like field typos against the schema.
+HISTORICAL_VALUE_FIELDS: List[Dict[str, str]] = [
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "time_series", "type": "array", "description": "OHLCV 바 배열"},
+]
+
+ORDER_LIST_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "status", "type": "string", "description": "주문 상태"},
+]
+
+OPEN_ORDER_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "name", "type": "string", "description": "종목명"},
+    {"name": "side", "type": "string", "description": "매매구분 (buy/sell)"},
+    {"name": "order_type", "type": "string", "description": "주문유형 (market/limit)"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
+    {"name": "remaining_quantity", "type": "number", "description": "미체결수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "order_time", "type": "string", "description": "주문시각"},
+]
+
+ORDER_EVENT_FIELDS: List[Dict[str, str]] = [
+    {"name": "order_id", "type": "string", "description": "주문번호"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분"},
+    {"name": "quantity", "type": "number", "description": "주문수량"},
+    {"name": "filled_quantity", "type": "number", "description": "체결수량"},
+    {"name": "price", "type": "number", "description": "주문가격"},
+    {"name": "filled_price", "type": "number", "description": "체결가격"},
+    {"name": "event_type", "type": "string", "description": "이벤트 유형"},
+    {"name": "timestamp", "type": "string", "description": "이벤트 시각"},
+]
+
+# ── 실시간 시세 노드의 봉(bar) ──
+# 🔴 실시간 노드의 `ohlcv_data` / `data` 는 **같은 객체**다 (`data` 는 별칭).
+# 값의 모양은 `{"AAPL": [bar, ...]}` — 종목코드로 키를 잡은 dict 이고, bar 가 아래 필드다.
+# 옛 선언은 `exchange` / `timestamp` 를 약속했지만 런타임 bar 에 그런 키는 없고(실제는 `date`),
+# `data` 포트는 아예 `current_price` / `bid_price` / `ask_price` / `change_percent` 를 약속했는데
+# **그 값을 만드는 코드(`_build_full_data`)는 아무도 호출하지 않는 죽은 코드였다.**
+OHLCV_DATA_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "봉 일자 (YYYYMMDD)"},
+    {"name": "open", "type": "number", "description": "시가"},
+    {"name": "high", "type": "number", "description": "고가"},
+    {"name": "low", "type": "number", "description": "저가"},
+    {"name": "close", "type": "number", "description": "종가 (= 최근 체결가)"},
+    {"name": "volume", "type": "number", "description": "거래량"},
+]
+
+CONDITION_RESULT_FIELDS: List[Dict[str, str]] = [
+    {"name": "passed", "type": "boolean", "description": "조건 충족 여부"},
+    {"name": "value", "type": "number", "description": "계산된 지표 값"},
+    {"name": "threshold", "type": "number", "description": "비교 기준값"},
+    {"name": "direction", "type": "string", "description": "비교 방향 (above/below/cross)"},
+]
+
+EQUITY_CURVE_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "날짜"},
+    {"name": "equity", "type": "number", "description": "자산 가치"},
+    {"name": "drawdown", "type": "number", "description": "낙폭 (%)"},
+    {"name": "returns", "type": "number", "description": "수익률"},
+]
+
+TRADE_FIELDS: List[Dict[str, str]] = [
+    {"name": "date", "type": "string", "description": "거래일"},
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "side", "type": "string", "description": "매매구분"},
+    {"name": "quantity", "type": "number", "description": "수량"},
+    {"name": "price", "type": "number", "description": "가격"},
+    {"name": "pnl", "type": "number", "description": "손익"},
+]
+
+PERFORMANCE_METRICS_FIELDS: List[Dict[str, str]] = [
+    {"name": "total_return", "type": "number", "description": "총 수익률 (%)"},
+    {"name": "annualized_return", "type": "number", "description": "연환산 수익률 (%)"},
+    {"name": "max_drawdown", "type": "number", "description": "최대 낙폭 (%)"},
+    {"name": "sharpe_ratio", "type": "number", "description": "샤프 비율"},
+    {"name": "win_rate", "type": "number", "description": "승률 (%)"},
+    {"name": "trade_count", "type": "integer", "description": "거래 횟수"},
+]
+
+QUANTITY_FIELDS: List[Dict[str, str]] = [
+    {"name": "exchange", "type": "string", "description": "거래소 코드"},
+    {"name": "symbol", "type": "string", "description": "종목코드"},
+    {"name": "quantity", "type": "number", "description": "산출 수량"},
+    {"name": "weight", "type": "number", "description": "비중 (%)"},
+]
+
+ALLOCATED_CAPITAL_FIELDS: List[Dict[str, str]] = [
+    {"name": "strategy_id", "type": "string", "description": "전략 ID"},
+    {"name": "allocated", "type": "number", "description": "배분 금액"},
+    {"name": "weight", "type": "number", "description": "배분 비중 (%)"},
+]
+
+
+class BaseNode(BaseModel):
+    """
+    모든 노드의 베이스 클래스
+
+    Attributes:
+        id: 노드 고유 ID (워크플로우 내에서 유일)
+        type: 노드 타입 (클래스명)
+        category: 노드 카테고리
+        position: 클라이언트 UI용 위치 (선택적)
+        config: 노드별 설정
+        description: 노드 설명
+    """
+
+    id: str = Field(..., description="노드 고유 ID")
+    type: str = Field(..., description="노드 타입")
+    category: NodeCategory = Field(..., description="노드 카테고리")
+    position: Optional[Position] = Field(
+        default=None, description="클라이언트 UI용 노드 위치"
+    )
+    config: Dict[str, Any] = Field(default_factory=dict, description="노드 설정")
+    description: Optional[str] = Field(default=None, description="노드 설명")
+
+    # 메타 정보 (서브클래스에서 오버라이드)
+    _inputs: List[InputPort] = []
+    _outputs: List[OutputPort] = []
+    _field_schema: ClassVar[Dict[str, FieldSchema]] = {}
+    _img_url: ClassVar[Optional[str]] = None  # 노드 아이콘 이미지 URL
+    _product_scope: ClassVar[ProductScope] = ProductScope.ALL
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.ALL
+    _connection_rules: ClassVar[List["ConnectionRule"]] = []
+    _rate_limit: ClassVar[Optional["RateLimitConfig"]] = None
+    _risk_features: ClassVar[Set[str]] = set()  # {"hwm","window","events","state"}
+
+    # ── Version metadata (UI change detection, added 2026-05-19) ──
+    # Every concrete node MUST override these in its own class body
+    # (enforced by test_node_version_metadata.py). Bump rule:
+    #   - major: breaking schema change (port rename, required flip)
+    #   - minor: additive (new optional field, new output port)
+    #   - patch: docs / internal behavior, no schema change
+    _version: ClassVar[str] = "1.0.0"
+    _updated_at: ClassVar[str] = "2026-05-19"
+    _change_note: ClassVar[Optional[str]] = None
+
+    model_config = ConfigDict(use_enum_values=True, extra="allow")
+
+    def get_inputs(self) -> List[InputPort]:
+        """입력 포트 목록 반환"""
+        return self._inputs
+
+    def get_outputs(self) -> List[OutputPort]:
+        """출력 포트 목록 반환"""
+        return self._outputs
+
+    def validate_config(self) -> bool:
+        """설정 유효성 검증 (서브클래스에서 오버라이드)"""
+        return True
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        """
+        노드의 설정 가능한 필드 스키마 반환 (UI 렌더링용)
+
+        서브클래스에서 오버라이드하여 PARAMETERS/SETTINGS 카테고리 구분.
+
+        Returns:
+            Dict[str, FieldSchema]: 필드명 → 스키마 매핑
+
+        Example:
+            @classmethod
+            def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+                from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory
+                return {
+                    "url": FieldSchema(name="url", type=FieldType.STRING,
+                        category=FieldCategory.PARAMETERS),
+                    "timeout": FieldSchema(name="timeout", type=FieldType.INTEGER,
+                        category=FieldCategory.SETTINGS),
+                }
+        """
+        return {}
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        """
+        이 노드가 AI Agent의 Tool로 사용 가능한지 여부.
+
+        tool 엣지로 AIAgentNode에 연결 가능한 노드는 True를 반환합니다.
+        서브클래스에서 오버라이드하여 변경 가능.
+
+        Returns:
+            bool: Tool로 사용 가능 여부 (기본 False)
+        """
+        return False
+
+    @classmethod
+    def _to_snake_case(cls, name: str) -> str:
+        """CamelCase를 snake_case로 변환 (LLM function calling용)
+
+        약어(AI, HTTP, LLM 등)도 올바르게 처리:
+        - OverseasStockMarketDataNode → overseas_stock_market_data
+        - AIAgentNode → ai_agent
+        - HTTPRequestNode → http_request
+        - LLMModelNode → llm_model
+        """
+        import re
+        name = name.replace("Node", "")
+        # 1단계: 약어 뒤에 소문자 단어가 오는 경계 (HTTPRequest → HTTP_Request)
+        s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+        # 2단계: 소문자/숫자 뒤에 대문자가 오는 경계 (stockMarket → stock_Market)
+        return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    @classmethod
+    def as_tool_schema(cls, locale: str = "en") -> Dict[str, Any]:
+        """
+        이 노드를 AI Tool로 사용할 때의 스키마.
+
+        AI Agent가 LLM에 Tool 목록을 전달할 때 사용합니다.
+        노드의 설정 가능한 필드(FieldSchema)를 Tool 파라미터로 변환하고,
+        `i18n:` 접두어 문자열은 지정된 locale 의 실제 번역값으로 해석됩니다.
+
+        Args:
+            locale: 번역 locale (기본값 "en"). LLM 은 영어 description 을
+                선호하므로 AI Agent Tool 호출용에는 "en" 을 권장.
+
+        Returns:
+            dict: {
+                "tool_name": "overseas_stock_market_data",  (LLM function calling용 snake_case)
+                "node_type": "OverseasStockMarketDataNode", (원본 클래스명)
+                "display_name": "Overseas Stock Market Data", (locale 번역)
+                "description": "...",
+                "parameters": {...},  (각 필드 description 이 번역된 자연어)
+                "returns": {...},
+            }
+        """
+        field_schemas = cls.get_field_schema()
+        parameters = {}
+        for field_name, fs in field_schemas.items():
+            param = {
+                "type": fs.type.value if hasattr(fs.type, 'value') else str(fs.type),
+                "required": fs.required,
+            }
+            if fs.description:
+                param["description"] = fs.description
+            if fs.enum_values:
+                param["enum"] = fs.enum_values
+            if fs.default is not None:
+                param["default"] = fs.default
+            # object 타입: 내부 스키마 정보 전달 (AI Tool에서 LLM이 올바른 구조를 생성할 수 있도록)
+            if hasattr(fs, 'object_schema') and fs.object_schema:
+                param["object_schema"] = fs.object_schema
+            if hasattr(fs, 'example') and fs.example is not None:
+                param["example"] = fs.example
+            if hasattr(fs, 'expected_type') and fs.expected_type:
+                param["expected_type"] = fs.expected_type
+            parameters[field_name] = param
+
+        # 출력 포트 → returns
+        # _outputs는 Pydantic에서 ModelPrivateAttr가 될 수 있으므로 인스턴스를 생성하여 접근
+        returns = {}
+        try:
+            temp_instance = cls(id="__tool_schema__", type=cls.__name__)
+            instance_outputs = temp_instance.get_outputs()
+        except Exception:
+            instance_outputs = []
+        for out in instance_outputs:
+            out_dict = {"type": out.type}
+            if out.description:
+                out_dict["description"] = out.description
+            returns[out.name] = out_dict
+
+        result = {
+            "tool_name": cls._to_snake_case(cls.__name__),
+            "node_type": cls.__name__,
+            "display_name": f"i18n:nodes.{cls.__name__}.name",
+            "description": cls.__doc__.strip() if cls.__doc__ else "",
+            "parameters": parameters,
+            "returns": returns,
+        }
+
+        # i18n 키 ("i18n:..." prefix) 를 실제 번역값으로 resolve.
+        # LLM 은 번역되지 않은 리터럴 키를 보면 의미를 추론할 수 없으므로,
+        # tool schema export 시점에 locale 기반 번역값으로 대체.
+        from programgarden_core.i18n.translator import _translate_i18n_strings
+        return _translate_i18n_strings(result, locale)
+
+
+class PluginNode(BaseNode):
+    """
+    플러그인을 사용하는 노드의 베이스 클래스
+
+    ConditionNode, NewOrderNode, ModifyOrderNode, CancelOrderNode 등이 상속
+    """
+
+    plugin: str = Field(..., description="플러그인 ID (예: RSI, MarketOrder)")
+    plugin_version: Optional[str] = Field(
+        default=None, description="플러그인 버전 (예: 1.2.0)"
+    )
+    fields: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="플러그인 필드 (고정값, 바인딩, 표현식 지원)",
+    )
+
+    def get_plugin_ref(self) -> str:
+        """플러그인 참조 문자열 반환 (예: RSI@1.2.0)"""
+        if self.plugin_version:
+            return f"{self.plugin}@{self.plugin_version}"
+        return self.plugin
+
+    def has_expressions(self) -> bool:
+        """표현식이 포함된 필드가 있는지 확인"""
+        from programgarden_core.models.field_binding import is_expression
+        return any(is_expression(v) for v in self.fields.values())
+
+
+class BaseMessagingNode(BaseNode):
+    """
+    메시징 노드의 베이스 클래스 (커뮤니티 확장용)
+
+    TelegramNode, SlackNode, DiscordNode 등이 상속.
+    각 노드는 execute() 메서드를 구현해야 함.
+
+    Credential 자동 주입:
+        credential_id를 설정하면 GenericNodeExecutor가 실행 전에
+        credential 값을 노드 필드에 자동 주입합니다.
+
+        Example:
+            class TelegramNode(BaseMessagingNode):
+                bot_token: Optional[str] = None  # credential에서 자동 주입됨
+                chat_id: Optional[str] = None
+
+                async def execute(self, context):
+                    # self.bot_token에 이미 값이 있음!
+                    url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+    Resilience (Retry/Fallback):
+        외부 API 호출 실패 시 자동 재시도 및 실패 처리 설정.
+
+        Example:
+            class MyAPINode(BaseMessagingNode):
+                resilience: ResilienceConfig = Field(
+                    default_factory=lambda: ResilienceConfig(
+                        retry=RetryConfig(enabled=True, max_retries=3),
+                        fallback=FallbackConfig(mode=FallbackMode.SKIP),
+                    )
+                )
+    """
+
+    category: NodeCategory = NodeCategory.MESSAGING
+
+    # 메시지 템플릿
+    template: Optional[str] = Field(
+        default=None,
+        description="Message template with {{ }} placeholders (e.g., '체결: {{symbol}} {{quantity}}주 @ {{price}}')",
+    )
+
+    # Credential 연동 (GenericNodeExecutor가 자동 주입)
+    credential_id: Optional[str] = Field(
+        default=None,
+        description="Credential ID from CredentialRegistry. 해당 credential의 필드들이 노드 필드에 자동 주입됨",
+    )
+
+    # Resilience 설정 (Retry/Fallback)
+    resilience: ResilienceConfig = Field(
+        default_factory=ResilienceConfig,
+        description="외부 API 호출 실패 시 재시도 및 실패 처리 설정",
+    )
+    
+    _inputs: List[InputPort] = [
+        InputPort(
+            name="event",
+            type="event_data",
+            description="Event data to send notification",
+            required=False,
+        ),
+        InputPort(
+            name="trigger",
+            type="signal",
+            description="Manual trigger signal",
+            required=False,
+        ),
+    ]
+    
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="sent",
+            type="signal",
+            description="Notification sent confirmation",
+        ),
+    ]
+    
+    async def execute(self, context: Any) -> Dict[str, Any]:
+        """
+        알림 전송 실행 (서브클래스에서 구현 필수)
+
+        Args:
+            context: ExecutionContext with render_template() etc.
+
+        Returns:
+            dict with 'sent': bool, and optional 'message_id', 'error' etc.
+
+        Note:
+            credential_id가 설정되어 있으면 GenericNodeExecutor가 실행 전에
+            credential 값을 노드 필드에 자동 주입합니다.
+            따라서 self.bot_token, self.api_key 등을 바로 사용할 수 있습니다.
+        """
+        raise NotImplementedError("Subclass must implement execute()")
+
+    def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+        """
+        에러가 재시도 가능한지 판단하고, 에러 유형 반환.
+
+        서브클래스에서 오버라이드하여 노드별 에러 판단 로직 구현 가능.
+
+        Args:
+            error: 발생한 예외
+
+        Returns:
+            RetryableError 유형, 또는 None (재시도 불가)
+
+        Example:
+            class MyAPINode(BaseMessagingNode):
+                def is_retryable_error(self, error: Exception) -> Optional[RetryableError]:
+                    # 기본 판단 먼저 수행
+                    base_result = super().is_retryable_error(error)
+                    if base_result:
+                        return base_result
+
+                    # 노드별 추가 판단
+                    if "quota exceeded" in str(error).lower():
+                        return RetryableError.RATE_LIMIT
+
+                    return None
+        """
+        error_str = str(error).lower()
+
+        if "timeout" in error_str or "timed out" in error_str:
+            return RetryableError.TIMEOUT
+        if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+            return RetryableError.RATE_LIMIT
+        if "connection" in error_str or "network" in error_str or "unreachable" in error_str:
+            return RetryableError.NETWORK_ERROR
+        if any(code in error_str for code in ["500", "502", "503", "504"]):
+            return RetryableError.SERVER_ERROR
+
+        return None
+
+    @classmethod
+    def get_resilience_field_schema(cls) -> Dict[str, FieldSchema]:
+        """
+        Resilience 설정의 UI 필드 스키마.
+
+        Returns:
+            Dict[str, FieldSchema]: 필드명 → 스키마 매핑
+        """
+        return {
+            "resilience.retry.enabled": FieldSchema(
+                name="resilience.retry.enabled",
+                type=FieldType.BOOLEAN,
+                label="재시도 활성화",
+                description="실패 시 자동으로 재시도합니다",
+                default=False,
+                category=FieldCategory.SETTINGS,
+            ),
+            "resilience.retry.max_retries": FieldSchema(
+                name="resilience.retry.max_retries",
+                type=FieldType.INTEGER,
+                label="최대 재시도 횟수",
+                description="1~10회 사이로 설정",
+                default=3,
+                min=1,
+                max=10,
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.retry.enabled": True},
+            ),
+            "resilience.retry.base_delay": FieldSchema(
+                name="resilience.retry.base_delay",
+                type=FieldType.NUMBER,
+                label="재시도 대기 시간 (초)",
+                description="첫 재시도까지 대기 시간",
+                default=1.0,
+                min=0.1,
+                max=30.0,
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.retry.enabled": True},
+            ),
+            "resilience.fallback.mode": FieldSchema(
+                name="resilience.fallback.mode",
+                type=FieldType.STRING,
+                label="실패 시 동작",
+                description="모든 재시도 실패 후 동작",
+                default="error",
+                options=[
+                    {"value": "error", "label": "워크플로우 중단"},
+                    {"value": "skip", "label": "이 노드 건너뛰기"},
+                    {"value": "default_value", "label": "기본값 사용"},
+                ],
+                category=FieldCategory.SETTINGS,
+            ),
+            "resilience.fallback.default_value": FieldSchema(
+                name="resilience.fallback.default_value",
+                type=FieldType.JSON,
+                label="기본값",
+                description="실패 시 반환할 기본값 (JSON)",
+                category=FieldCategory.SETTINGS,
+                depends_on={"resilience.fallback.mode": "default_value"},
+            ),
+        }

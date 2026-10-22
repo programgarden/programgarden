@@ -1,0 +1,126 @@
+from typing import Callable, Optional, Dict, Any
+
+import aiohttp
+
+from programgarden_core.exceptions import TrRequestDataNotFoundException
+import logging
+
+logger = logging.getLogger("programgarden.ls.korea_stock.market.t1405")
+from .blocks import (
+    T1405InBlock,
+    T1405OutBlock,
+    T1405OutBlock1,
+    T1405Request,
+    T1405Response,
+    T1405ResponseHeader,
+)
+from ....tr_base import OccursReqAbstract, TRRequestAbstract
+from ....tr_helpers import GenericTR
+from programgarden_finance.ls.config import URLS
+from programgarden_finance.ls.status import RequestStatus
+
+
+class TrT1405(TRRequestAbstract, OccursReqAbstract):
+    """
+    LS증권 OpenAPI t1405 투자경고/매매정지/정리매매조회 클래스입니다.
+
+    투자경고, 매매정지, 정리매매, 투자주의/위험/위험예고 등 종목을 조회합니다.
+    cts_shcode 기반 연속조회를 지원합니다.
+    """
+
+    def __init__(self, request_data: T1405Request):
+        super().__init__(
+            rate_limit_count=request_data.options.rate_limit_count,
+            rate_limit_seconds=request_data.options.rate_limit_seconds,
+            on_rate_limit=request_data.options.on_rate_limit,
+            rate_limit_key=request_data.options.rate_limit_key,
+        )
+        self.request_data = request_data
+        if not isinstance(self.request_data, T1405Request):
+            raise TrRequestDataNotFoundException()
+        self._generic: GenericTR[T1405Response] = GenericTR[T1405Response](self.request_data, self._build_response, url=URLS.KOREA_STOCK_MARKET_URL)
+
+    def _build_response(self, resp: Optional[object], resp_json: Optional[Dict[str, Any]], resp_headers: Optional[Dict[str, Any]], exc: Optional[Exception]) -> T1405Response:
+        resp_json = resp_json or {}
+        cont_data = resp_json.get("t1405OutBlock", None)
+        block_data = resp_json.get("t1405OutBlock1", [])
+
+        status = getattr(resp, "status", getattr(resp, "status_code", None)) if resp is not None else None
+        is_error_status = status is not None and status >= 400
+
+        header = None
+        if exc is None and resp_headers and not is_error_status:
+            header = T1405ResponseHeader.model_validate(resp_headers)
+
+        parsed_cont: Optional[T1405OutBlock] = None
+        if exc is None and not is_error_status and cont_data:
+            parsed_cont = T1405OutBlock.model_validate(cont_data)
+
+        parsed_block: list[T1405OutBlock1] = []
+        if exc is None and not is_error_status:
+            parsed_block = [T1405OutBlock1.model_validate(item) for item in block_data]
+
+        error_msg: Optional[str] = None
+        if exc is not None:
+            error_msg = str(exc)
+            logger.error(f"t1405 request failed: {exc}")
+        elif is_error_status:
+            error_msg = f"HTTP {status}"
+            if resp_json.get("rsp_msg"):
+                error_msg = f"{error_msg}: {resp_json['rsp_msg']}"
+            logger.error(f"t1405 request failed with status: {error_msg}")
+
+        result = T1405Response(
+            header=header,
+            cont_block=parsed_cont,
+            block=parsed_block,
+            rsp_cd=resp_json.get("rsp_cd", ""),
+            rsp_msg=resp_json.get("rsp_msg", ""),
+            status_code=status,
+            error_msg=error_msg,
+        )
+        if resp is not None:
+            result.raw_data = resp
+        return result
+
+    def req(self) -> T1405Response:
+        return self._generic.req()
+
+    async def req_async(self) -> T1405Response:
+        return await self._generic.req_async()
+
+    async def _req_async_with_session(self, session: aiohttp.ClientSession) -> T1405Response:
+        if hasattr(self._generic, "_req_async_with_session"):
+            return await self._generic._req_async_with_session(session)
+        return await self._generic.req_async()
+
+    def occurs_req(self, callback: Optional[Callable[[Optional[T1405Response], RequestStatus], None]] = None, delay: int = 1) -> list[T1405Response]:
+        """동기 방식으로 투자경고/매매정지/정리매매 전체를 연속조회합니다."""
+        def _updater(req_data, resp: T1405Response):
+            if resp.header is None or resp.cont_block is None:
+                raise ValueError("t1405 response missing continuation data")
+            req_data.header.tr_cont_key = resp.header.tr_cont_key
+            req_data.header.tr_cont = resp.header.tr_cont
+            req_data.body["t1405InBlock"].cts_shcode = resp.cont_block.cts_shcode
+        return self._generic.occurs_req(_updater, callback=callback, delay=delay)
+
+    async def occurs_req_async(self, callback: Optional[Callable[[Optional[T1405Response], RequestStatus], None]] = None, delay: int = 1) -> list[T1405Response]:
+        """비동기 방식으로 투자경고/매매정지/정리매매 전체를 연속조회합니다."""
+        def _updater(req_data, resp: T1405Response):
+            if resp.header is None or resp.cont_block is None:
+                raise ValueError("t1405 response missing continuation data")
+            req_data.header.tr_cont_key = resp.header.tr_cont_key
+            req_data.header.tr_cont = resp.header.tr_cont
+            req_data.body["t1405InBlock"].cts_shcode = resp.cont_block.cts_shcode
+        return await self._generic.occurs_req_async(_updater, callback=callback, delay=delay)
+
+
+__all__ = [
+    TrT1405,
+    T1405InBlock,
+    T1405OutBlock,
+    T1405OutBlock1,
+    T1405Request,
+    T1405Response,
+    T1405ResponseHeader,
+]

@@ -1,0 +1,1138 @@
+"""Base utilities for LS Securities real-time websocket handling.
+
+EN:
+    Provides reconnection-aware websocket scaffolding, dynamic TR response
+    resolution, and convenience hooks for subscribing to live market/order
+    feeds.
+
+KO:
+    재연결을 고려한 웹소켓 기반 구조와 실시간 TR 응답 동적 로딩, 시세/주문
+    구독을 위한 헬퍼를 제공합니다.
+"""
+
+from abc import ABC
+import asyncio
+import json
+from typing import Callable, Dict, List, Optional, Any, Tuple, TypeVar
+import importlib
+import random
+
+from websockets import ClientConnection, connect
+import inspect
+from websockets.exceptions import WebSocketException
+from programgarden_finance.ls.config import URLS
+from programgarden_finance.ls.token_manager import TokenManager
+
+T = TypeVar("T")
+
+# cache for dynamic response class lookups (EN/KR)
+# EN: tr_cd -> (response_model, header_model, body_model) or None
+# KO: tr_cd에 대응하는 응답/헤더/바디 모델 캐시입니다 (없으면 None)
+_RESPONSE_CLASS_CACHE: Dict[str, Optional[tuple]] = {}
+
+# candidate module roots where tr_cd modules may live; keep order from most likely to least
+# EN: search bases for dynamic imports; KO: 동적 import 시도 순서를 정의합니다.
+_RESPONSE_MODULE_BASES = [
+    "programgarden_finance.ls.overseas_stock.real",
+    "programgarden_finance.ls.overseas_futureoption.real",
+    "programgarden_finance.ls.korea_stock.real",
+    "programgarden_finance.ls.common.real",
+]
+
+# A-6: per-connection real-time subscription cap.
+# EN: The SDK caps registrations at a conservative 100 symbols per connection
+#     (sum across all TR codes) and rejects overflow with an explicit error
+#     instead of silently flooding the websocket.
+#     UNSOURCED: the often-quoted "3 concurrent connections per account" and any
+#     per-connection registration limit are not stated in the LS OpenAPI guide
+#     (v20261012053652748). Treat both as unverified until observed.
+# KO: 연결당(모든 TR 코드 합산) 기본 100종목으로 보수적으로 cap 을 두고, 초과 시
+#     웹소켓을 조용히 폭주시키는 대신 명시적 에러로 거부합니다.
+#     출처 없음: 흔히 인용되는 "계정당 동시연결 3개"와 연결당 등록 수 제한은 LS OpenAPI
+#     가이드(v20261012053652748)에 없는 수치입니다. 관측 전까지 미확인으로 취급하세요.
+DEFAULT_MAX_SUBSCRIBE_SYMBOLS = 100
+
+
+class SubscriptionLimitExceeded(RuntimeError):
+    """Raised when a real-time subscription would exceed the per-connection cap.
+
+    EN:
+        Subclasses ``RuntimeError`` so existing real-time error handling keeps
+        working, while callers that want to react specifically (e.g. trim the
+        symbol list or open another connection) can catch this type.
+
+    KO:
+        ``RuntimeError`` 를 상속하여 기존 실시간 에러 처리와 호환되며, 종목 수를
+        줄이거나 다른 연결을 열어 대응하려는 호출자는 이 타입만 잡을 수 있습니다.
+    """
+
+
+class RealRequestAbstract(ABC):
+    """Reconnect-capable abstract base for LS real-time requests.
+
+    EN:
+        Manages websocket lifecycle, dynamic TR model loading, and listener
+        dispatching so concrete real-time clients can focus on business logic.
+
+    KO:
+        실시간 요청에 필요한 추상클래스이며, 웹소켓 연결 수명주기, TR 모델 동적 로딩, 수신 리스너 디스패치를 관리하여
+        하위 클래스가 비즈니스 로직에 집중할 수 있게 합니다.
+    """
+
+    def __init__(
+        self,
+        reconnect=True,
+        recv_timeout=5.0,
+        ping_interval=30.0,
+        ping_timeout=5.0,
+        max_backoff=60.0,
+        token_manager: Optional[TokenManager] = None,
+        max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
+        reregister_account_events_on_reconnect: bool = True,
+    ):
+        super().__init__()
+
+        self._reconnect = reconnect
+        self._recv_timeout = recv_timeout
+        self._ping_interval = ping_interval
+        self._ping_timeout = ping_timeout
+        self._max_backoff = max_backoff
+        self._token_manager = token_manager
+        # A-6: 연결당 실시간 구독 종목 수 cap. <=0 이면 무제한(가드 비활성).
+        self._max_subscribe_symbols = max_subscribe_symbols
+        # 재연결 뒤 계좌(주문 이벤트) 실시간 등록을 다시 보낼지. 등록은 소켓에 보낸
+        # 메시지라 새 소켓에는 남아 있지 않다고 보고 기본값은 True 다.
+        # Phase-0 F3(LS 모의 해외선물, 2026-10-15): 재연결한 새 소켓은 tr_type=1 을 다시
+        # 보내기 전까지 계좌 이벤트를 하나도 받지 못했다 — 기본값 True 가 필요하다.
+        self._reregister_account_events_on_reconnect = bool(reregister_account_events_on_reconnect)
+
+        # Event that is set when a websocket connection is successfully opened
+        self._connected_event = asyncio.Event()
+
+        self._ws: Optional[ClientConnection] = None
+        self._listen_task = None
+        self._as01234_connect = False
+        self._sc01234_connect = False
+        # TR 코드(키)당 **리스너 리스트**. 1.9.7 이전엔 단일 대입(`dict[key] = listener`)이라
+        # 같은 Real 객체(엔진 LSClientManager 가 product 별로 공유)에 두 경로 — 예: 체결 원장 구독
+        # (`on_sc1_message`) 과 주문이벤트 노드 마스터 — 가 같은 TR 을 걸면 나중 것이 앞의 것을
+        # 조용히 지웠다(2026-09-12 국내 SC1 회귀 실측, 해외주식 AS0·해외선물 TC3 도 동일 구조).
+        # 이제 등록은 append, 디스패치는 전부 호출, 제거는 지정 리스너만(미지정 시 그 키 전체).
+        self._on_message_listeners: Dict[str, List[Callable[[Any], Any]]] = {}
+        self._ref_count = 0
+        self._ref_lock = asyncio.Lock()  # ref_count 보호용 Lock
+        # 구독 심볼 추적 (재연결 시 자동 재구독용)
+        self._subscribed_symbols: Dict[str, List[str]] = {}  # tr_cd -> [symbols]
+        self._stop = False
+        self._last_message_time: float = 0.0  # M-13: 마지막 메시지 수신 시각
+
+    async def is_connected(self) -> bool:
+        """Check whether the websocket handshake completed.
+
+        EN:
+            Returns ``True`` once the connection event is set after a successful
+            websocket handshake.
+
+        KO:
+            웹소켓 핸드셰이크가 완료되어 연결 이벤트가 설정되었을 때 ``True`` 를
+            반환합니다.
+        """
+        return self._connected_event.is_set()
+
+    def get_subscribed_symbols(self) -> Dict[str, List[str]]:
+        """현재 구독 중인 심볼 목록 (tr_cd -> symbols)."""
+        return dict(self._subscribed_symbols)
+
+    def get_subscription_count(self) -> int:
+        """현재 연결의 실시간 등록 총 수 (모든 TR 코드 합산).
+
+        EN: Total real-time registrations across all TR codes on this connection.
+        KO: 이 연결의 모든 TR 코드에 걸친 실시간 등록 총 개수.
+        """
+        return sum(len(syms) for syms in self._subscribed_symbols.values())
+
+    def get_subscription_capacity(self) -> Optional[int]:
+        """남은 구독 여유분 (cap 비활성 시 None).
+
+        EN: Remaining subscription slots before the per-connection cap, or
+            ``None`` when the cap is disabled (``max_subscribe_symbols <= 0``).
+        KO: 연결당 cap 까지 남은 구독 가능 수. cap 비활성 시 ``None``.
+        """
+        if self._max_subscribe_symbols <= 0:
+            return None
+        return max(0, self._max_subscribe_symbols - self.get_subscription_count())
+
+    def get_staleness_sec(self) -> float:
+        """M-13: 마지막 메시지 수신 이후 경과 시간 (초). 0이면 아직 메시지 없음."""
+        import time
+        if self._last_message_time <= 0:
+            return 0.0
+        return time.time() - self._last_message_time
+
+    async def connect(
+        self,
+        wait: bool = True,
+        timeout: float = 5.0,
+    ):
+        """Open the websocket and launch the listener loop.
+
+        EN:
+            Optionally waits until the first successful connection. Handles
+            reconnection with exponential backoff when ``reconnect`` is enabled.
+            When a connection is already active, increments the reference count
+            and returns immediately (singleton-safe).
+
+        KO:
+            최초 연결이 성사될 때까지 대기할 수 있으며 ``reconnect`` 설정 시
+            지수 백오프 기반으로 재연결을 처리합니다. 이미 연결이 활성화된 경우
+            참조 카운트만 증가시키고 즉시 반환합니다 (싱글톤 안전).
+
+        Parameters:
+            wait (bool): EN: Wait for connection event. KO: 연결 완료까지 대기 여부.
+            timeout (float): EN: Max seconds to wait when ``wait`` is True. KO:
+                ``wait`` 가 True일 때 대기 시간.
+        """
+
+        need_connect = False
+        async with self._ref_lock:
+            self._ref_count += 1
+
+            # 이미 연결됨 → 즉시 반환
+            if self._connected_event.is_set():
+                return
+
+            # 연결 시도 중 → wait만 수행
+            if self._listen_task is not None and not self._listen_task.done():
+                need_connect = False
+            else:
+                self._stop = False
+                need_connect = True
+
+        # Lock 밖에서 wait (Lock 중 대기 시 deadlock 방지)
+        if not need_connect:
+            if wait:
+                try:
+                    await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    raise RuntimeError("Timeout waiting for websocket connection")
+            return
+
+        async def _connection_loop():
+            """Runs the connection lifecycle: connect, receive messages, handle errors and reconnect.
+
+            - Outer loop: manages connection attempts and reconnection/backoff.
+            - Inner loop: runs while a single websocket connection is open and receives messages.
+            """
+            backoff = 1.0
+            # True once this loop has had an open socket: every later successful
+            # connect is a reconnect. (``backoff > 1.0`` used to stand in for this
+            # and missed reconnects when ``max_backoff <= 1``.)
+            connected_once = False
+            # Outer loop: connection attempt / reconnect
+            while not self._stop:
+                try:
+                    # set ping/pong to keep connection alive
+                    target_uri = None
+                    if self._token_manager is not None:
+                        target_uri = getattr(self._token_manager, "wss_url", None)
+                    # NOTE: ping_interval=None disables automatic pings from websockets library
+                    # to avoid interference with message reception. Manual pings are sent 
+                    # via recv_timeout to detect stalled connections.
+                    async with connect(
+                        uri=target_uri or URLS.WSS_URL,
+                        ping_interval=None,
+                        ping_timeout=None,
+                    ) as ws:
+                        self._ws = ws
+                        # signal that a connection is available
+                        try:
+                            self._connected_event.set()
+                        except Exception:
+                            pass
+
+                        is_reconnect = connected_once
+                        connected_once = True
+
+                        # 재연결 시 이전 구독 자동 복원
+                        if is_reconnect and self._subscribed_symbols:
+                            import logging
+                            _logger = logging.getLogger("programgarden_finance.real")
+                            for _tr_cd, _syms in self._subscribed_symbols.items():
+                                if _syms:
+                                    try:
+                                        self._add_message_symbols(list(_syms), _tr_cd)
+                                        _logger.info(
+                                            f"WebSocket 재연결 후 자동 재구독: "
+                                            f"{_tr_cd} {len(_syms)}개 심볼"
+                                        )
+                                    except Exception as _e:
+                                        _logger.error(
+                                            f"WebSocket 재구독 실패 ({_tr_cd}): {_e}"
+                                        )
+
+                        # 재연결 시 계좌(주문 이벤트) 실시간 등록 복원 — 시세 재구독 다음에 보낸다.
+                        if is_reconnect and self._reregister_account_events_on_reconnect:
+                            self._reregister_account_events()
+
+                        backoff = 1.0  # reset backoff after successful connect
+
+                        # Inner loop: active connection receive loop
+                        import time as _time
+                        self._last_message_time = _time.time()
+                        _staleness_warned = False
+
+                        while not self._stop:
+                            try:
+                                # blocking recv - no timeout for real-time streaming
+                                raw = await ws.recv()
+                            except asyncio.CancelledError:
+                                # propagate cancellation so outer task can stop cleanly
+                                raise
+                            except (WebSocketException, ConnectionError):
+                                # connection-level errors -> break to reconnect
+                                break
+                            except Exception:
+                                # unexpected error on recv; try to continue listening
+                                # M-13: 무 데이터 감지 (120초)
+                                staleness = self.get_staleness_sec()
+                                if staleness > 120 and not _staleness_warned:
+                                    _staleness_warned = True
+                                    import logging
+                                    logging.getLogger("programgarden_finance.real").warning(
+                                        f"WebSocket 무 데이터 경고: {staleness:.0f}초 동안 "
+                                        f"메시지 수신 없음. 연결 상태를 확인하세요."
+                                    )
+                                continue
+
+                            # M-13: 메시지 수신 시 시각 갱신
+                            self._last_message_time = _time.time()
+                            _staleness_warned = False
+
+                            # parse message quickly and hand off
+                            try:
+                                resp_json = json.loads(raw)
+
+                            except Exception:
+                                # ignore malformed payloads
+                                continue
+
+                            tr_cd = resp_json.get('header', {}).get('tr_cd', None)
+
+                            # dynamically import the module for this tr_cd and cache the classes
+                            if not tr_cd:
+                                continue
+
+                            cached = _RESPONSE_CLASS_CACHE.get(tr_cd)
+                            if cached is None:
+                                mod = None
+                                response_model = response_header_model = response_body_model = None
+                                # try each candidate base until one imports successfully
+                                for base in _RESPONSE_MODULE_BASES:
+                                    module_name = f"{base}.{tr_cd}.blocks"
+                                    try:
+                                        m = importlib.import_module(module_name)
+                                    except Exception:
+                                        continue
+                                    # prefer the first base that contains the expected attributes
+                                    try:
+                                        response_model = getattr(m, f"{tr_cd}RealResponse")
+                                        response_header_model = getattr(m, f"{tr_cd}RealResponseHeader")
+                                        response_body_model = getattr(m, f"{tr_cd}RealResponseBody")
+                                        mod = m
+                                        break
+                                    except Exception:
+                                        # module existed but didn't expose the expected classes; try next base
+                                        continue
+
+                                if mod is None:
+                                    # remember failures so we don't repeatedly try to import missing modules
+                                    _RESPONSE_CLASS_CACHE[tr_cd] = None
+                                    continue
+
+                                _RESPONSE_CLASS_CACHE[tr_cd] = (response_model, response_header_model, response_body_model)
+                            else:
+                                if cached is None:
+                                    continue
+                                response_model, response_header_model, response_body_model = cached
+
+                            try:
+
+                                listeners = list(self._on_message_listeners.get(tr_cd) or [])
+
+                                resp_header = resp_json.get('header', {})
+
+                                resp_body = resp_json.get('body', {})
+                                resp = response_model(
+                                    header=response_header_model.model_validate(resp_header),
+                                    body=response_body_model.model_validate(resp_body) if resp_body else None,
+                                    rsp_cd=resp_header.get("rsp_cd", ""),
+                                    rsp_msg=resp_header.get("rsp_msg", ""),
+                                )
+                                resp.raw_data = resp_json
+                            except Exception as e:
+                                resp = response_model(
+                                    header=None,
+                                    body=None,
+                                    rsp_cd="",
+                                    rsp_msg="",
+                                    error_msg=str(e),
+                                )
+                                resp.raw_data = resp_json
+
+                            if not listeners:
+                                continue
+
+                            loop = asyncio.get_running_loop()
+                            for on_message in listeners:
+                                self._dispatch_to_listener(loop, on_message, resp)
+
+                except asyncio.CancelledError:
+                    # allow cancellation to bubble up for clean shutdown
+                    break
+                except Exception:
+                    # general connection failure
+                    if not self._reconnect:
+                        break
+
+                # reconnect/backoff logic
+                if not self._reconnect or self._stop:
+                    break
+
+                # H-15: 재연결 중 메시지 누락 경고
+                import logging
+                _logger = logging.getLogger("programgarden_finance.real")
+                _logger.warning(
+                    f"WebSocket 연결 끊김 - 재연결 시도 중 "
+                    f"(backoff={backoff:.1f}s). 이 기간 동안 시세/체결 데이터가 누락될 수 있습니다."
+                )
+
+                # exponential backoff with small jitter
+                jitter = random.uniform(0, backoff * 0.1)
+                await asyncio.sleep(backoff + jitter)
+                backoff = min(self._max_backoff, backoff * 2)
+                # clear connected event when leaving the connect attempt
+                try:
+                    self._connected_event.clear()
+                except Exception:
+                    pass
+        # create the listener task
+        self._listen_task = asyncio.create_task(_connection_loop())
+        # optionally wait until a connection is established
+        if wait:
+            try:
+                await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                raise RuntimeError("Timeout waiting for websocket connection")
+        else:
+            await asyncio.sleep(0)
+
+    async def close(self, force: bool = False):
+        """Stop listening and close the websocket connection.
+
+        EN:
+            Decrements the reference count and only performs the actual
+            shutdown when the count reaches zero.  Use ``force=True`` to
+            bypass reference counting and close immediately (also removes
+            the instance from the singleton cache).
+
+        KO:
+            참조 카운트를 감소시키고 0이 되었을 때만 실제 종료를 수행합니다.
+            ``force=True`` 를 사용하면 참조 카운트를 무시하고 즉시 종료하며,
+            싱글톤 캐시에서 인스턴스를 제거합니다.
+
+        Parameters:
+            force (bool): EN: Close immediately regardless of ref count.
+                KO: 참조 카운트를 무시하고 즉시 종료.
+        """
+        async with self._ref_lock:
+            if not force:
+                self._ref_count = max(0, self._ref_count - 1)
+                if self._ref_count > 0:
+                    return
+            elif self._ref_count > 1:
+                import logging
+                _logger = logging.getLogger("programgarden_finance.real")
+                _logger.warning(
+                    f"WebSocket force close while ref_count={self._ref_count}. "
+                    f"다른 {self._ref_count - 1}개 노드의 실시간 연결이 끊어집니다."
+                )
+
+            self._ref_count = 0
+        self._stop = True
+        # cancel listener task if running
+        if self._listen_task is not None:
+            self._listen_task.cancel()
+            try:
+                await self._listen_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+
+        self._connected_event.clear()
+        self._cleanup_singleton_cache()
+
+    def _cleanup_singleton_cache(self):
+        """Remove this instance from the singleton caches.
+
+        EN:
+            Cleans up references in OverseasStock, OverseasFutureoption,
+            and KoreaStock class-level caches so the next ``real()`` call
+            creates a fresh instance.
+
+        KO:
+            OverseasStock, OverseasFutureoption, KoreaStock 클래스 레벨
+            캐시에서 자기 자신을 제거하여 다음 ``real()`` 호출 시 새
+            인스턴스가 생성되도록 합니다.
+        """
+        tm_id = id(self._token_manager)
+        try:
+            from programgarden_finance.ls.overseas_stock import OverseasStock
+            if OverseasStock._real_instances.get(tm_id) is self:
+                del OverseasStock._real_instances[tm_id]
+        except ImportError:
+            pass
+        try:
+            from programgarden_finance.ls.overseas_futureoption import OverseasFutureoption
+            if OverseasFutureoption._real_instances.get(tm_id) is self:
+                del OverseasFutureoption._real_instances[tm_id]
+        except ImportError:
+            pass
+        try:
+            from programgarden_finance.ls.korea_stock import KoreaStock
+            if KoreaStock._real_instances.get(tm_id) is self:
+                del KoreaStock._real_instances[tm_id]
+        except ImportError:
+            pass
+
+    def _on_message(self, message_key: str,  listener: Callable[[Any], None]):
+        """Register a callback to handle messages for a specific TR code.
+
+        EN:
+            Raises if the websocket is not yet connected.
+
+        KO:
+            웹소켓이 연결되지 않은 경우 예외를 발생시키며, 특정 TR 코드에 대한
+            콜백을 등록합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+        bucket = self._on_message_listeners.setdefault(message_key, [])
+        if listener not in bucket:
+            bucket.append(listener)
+
+    @staticmethod
+    def _dispatch_to_listener(loop: asyncio.AbstractEventLoop, on_message: Callable[[Any], Any], resp: Any) -> None:
+        """한 리스너에게 응답 1건을 전달한다 — 비동기면 task, 동기면 threadpool.
+
+        리스너 하나의 예약 실패가 같은 TR 의 다른 리스너를 막지 않도록 예외는 여기서 끝낸다.
+        """
+        # async handler: schedule a task
+        if inspect.iscoroutinefunction(on_message):
+            try:
+                task = asyncio.create_task(on_message(resp))
+            except Exception:
+                # if scheduling fails, skip
+                return
+
+            # attach simple exception logging to avoid silent failures
+            def _on_done(t: asyncio.Task):
+                try:
+                    exc = t.exception()
+                    if exc is not None:
+                        pass
+                        # print(f"handler task error: {exc}")
+                except asyncio.CancelledError:
+                    pass
+
+            task.add_done_callback(_on_done)
+        else:
+            # sync handler: offload to default threadpool so recv loop isn't blocked
+            try:
+                loop.run_in_executor(None, on_message, resp)
+            except Exception:
+                return
+
+    def _on_remove_message(self, message_key: str, listener: Optional[Callable[[Any], Any]] = None):
+        """Detach a registered listener and clean up order subscriptions.
+
+        EN:
+            Removes ``listener`` for ``message_key`` (or every listener under that
+            key when ``listener`` is None) and, when no listeners remain at all,
+            clears auto-registered order streams.
+
+        KO:
+            등록된 리스너를 제거하며 더 이상 리스너가 없을 경우 자동 주문 구독을
+            해제합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+        bucket = self._on_message_listeners.get(message_key)
+        if bucket is not None:
+            if listener is None:
+                # 하위호환: 리스너 미지정이면 그 키의 리스너 전부 제거(1.9.6 이전 동작).
+                bucket.clear()
+            else:
+                try:
+                    bucket.remove(listener)
+                except ValueError:
+                    pass
+            if not bucket:
+                del self._on_message_listeners[message_key]
+
+        if len(self._on_message_listeners) == 0:
+            self._as01234_connect = False
+            self._remove_real_order()
+            self._sc01234_connect = False
+            self._remove_real_order_korea()
+
+    def _add_message_symbols(self, symbols: List[str], tr_cd: str):
+        """Subscribe to real-time feeds for given symbols and TR code.
+
+        EN:
+            Builds the correct request model per TR code and sends a subscribe
+            message with transaction type ``3``. Also tracks subscribed symbols
+            for automatic resubscription after reconnection.
+
+        KO:
+            TR 코드별로 올바른 요청 모델을 생성하고 트랜잭션 타입 ``3`` 으로 구독
+            메시지를 전송합니다. 재연결 시 자동 재구독을 위해 구독 심볼을 추적합니다.
+
+        Parameters:
+            symbols (List[str]): EN: Symbols to subscribe. KO: 구독할 종목 코드들.
+            tr_cd (str): EN: TR identifier to route request. KO: 요청 라우팅용 TR 코드.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # A-6: 연결당 구독 종목 수 cap 검사 (mutate 전에 거부).
+        # 이미 구독 중인 심볼은 재구독(재연결 자동 재구독 포함)에서 카운트 0이므로
+        # current_total 을 넘기지 않는다. 신규 unique 만 cap 에 더해 검사한다.
+        if self._max_subscribe_symbols > 0:
+            existing_for_tr = self._subscribed_symbols.get(tr_cd, [])
+            # 배치 내 중복 제거(순서 보존) 후 기존 미구독 심볼만 신규로 집계
+            new_unique = [
+                sym for sym in dict.fromkeys(symbols)
+                if sym not in existing_for_tr
+            ]
+            current_total = self.get_subscription_count()
+            projected = current_total + len(new_unique)
+            if projected > self._max_subscribe_symbols:
+                raise SubscriptionLimitExceeded(
+                    f"실시간 구독 종목 수가 연결당 상한({self._max_subscribe_symbols})을 "
+                    f"초과합니다: 현재 {current_total}개 구독 + 신규 {len(new_unique)}개 "
+                    f"= {projected}개 요청 (tr_cd={tr_cd}). 이 상한은 SDK 의 보수적 기본값이며 "
+                    f"LS 공식 수치가 아닙니다. "
+                    f"종목 수를 줄이거나 max_subscribe_symbols 를 조정하세요."
+                )
+
+        # 구독 심볼 추적 (재연결 시 자동 재구독용)
+        if tr_cd not in self._subscribed_symbols:
+            self._subscribed_symbols[tr_cd] = []
+        for sym in symbols:
+            if sym not in self._subscribed_symbols[tr_cd]:
+                self._subscribed_symbols[tr_cd].append(sym)
+
+        for symbol in symbols:
+
+            if tr_cd == "GSC":
+                from programgarden_finance.ls.overseas_stock.real.GSC.blocks import GSCRealRequest, GSCRealRequestBody
+                req = GSCRealRequest(
+                    body=GSCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "GSH":
+                from programgarden_finance.ls.overseas_stock.real.GSH.blocks import GSHRealRequest, GSHRealRequestBody
+                req = GSHRealRequest(
+                    body=GSHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "OVC":
+                from programgarden_finance.ls.overseas_futureoption.real.OVC.blocks import OVCRealRequest, OVCRealRequestBody
+                req = OVCRealRequest(
+                    body=OVCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "OVH":
+                from programgarden_finance.ls.overseas_futureoption.real.OVH.blocks import OVHRealRequest, OVHRealRequestBody
+                req = OVHRealRequest(
+                    body=OVHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "WOC":
+                from programgarden_finance.ls.overseas_futureoption.real.WOC.blocks import WOCRealRequest, WOCRealRequestBody
+                req = WOCRealRequest(
+                    body=WOCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "WOH":
+                from programgarden_finance.ls.overseas_futureoption.real.WOH.blocks import WOHRealRequest, WOHRealRequestBody
+                req = WOHRealRequest(
+                    body=WOHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            # ─── 국내주식 시세 TR (8개) ───
+            elif tr_cd == "S3_":
+                from programgarden_finance.ls.korea_stock.real.S3_.blocks import S3_RealRequest, S3_RealRequestBody
+                req = S3_RealRequest(
+                    body=S3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "K3_":
+                from programgarden_finance.ls.korea_stock.real.K3_.blocks import K3_RealRequest, K3_RealRequestBody
+                req = K3_RealRequest(
+                    body=K3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "H1_":
+                from programgarden_finance.ls.korea_stock.real.H1_.blocks import H1_RealRequest, H1_RealRequestBody
+                req = H1_RealRequest(
+                    body=H1_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "HA_":
+                from programgarden_finance.ls.korea_stock.real.HA_.blocks import HA_RealRequest, HA_RealRequestBody
+                req = HA_RealRequest(
+                    body=HA_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "NS3":
+                from programgarden_finance.ls.korea_stock.real.NS3.blocks import NS3RealRequest, NS3RealRequestBody
+                req = NS3RealRequest(body=NS3RealRequestBody(tr_key=symbol))
+            elif tr_cd == "NH1":
+                from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody
+                req = NH1RealRequest(
+                    body=NH1RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "IJ_":
+                from programgarden_finance.ls.korea_stock.real.IJ_.blocks import IJ_RealRequest, IJ_RealRequestBody
+                req = IJ_RealRequest(
+                    body=IJ_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "DVI":
+                from programgarden_finance.ls.korea_stock.real.DVI.blocks import DVIRealRequest, DVIRealRequestBody
+                req = DVIRealRequest(
+                    body=DVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            elif tr_cd == "NVI":
+                from programgarden_finance.ls.korea_stock.real.NVI.blocks import NVIRealRequest, NVIRealRequestBody
+                req = NVIRealRequest(
+                    body=NVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "3"
+            # ─── 공용 TR (broker-agnostic): JIF 장운영정보 ───
+            elif tr_cd == "JIF":
+                from programgarden_finance.ls.common.real.JIF.blocks import JIFRealRequest, JIFRealRequestBody
+                req = JIFRealRequest(
+                    body=JIFRealRequestBody(
+                        tr_cd="JIF",
+                        tr_key="0",
+                    )
+                )
+                req.header.tr_type = "3"
+            else:
+                continue
+
+            if req is None:
+                break
+
+            req.header.token = self._token_manager.access_token
+
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+
+            # print(f"Sending real request: {req}, {self._ws}")
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _remove_message_symbols(self, symbols: List[str], tr_cd: str):
+        """Unsubscribe from real-time feeds for given symbols.
+
+        EN:
+            Reuses the same TR-specific models with transaction type ``4`` to
+            cancel registrations. Also removes symbols from the tracked list.
+
+        KO:
+            동일한 TR 모델을 사용하되 트랜잭션 타입 ``4`` 로 전송하여 실시간 등록을
+            해제합니다. 구독 추적 목록에서도 제거합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # 구독 추적에서 제거
+        if tr_cd in self._subscribed_symbols:
+            for sym in symbols:
+                try:
+                    self._subscribed_symbols[tr_cd].remove(sym)
+                except ValueError:
+                    pass
+            if not self._subscribed_symbols[tr_cd]:
+                del self._subscribed_symbols[tr_cd]
+
+        for symbol in symbols:
+
+            if tr_cd == "GSC":
+                from programgarden_finance.ls.overseas_stock.real.GSC.blocks import GSCRealRequest, GSCRealRequestBody
+                req = GSCRealRequest(
+                    body=GSCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "GSH":
+                from programgarden_finance.ls.overseas_stock.real.GSH.blocks import GSHRealRequest, GSHRealRequestBody
+                req = GSHRealRequest(
+                    body=GSHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "OVC":
+                from programgarden_finance.ls.overseas_futureoption.real.OVC.blocks import OVCRealRequest, OVCRealRequestBody
+                req = OVCRealRequest(
+                    body=OVCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "OVH":
+                from programgarden_finance.ls.overseas_futureoption.real.OVH.blocks import OVHRealRequest, OVHRealRequestBody
+                req = OVHRealRequest(
+                    body=OVHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "WOC":
+                from programgarden_finance.ls.overseas_futureoption.real.WOC.blocks import WOCRealRequest, WOCRealRequestBody
+                req = WOCRealRequest(
+                    body=WOCRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "WOH":
+                from programgarden_finance.ls.overseas_futureoption.real.WOH.blocks import WOHRealRequest, WOHRealRequestBody
+                req = WOHRealRequest(
+                    body=WOHRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            # ─── 국내주식 시세 TR (8개) ───
+            elif tr_cd == "S3_":
+                from programgarden_finance.ls.korea_stock.real.S3_.blocks import S3_RealRequest, S3_RealRequestBody
+                req = S3_RealRequest(
+                    body=S3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "K3_":
+                from programgarden_finance.ls.korea_stock.real.K3_.blocks import K3_RealRequest, K3_RealRequestBody
+                req = K3_RealRequest(
+                    body=K3_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "H1_":
+                from programgarden_finance.ls.korea_stock.real.H1_.blocks import H1_RealRequest, H1_RealRequestBody
+                req = H1_RealRequest(
+                    body=H1_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "HA_":
+                from programgarden_finance.ls.korea_stock.real.HA_.blocks import HA_RealRequest, HA_RealRequestBody
+                req = HA_RealRequest(
+                    body=HA_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "NS3":
+                from programgarden_finance.ls.korea_stock.real.NS3.blocks import NS3RealRequest, NS3RealRequestBody
+                req = NS3RealRequest(body=NS3RealRequestBody(tr_key=symbol))
+                req.header.tr_type = "4"
+            elif tr_cd == "NH1":
+                from programgarden_finance.ls.korea_stock.real.NH1.blocks import NH1RealRequest, NH1RealRequestBody
+                req = NH1RealRequest(
+                    body=NH1RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "IJ_":
+                from programgarden_finance.ls.korea_stock.real.IJ_.blocks import IJ_RealRequest, IJ_RealRequestBody
+                req = IJ_RealRequest(
+                    body=IJ_RealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "DVI":
+                from programgarden_finance.ls.korea_stock.real.DVI.blocks import DVIRealRequest, DVIRealRequestBody
+                req = DVIRealRequest(
+                    body=DVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            elif tr_cd == "NVI":
+                from programgarden_finance.ls.korea_stock.real.NVI.blocks import NVIRealRequest, NVIRealRequestBody
+                req = NVIRealRequest(
+                    body=NVIRealRequestBody(
+                        tr_key=symbol
+                    )
+                )
+                req.header.tr_type = "4"
+            # ─── 공용 TR (broker-agnostic): JIF 장운영정보 해제 ───
+            elif tr_cd == "JIF":
+                from programgarden_finance.ls.common.real.JIF.blocks import JIFRealRequest, JIFRealRequestBody
+                req = JIFRealRequest(
+                    body=JIFRealRequestBody(
+                        tr_cd="JIF",
+                        tr_key="0",
+                    )
+                )
+                req.header.tr_type = "4"
+
+            if req is None:
+                break
+
+            req.header.token = self._token_manager.access_token
+
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _account_event_registrations(self) -> List[Tuple[str, Callable[[], None]]]:
+        """Account-event families as ``(flag attribute, registration method)``.
+
+        EN:
+            A family is re-registered after a reconnect only while its flag is
+            set, i.e. while a listener still uses it. Product clients with
+            their own families (overseas futures TC1/TC2/TC3) override this.
+
+        KO:
+            재연결 뒤에는 플래그가 켜진(리스너가 남아 있는) 계좌 실시간만 다시 등록합니다.
+            자체 계좌 실시간이 있는 상품(해외선물 TC1/TC2/TC3)은 이 메서드를 재정의합니다.
+        """
+        return [
+            ("_as01234_connect", self._add_real_order),
+            ("_sc01234_connect", self._add_real_order_korea),
+        ]
+
+    def _reregister_account_events(self) -> List[str]:
+        """Re-send account registration (``tr_type="1"``) on the current socket.
+
+        EN:
+            Called after a reconnect, following the market-data resubscription.
+            Each active family's flag is reset and its registration method is
+            called again, which sends one registration and sets the flag. A
+            failed send leaves the flag cleared so the next listener retries.
+
+        KO:
+            재연결 직후(시세 재구독 다음) 호출됩니다. 켜져 있던 계좌 실시간마다 플래그를
+            내리고 등록 메서드를 다시 불러 등록 1건을 보내고 플래그를 다시 켭니다. 전송에
+            실패하면 플래그가 꺼진 채로 남아 다음 리스너 등록 때 다시 시도합니다.
+
+        Returns:
+            List[str]: flag attributes whose registration was re-sent.
+        """
+        import logging
+        _logger = logging.getLogger("programgarden_finance.real")
+        resent: List[str] = []
+        for flag, register in self._account_event_registrations():
+            if getattr(self, flag, False) is not True:
+                continue
+            setattr(self, flag, False)
+            try:
+                register()
+            except Exception as exc:
+                _logger.error(f"WebSocket 재연결 후 계좌 실시간 재등록 실패 ({flag}): {exc}")
+                setattr(self, flag, False)
+                continue
+            resent.append(flag)
+            _logger.info(f"WebSocket 재연결 후 계좌 실시간 재등록: {flag}")
+        return resent
+
+    def _add_real_order(self):
+        """Auto-subscribe to all overseas stock order lifecycle feeds.
+
+        EN:
+            Registers AS0/AS2/AS3/AS4 streams in one shot since the broker
+            auto-enables every order channel.
+
+        KO:
+            증권사가 AS0/AS2/AS3/AS4 주문 채널을 자동 활성화하므로 한 번의 호출로
+            해외주식 주문 전체 상태를 등록합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # AS0, AS2, AS3, AS4 어떤걸로 요청해도 증권사에서는 전부 다
+        # 자동 등록되기 때문에 구분지어서 요청할 필요가 없다.
+        if self._as01234_connect is False:
+            self._as01234_connect = True  # 중복 등록 방지
+            from programgarden_finance.ls.overseas_stock.real.AS1.blocks import AS1RealRequest, AS1RealRequestBody, AS1RealRequestHeader
+            req = AS1RealRequest(
+                header=AS1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="1"
+                ),
+                body=AS1RealRequestBody(
+                    tr_cd="AS1",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _remove_real_order(self):
+        """Unsubscribe from overseas stock order lifecycle feeds.
+
+        EN:
+            Sends the deregistration request (transaction type ``2``) using the
+            AS1 schema.
+
+        KO:
+            AS1 스키마를 이용해 트랜잭션 타입 ``2`` 로 실시간 주문 구독을 해제합니다. 한번의 해제로 주문 접수, 체결, 정정, 취소, 거부 실시간 요청을 해제합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._as01234_connect is True:
+            # 실시간은 주문 상태는 전체를 끊는데 json을 만들어야해서 AS1을 가지고 한거다. AS0, AS2, AS3, AS4 아무거나 해도 상관없다.
+            from programgarden_finance.ls.overseas_stock.real.AS1.blocks import AS1RealRequest, AS1RealRequestBody, AS1RealRequestHeader
+            req = AS1RealRequest(
+                header=AS1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="2"
+                ),
+                body=AS1RealRequestBody(
+                    tr_cd="",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _add_real_order_korea(self):
+        """Auto-subscribe to all Korean stock order lifecycle feeds.
+
+        EN:
+            Registers SC0-SC4 streams in one shot since the broker
+            auto-enables every order channel. Uses SC1 schema to send
+            the registration request with transaction type ``1``.
+
+        KO:
+            증권사가 SC0-SC4 주문 채널을 자동 활성화하므로 한 번의 호출로
+            국내주식 주문 전체 상태를 등록합니다. SC1 스키마를 사용하여
+            트랜잭션 타입 ``1`` 로 등록 요청을 전송합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # SC0~SC4 어떤 걸로 요청해도 증권사에서 전부 자동 등록되므로
+        # SC1 하나로 등록한다. 중복 등록을 _sc01234_connect 플래그로 방지.
+        if self._sc01234_connect is False:
+            self._sc01234_connect = True
+            from programgarden_finance.ls.korea_stock.real.SC1.blocks import SC1RealRequest, SC1RealRequestBody, SC1RealRequestHeader
+            req = SC1RealRequest(
+                header=SC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="1"
+                ),
+                body=SC1RealRequestBody(
+                    tr_cd="SC1",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))
+
+    def _remove_real_order_korea(self):
+        """Unsubscribe from Korean stock order lifecycle feeds.
+
+        EN:
+            Sends the deregistration request (transaction type ``2``) using
+            the SC1 schema. A single deregistration cancels all five order
+            event types (SC0-SC4).
+
+        KO:
+            SC1 스키마를 이용해 트랜잭션 타입 ``2`` 로 실시간 주문 구독을
+            해제합니다. 한 번의 해제로 접수/체결/정정/취소/거부 5개 이벤트를
+            모두 해제합니다.
+        """
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._sc01234_connect is True:
+            # SC0~SC4 아무거나로 해제해도 전체 해제됨. SC1을 사용.
+            from programgarden_finance.ls.korea_stock.real.SC1.blocks import SC1RealRequest, SC1RealRequestBody, SC1RealRequestHeader
+            req = SC1RealRequest(
+                header=SC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="2"
+                ),
+                body=SC1RealRequestBody(
+                    tr_cd="",
+                    tr_key="",
+                )
+            )
+            req = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            asyncio.create_task(self._ws.send(json.dumps(req)))

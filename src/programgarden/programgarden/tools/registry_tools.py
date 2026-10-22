@@ -1,0 +1,141 @@
+"""
+ProgramGarden - Registry Tools
+
+Node type and plugin registry query tools
+"""
+
+from typing import Optional, List, Dict, Any
+
+
+def list_node_types(
+    category: Optional[str] = None,
+    locale: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    List available node types
+
+    Args:
+        category: Category filter (infra, realtime, data, symbol, trigger,
+                  condition, risk, order, event, display, group)
+        locale: Locale for i18n translation (e.g., "ko", "en"). If None, returns i18n keys.
+
+    Returns:
+        List of node type schemas
+
+    Example:
+        >>> list_node_types("condition")
+        [{"node_type": "ConditionNode", "display_name": "i18n:nodes.ConditionNode.name", ...}]
+        >>> list_node_types("condition", locale="ko")
+        [{"node_type": "ConditionNode", "display_name": "조건 노드", ...}]
+    """
+    from programgarden_core import NodeTypeRegistry
+    from programgarden.replay_semantics import attach_execution
+
+    registry = NodeTypeRegistry()
+    schemas = registry.list_schemas(category=category, locale=locale)
+    # Attach the machine-readable execution-semantics block and merge its rendered
+    # lines into `features` (attach_execution returns a copy — the cached schema is
+    # untouched).
+    return [attach_execution(schema).model_dump() for schema in schemas]
+
+
+def get_node_schema(node_type: str, locale: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Get detailed schema for a specific node type
+
+    Args:
+        node_type: Node type name (e.g., ConditionNode, BrokerNode)
+        locale: Locale for i18n translation (e.g., "ko", "en"). If None, returns i18n keys.
+
+    Returns:
+        Node schema or None
+
+    Example:
+        >>> get_node_schema("ConditionNode")
+        {"node_type": "ConditionNode", "display_name": "i18n:nodes.ConditionNode.name", ...}
+    """
+    from programgarden_core import NodeTypeRegistry
+    from programgarden.replay_semantics import attach_execution
+
+    registry = NodeTypeRegistry()
+    schema = registry.get_schema(node_type, locale=locale)
+    if schema:
+        return attach_execution(schema).model_dump()
+
+    return None
+
+
+def list_plugins(
+    category: Optional[str] = None,
+    product: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    List available plugins
+
+    Args:
+        category: Plugin category filter (technical, position)
+        product: Product type filter (overseas_stock, overseas_futures)
+
+    Returns:
+        List of plugin schemas
+
+    Example:
+        >>> list_plugins("technical", "overseas_stock")
+        [{"id": "RSI", ...}, {"id": "MACD", ...}, ...]
+    """
+    from programgarden_core import PluginRegistry
+    from programgarden_core.registry.plugin_registry import PluginCategory, ProductType
+
+    registry = PluginRegistry()
+
+    cat = PluginCategory(category) if category else None
+    prod = ProductType(product) if product else None
+
+    schemas = registry.list_plugins(category=cat, product=prod)
+
+    return [schema.model_dump() for schema in schemas]
+
+
+def get_plugin_schema(plugin_id: str, version: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Get detailed schema for a specific plugin
+
+    Args:
+        plugin_id: Plugin ID (e.g., RSI, MarketOrder)
+        version: Version (latest if omitted)
+
+    Returns:
+        Plugin schema or None
+
+    Example:
+        >>> get_plugin_schema("RSI")
+        {"id": "RSI", "params_schema": {"period": {"type": "int"}, ...}, ...}
+    """
+    from programgarden_core import PluginRegistry
+
+    registry = PluginRegistry()
+    schema = registry.get_schema(plugin_id, version)
+
+    return schema.model_dump() if schema else None
+
+
+def list_categories(locale: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    List node categories
+
+    Args:
+        locale: Locale for i18n translation (e.g., "ko", "en"). If None, returns raw category names.
+
+    Returns:
+        List of category info (id, name, description, count)
+
+    Example:
+        >>> list_categories()
+        [{"id": "infra", "name": "INFRA", "count": 2, "description": ""}, ...]
+        >>> list_categories(locale="ko")
+        [{"id": "infra", "name": "인프라", "count": 2, "description": "워크플로우 기본 구성"}, ...]
+    """
+    from programgarden_core import NodeTypeRegistry
+
+    registry = NodeTypeRegistry()
+    return registry.list_categories(locale=locale)

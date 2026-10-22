@@ -1,0 +1,137 @@
+"""⑭ ScheduleNode / ⑰ PositionSizingNode schema hardening (2026-08-08 e2e track).
+
+Guards the model-level half of the "looks configured, behaves differently"
+fixes:
+
+* ⑭ ScheduleNode.cron is required with NO default (the old "*/5 * * * *"
+  default let a schedule with no cron silently run every 5 minutes). The
+  executor-only `count` key is now a declared model field (schema/executor
+  duality removed).
+* ⑰ PositionSizingNode.method is required with NO default (the old
+  "fixed_percent" default silently confirmed hallucinated keys). A sentinel
+  None keeps model construction working; the executor enforces at runtime.
+
+Plan: .claude/plans/2026-08-08-e2e-improvement-track-plan.md §3.3.1 / §3.3.2.
+"""
+
+from __future__ import annotations
+
+from programgarden_core.nodes.trigger import ScheduleNode
+from programgarden_core.nodes.risk import PositionSizingNode
+
+
+# ── ⑭ ScheduleNode ────────────────────────────────────────────────────────
+
+def test_schedule_cron_field_schema_required_no_default():
+    """cron is required=True with NO default — no "generation may omit it" signal."""
+    fs = ScheduleNode.get_field_schema()
+    assert "cron" in fs
+    cron = fs["cron"]
+    assert cron.required is True, "cron must be required"
+    assert cron.default is None, (
+        "cron must NOT carry a default — a default re-introduces the silent "
+        "5-minute fallback signal"
+    )
+
+
+def test_schedule_model_cron_is_required():
+    """Constructing a ScheduleNode without cron raises (required model field)."""
+    import pytest
+    with pytest.raises(Exception):
+        ScheduleNode(id="s")
+    # With cron it constructs fine.
+    node = ScheduleNode(id="s", cron="*/5 * * * *")
+    assert node.cron == "*/5 * * * *"
+
+
+def test_schedule_count_is_declared_field_not_executor_only():
+    """count (executor safety cap) is a declared model + schema field now.
+
+    Owner 2026-09-26: the default is None (unbounded — run until the workflow is
+    stopped), not 1000. count remains a declared field so it is visible to
+    validation (schema/executor duality removed)."""
+    node = ScheduleNode(id="s", cron="0 9 * * *")
+    assert node.count is None  # omitted = unbounded (no cycle cap)
+    fs = ScheduleNode.get_field_schema()
+    assert "count" in fs, "count must be exposed in the schema (duality removed)"
+    assert fs["count"].default is None
+
+
+def test_schedule_omitted_bounds_report_none_and_validate():
+    """Owner 2026-09-26 (a): a ScheduleNode with no count / max_duration_hours
+    constructs fine and reports None for both (unbounded — runs until stopped)."""
+    node = ScheduleNode(id="s", cron="0 9 * * *")
+    assert node.count is None
+    assert node.max_duration_hours is None
+    # A provided value is still accepted.
+    bounded = ScheduleNode(id="s2", cron="0 9 * * *", count=5, max_duration_hours=3.0)
+    assert bounded.count == 5
+    assert bounded.max_duration_hours == 3.0
+
+
+def test_schedule_max_duration_hours_has_no_720_upper_bound():
+    """Owner 2026-09-26 (d): the catalog schema no longer caps max_duration_hours
+    at 720 — an omitted value means unbounded, so there is no max_value to expose."""
+    fs = ScheduleNode.get_field_schema()
+    md = fs["max_duration_hours"]
+    assert md.max_value is None, "max_duration_hours must not advertise a 720h ceiling"
+    assert md.default is None, "max_duration_hours default is None (unbounded)"
+
+
+def test_schedule_anti_patterns_flag_mode_schedule_keys():
+    """The AI-facing anti-patterns explicitly warn against {mode, schedule}."""
+    joined = " ".join(
+        f"{ap.get('pattern','')} {ap.get('reason','')} {ap.get('alternative','')}"
+        for ap in ScheduleNode._anti_patterns
+    )
+    assert "mode" in joined and "schedule" in joined
+    assert "cron" in joined
+
+
+# ── jitter_seconds (owner 2026-09-28: shared-egress-IP stampede protection) ──
+
+def test_schedule_jitter_seconds_defaults_to_zero():
+    """Omitting jitter_seconds means no jitter — exactly on the cron instant."""
+    node = ScheduleNode(id="s", cron="0 9 * * *")
+    assert node.jitter_seconds == 0
+
+
+def test_schedule_jitter_seconds_field_schema_range():
+    """jitter_seconds is an optional SETTINGS int, default 0, bounded 0..300."""
+    fs = ScheduleNode.get_field_schema()
+    assert "jitter_seconds" in fs
+    j = fs["jitter_seconds"]
+    assert j.default == 0
+    assert j.min_value == 0
+    assert j.max_value == 300
+
+
+def test_schedule_jitter_seconds_model_bounds_enforced():
+    """The model rejects negative jitter and jitter above the 300 s ceiling."""
+    import pytest as _pytest
+    ok = ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=30)
+    assert ok.jitter_seconds == 30
+    with _pytest.raises(Exception):
+        ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=-1)
+    with _pytest.raises(Exception):
+        ScheduleNode(id="s", cron="0 9 * * *", jitter_seconds=301)
+
+
+# ── ⑰ PositionSizingNode ──────────────────────────────────────────────────
+
+def test_sizing_method_field_schema_required_no_default():
+    """method is required=True with NO default (the fixed_percent default was the
+    silent-fallback root)."""
+    fs = PositionSizingNode.get_field_schema()
+    assert "method" in fs
+    method = fs["method"]
+    assert method.required is True
+    assert method.default is None, "method must NOT carry a default"
+
+
+def test_sizing_model_method_sentinel_allows_construction():
+    """method uses a None sentinel so model construction keeps working
+    (PositionSizingNode(id=...) is used in tests / catalog placeholders); the
+    executor enforces presence at runtime, not the model."""
+    node = PositionSizingNode(id="ps")
+    assert node.method is None

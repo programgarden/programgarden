@@ -1,0 +1,331 @@
+from programgarden_finance.ls.real_base import RealRequestAbstract, DEFAULT_MAX_SUBSCRIBE_SYMBOLS
+from programgarden_finance.ls.token_manager import TokenManager
+from programgarden_core.bases import BaseReal
+from .OVC import RealOVC
+from .OVC.blocks import (
+    OVCRealRequest,
+    OVCRealRequestHeader,
+    OVCRealRequestBody,
+    OVCRealResponseBody,
+    OVCRealResponseHeader,
+    OVCRealResponse,
+)
+from .OVH import RealOVH
+from .OVH.blocks import (
+    OVHRealRequest,
+    OVHRealRequestHeader,
+    OVHRealRequestBody,
+    OVHRealResponseBody,
+    OVHRealResponseHeader,
+    OVHRealResponse,
+)
+from .WOC import RealWOC
+from .WOC.blocks import (
+    WOCRealRequest,
+    WOCRealRequestHeader,
+    WOCRealRequestBody,
+    WOCRealResponseBody,
+    WOCRealResponseHeader,
+    WOCRealResponse,
+)
+from .WOH import RealWOH
+from .WOH.blocks import (
+    WOHRealRequest,
+    WOHRealRequestHeader,
+    WOHRealRequestBody,
+    WOHRealResponseBody,
+    WOHRealResponseHeader,
+    WOHRealResponse,
+)
+from .TC1 import RealTC1
+from .TC1.blocks import (
+    TC1RealRequest,
+    TC1RealRequestHeader,
+    TC1RealRequestBody,
+    TC1RealResponseBody,
+    TC1RealResponseHeader,
+    TC1RealResponse,
+)
+from .TC2.client import RealTC2
+from .TC2.blocks import (
+    TC2RealRequest,
+    TC2RealRequestHeader,
+    TC2RealRequestBody,
+    TC2RealResponseBody,
+    TC2RealResponseHeader,
+    TC2RealResponse,
+)
+from .TC3.client import RealTC3
+from .TC3.blocks import (
+    TC3RealRequest,
+    TC3RealRequestHeader,
+    TC3RealRequestBody,
+    TC3RealResponseBody,
+    TC3RealResponseHeader,
+    TC3RealResponse,
+)
+
+
+from programgarden_core.korea_alias import require_korean_alias
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class Real(RealRequestAbstract, BaseReal):
+    """
+    LS증권 OpenAPI 실시간 클래스 (해외선물옵션)
+    """
+
+    def __init__(
+        self,
+        token_manager: TokenManager,
+        reconnect=True,
+        recv_timeout=5.0,
+        ping_interval=30.0,
+        ping_timeout=5.0,
+        max_backoff=60.0,
+        max_subscribe_symbols: int = DEFAULT_MAX_SUBSCRIBE_SYMBOLS,
+        reregister_account_events_on_reconnect: bool = True,
+    ):
+        super().__init__(
+            reconnect=reconnect,
+            recv_timeout=recv_timeout,
+            ping_interval=ping_interval,
+            ping_timeout=ping_timeout,
+            max_backoff=max_backoff,
+            token_manager=token_manager,
+            max_subscribe_symbols=max_subscribe_symbols,
+            reregister_account_events_on_reconnect=reregister_account_events_on_reconnect,
+        )
+        if not token_manager:
+            raise ValueError("token_manager is required")
+        self.token_manager = token_manager
+        self._tc123_connect = False  # 해외선물 주문 구독 상태
+
+    def _account_event_registrations(self):
+        """해외선물 계좌 실시간(TC1/TC2/TC3) 한 가족만 재연결 재등록 대상으로 둡니다."""
+        return [("_tc123_connect", self._add_real_order)]
+
+    def _add_real_order(self):
+        """해외선물 주문 실시간 구독 (TC1/TC2/TC3)
+        
+        TC1: 주문접수(HO01 ACK / HO04 Pending), TC2: 주문응답(HO02 확인 / HO03 거부),
+        TC3: 주문체결(CH01). 가이드 apis[30] svc_id 정의 기준이며, TC2 는 체결이 아닙니다.
+        어떤 것으로 요청해도 증권사에서 전부 자동 등록되므로 한 번만 요청합니다.
+        """
+        import asyncio
+        import json
+        
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        # TC1, TC2, TC3 중 하나로 요청하면 모두 자동 등록됨
+        if self._tc123_connect is False:
+            self._tc123_connect = True  # 중복 등록 방지
+            req = TC1RealRequest(
+                header=TC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="1"  # 1: 등록
+                ),
+                body=TC1RealRequestBody(
+                    tr_cd="TC1",
+                    tr_key="",
+                )
+            )
+            req_dict = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            logger.debug(
+                "[해외선물 Real] TC1/TC2/TC3 주문 실시간 구독 요청: tr_cd=%s tr_type=%s tr_key=%r",
+                req.body.tr_cd, req.header.tr_type, req.body.tr_key,
+            )
+            asyncio.create_task(self._ws.send(json.dumps(req_dict)))
+
+    def _remove_real_order(self):
+        """해외선물 주문 실시간 해제 (TC1/TC2/TC3 계좌해제, ``tr_type="2"``)
+
+        마지막 리스너가 빠질 때(`_on_remove_message`) 호출됩니다. 등록돼 있을 때만
+        한 번 보내고 플래그를 내립니다. 본문은 등록과 같은 ``tr_cd="TC1"``,
+        ``tr_key=""`` 입니다 — 가이드 apis[30] 은 ``tr_cd`` 를 필수 필드로, ``tr_key``
+        만 "계좌등록/해제 일 경우 필수값 아님"으로 둡니다.
+
+        Phase-0 F2(LS 모의 해외선물, 2026-10-15): 한 소켓에서 이 해제를 보내면 그
+        소켓만 이벤트가 끊기고, 같은 토큰으로 등록한 다른 소켓은 계속 받았습니다.
+        실계좌에서는 관측하지 않았습니다.
+        """
+        import asyncio
+        import json
+
+        if not self._connected_event.is_set():
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        if self._tc123_connect is True:
+            req = TC1RealRequest(
+                header=TC1RealRequestHeader(
+                    token=self._token_manager.access_token,
+                    tr_type="2"  # 2: 계좌해제
+                ),
+                body=TC1RealRequestBody(
+                    tr_cd="TC1",
+                    tr_key="",
+                )
+            )
+            req_dict = {"header": req.header.model_dump(), "body": req.body.model_dump()}
+            logger.debug(
+                "[해외선물 Real] TC1/TC2/TC3 주문 실시간 해제 요청: tr_cd=%s tr_type=%s",
+                req.body.tr_cd, req.header.tr_type,
+            )
+            asyncio.create_task(self._ws.send(json.dumps(req_dict)))
+            self._tc123_connect = False
+
+    @require_korean_alias
+    def OVC(self) -> RealOVC:
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealOVC(
+            parent=self
+        )
+
+    해외선물체결 = OVC
+    해외선물체결.__doc__ = "해외 선물 체결(틱)을 요청합니다."
+
+    @require_korean_alias
+    def OVH(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealOVH(
+            parent=self
+        )
+
+    해외선물호가 = OVH
+    해외선물호가.__doc__ = "해외 선물 호가(틱)을 요청합니다."
+
+    @require_korean_alias
+    def WOC(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealWOC(
+            parent=self
+        )
+
+    해외옵션체결 = WOC
+    해외옵션체결.__doc__ = "해외 옵션 체결(틱)을 요청합니다."
+
+    @require_korean_alias
+    def WOH(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealWOH(
+            parent=self
+        )
+
+    해외옵션호가 = WOH
+    해외옵션호가.__doc__ = "해외 옵션 호가(틱)을 요청합니다."
+
+    @require_korean_alias
+    def TC1(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealTC1(
+            parent=self
+        )
+
+    해외선물주문접수 = TC1
+    해외선물주문접수.__doc__ = "해외 선물 주문 접수를 요청합니다."
+
+    @require_korean_alias
+    def TC2(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealTC2(
+            parent=self
+        )
+
+    해외선물주문응답 = TC2
+    해외선물주문응답.__doc__ = "해외 선물 주문 응답을 요청합니다."
+
+    @require_korean_alias
+    def TC3(self):
+        if self._ws is None:
+            raise RuntimeError("WebSocket is not connected")
+
+        return RealTC3(
+            parent=self
+        )
+
+    해외선물주문체결 = TC3
+    해외선물주문체결.__doc__ = "해외 선물 주문 체결을 요청합니다."
+
+
+__all__ = [
+    Real,
+
+    OVCRealRequest,
+    OVCRealRequestBody,
+    OVCRealRequestHeader,
+    OVCRealResponseBody,
+    OVCRealResponseHeader,
+    OVCRealResponse,
+
+    OVHRealRequest,
+    OVHRealRequestBody,
+    OVHRealRequestHeader,
+    OVHRealResponseBody,
+    OVHRealResponseHeader,
+    OVHRealResponse,
+
+    WOCRealRequest,
+    WOCRealRequestBody,
+    WOCRealRequestHeader,
+    WOCRealResponseBody,
+    WOCRealResponseHeader,
+    WOCRealResponse,
+
+    WOHRealRequest,
+    WOHRealRequestBody,
+    WOHRealRequestHeader,
+    WOHRealResponseBody,
+    WOHRealResponseHeader,
+    WOHRealResponse,
+
+    TC1RealRequest,
+    TC1RealRequestBody,
+    TC1RealRequestHeader,
+    TC1RealResponseBody,
+    TC1RealResponseHeader,
+    TC1RealResponse,
+
+    TC2RealRequest,
+    TC2RealRequestBody,
+    TC2RealRequestHeader,
+    TC2RealResponseBody,
+    TC2RealResponseHeader,
+    TC2RealResponse,
+
+    TC3RealRequest,
+    TC3RealRequestBody,
+    TC3RealRequestHeader,
+    TC3RealResponseBody,
+    TC3RealResponseHeader,
+    TC3RealResponse,
+
+    RealOVC,
+    RealOVH,
+    RealWOC,
+    RealWOH,
+    RealTC1,
+    RealTC2,
+    RealTC3,
+]

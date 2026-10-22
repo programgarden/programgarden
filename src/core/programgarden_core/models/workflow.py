@@ -1,0 +1,413 @@
+"""
+ProgramGarden Core - Workflow 모델
+
+워크플로우 정의 (Definition Layer)
+"""
+
+from typing import Optional, List, Dict, Any, Union
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from enum import Enum
+
+from programgarden_core.models.edge import Edge
+from programgarden_core.models.resource import ResourceLimits
+
+
+def validate_broker_connections(nodes: List[Dict[str, Any]]) -> List["ErrorInfo"]:
+    """Allow at most one account/product connection, including unbound brokers.
+
+    Inspect registered connection ports so aliases and custom broker node types
+    use the same rule. Reusing one connection through multiple edges is allowed;
+    account-free workflows and unrelated credential types remain unaffected.
+    """
+    from programgarden_core.registry import NodeTypeRegistry
+    from programgarden_core.models.validation import ErrorCode, ErrorLocation, build_error
+
+    registry = NodeTypeRegistry()
+    brokers = []
+    for node in nodes:
+        schema = registry.get_schema(node.get("type"))
+        if schema and any(port.get("type") == "broker_connection" for port in schema.outputs):
+            brokers.append(node)
+    if len(brokers) <= 1:
+        return []
+
+    broker_ids = [node.get("id") for node in brokers]
+    return [
+        build_error(
+            ErrorCode.DUPLICATE_BROKER_NODE,
+            "Duplicate broker connection: a workflow allows only one account and one product",
+            location=ErrorLocation(node_id=node.get("id"), node_type=node.get("type")),
+            suggestion=(
+                "Reuse the existing broker node for every consumer. Create a separate "
+                "workflow for another account or product; do not add another broker."
+            ),
+            details={
+                "existing": broker_ids[0], "duplicate": node.get("id"),
+                "broker_node_ids": broker_ids, "max_broker_connections": 1,
+            },
+        )
+        for node in brokers[1:]
+    ]
+
+
+class InputType(str, Enum):
+    """워크플로우 입력 타입"""
+
+    CREDENTIAL = "credential"
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    SYMBOL_LIST = "symbol_list"
+    OBJECT = "object"
+
+
+class WorkflowInput(BaseModel):
+    """워크플로우 입력 파라미터 정의"""
+
+    type: InputType = Field(..., description="입력 타입")
+    required: bool = Field(default=True, description="필수 여부")
+    default: Optional[Any] = Field(default=None, description="기본값")
+    description: Optional[str] = Field(default=None, description="설명")
+
+
+class CredentialReference(BaseModel):
+    """
+    워크플로우 내 Credential 참조
+
+    JSON 공유 시 data의 value를 비워둠.
+    Python 개발자가 직접 사용 시 data의 value에 값을 채워 실행 가능.
+
+    Example (공유용):
+        {
+            "credential_id": "broker-cred",
+            "type": "broker_ls",
+            "name": "LS증권 API",
+            "data": [
+                {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"}
+            ]
+        }
+
+    Example (실행용):
+        {
+            "credential_id": "broker-cred",
+            "type": "broker_ls",
+            "name": "LS증권 API",
+            "data": [
+                {"key": "appkey", "value": "실제값", "type": "password", "label": "App Key"},
+                {"key": "appsecret", "value": "실제값", "type": "password", "label": "App Secret"}
+            ]
+        }
+    """
+
+    credential_id: str = Field(..., description="Credential 고유 ID")
+    type: str = Field(..., description="Credential 타입 (broker_ls, telegram 등)")
+    name: Optional[str] = Field(default=None, description="표시 이름")
+    description: Optional[str] = Field(default=None, description="설명")
+    data: Any = Field(
+        default_factory=list,
+        description="Credential 데이터 (리스트 또는 dict 형태)"
+    )
+
+
+class NotePosition(BaseModel):
+    """메모 캔버스 위치"""
+
+    x: float = 0.0
+    y: float = 0.0
+
+
+class StickyNote(BaseModel):
+    """
+    워크플로우 메모 (비실행 주석)
+
+    캔버스에 표시되는 Markdown 메모.
+    노드 시스템과 완전 분리 — Executor가 인식하지 않음.
+    """
+
+    id: str = Field(..., description="메모 고유 ID")
+    content: str = Field(default="", description="Markdown 콘텐츠")
+    color: int = Field(
+        default=0,
+        ge=0,
+        le=7,
+        description="배경색 코드 (0=노랑, 1=파랑, 2=초록, 3=빨강, 4=보라, 5=회색, 6=주황, 7=분홍)",
+    )
+    width: int = Field(default=300, ge=100, description="너비 (px)")
+    height: int = Field(default=200, ge=80, description="높이 (px)")
+    position: NotePosition = Field(
+        default_factory=NotePosition,
+        description="캔버스 위치 (x, y)",
+    )
+
+
+class WorkflowDefinition(BaseModel):
+    """
+    워크플로우 정의 (Definition Layer)
+
+    노드와 엣지로 구성된 DAG(Directed Acyclic Graph) 형태의 전략 정의.
+    버전 관리되며 재사용 가능.
+
+    Example:
+        {
+            "id": "strategy-rsi-bb",
+            "version": "1.0.0",
+            "name": "RSI + 볼린저밴드 매수전략",
+            "nodes": [...],
+            "edges": [...]
+        }
+    """
+
+    id: str = Field(..., description="워크플로우 고유 ID")
+    version: str = Field(default="1.0.0", description="버전 (semantic versioning)")
+    name: str = Field(..., description="워크플로우 이름")
+    description: Optional[str] = Field(default=None, description="워크플로우 설명")
+
+    # 입력 파라미터 정의
+    inputs: Dict[str, WorkflowInput] = Field(
+        default_factory=dict,
+        description="워크플로우 입력 파라미터 (credential_id, symbols 등)",
+    )
+
+    # 리소스 제한 (선택사항, 미설정 시 자동 감지)
+    resource_limits: Optional[ResourceLimits] = Field(
+        default=None,
+        description="리소스 제한 설정 (CPU, RAM, 워커 수 등). None이면 시스템 기반 자동 감지",
+    )
+
+    # 노드와 엣지
+    nodes: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="노드 정의 목록",
+    )
+    edges: List[Edge] = Field(
+        default_factory=list,
+        description="엣지(연결) 정의 목록",
+    )
+
+    # Credential 참조 (워크플로우에서 사용하는 인증 정보)
+    credentials: List[CredentialReference] = Field(
+        default_factory=list,
+        description="워크플로우에서 사용하는 Credential 목록",
+    )
+
+    # 메모 (Sticky Notes)
+    notes: List[StickyNote] = Field(
+        default_factory=list,
+        description="워크플로우 메모 목록 (캔버스 주석, 실행에 영향 없음)",
+    )
+
+    # 메타데이터
+    tags: List[str] = Field(
+        default_factory=list,
+        description="태그 목록 (검색용)",
+    )
+    author: Optional[str] = Field(default=None, description="작성자")
+    created_at: Optional[datetime] = Field(
+        default_factory=datetime.utcnow,
+        description="생성 시간",
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        description="수정 시간",
+    )
+
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
+
+    def get_node_ids(self) -> List[str]:
+        """모든 노드 ID 반환"""
+        return [node.get("id") for node in self.nodes if node.get("id")]
+
+    def get_node_by_id(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """ID로 노드 조회"""
+        for node in self.nodes:
+            if node.get("id") == node_id:
+                return node
+        return None
+
+    def get_edges_from_node(self, node_id: str) -> List[Edge]:
+        """특정 노드에서 나가는 엣지 조회"""
+        return [edge for edge in self.edges if edge.from_node_id == node_id]
+
+    def get_edges_to_node(self, node_id: str) -> List[Edge]:
+        """특정 노드로 들어오는 엣지 조회"""
+        return [edge for edge in self.edges if edge.to_node_id == node_id]
+
+    def get_start_nodes(self) -> List[Dict[str, Any]]:
+        """시작 노드(입력 엣지 없는 노드) 조회"""
+        nodes_with_input = {edge.to_node_id for edge in self.edges}
+        return [
+            node for node in self.nodes
+            if node.get("id") not in nodes_with_input
+        ]
+
+    def validate_structure(self) -> List["ErrorInfo"]:
+        """Validate the workflow's structural invariants.
+
+        Returns a list of `ErrorInfo` objects. An empty list means no
+        structural problems were found. Callers should append the result
+        to a `ValidationResult` via `result.add(...)` for each entry.
+        """
+        from programgarden_core.models.validation import (
+            ErrorCode,
+            ErrorInfo,
+            ErrorLocation,
+            build_error,
+        )
+
+        errors: List[ErrorInfo] = validate_broker_connections(self.nodes)
+
+        # 1. Duplicate node IDs
+        node_ids = self.get_node_ids()
+        if len(node_ids) != len(set(node_ids)):
+            seen: set = set()
+            dupes: List[str] = []
+            for nid in node_ids:
+                if nid in seen and nid not in dupes:
+                    dupes.append(nid)
+                seen.add(nid)
+            for dup_id in dupes:
+                errors.append(
+                    build_error(
+                        ErrorCode.DUPLICATE_NODE_ID,
+                        f"Duplicate node id '{dup_id}'",
+                        location=ErrorLocation(node_id=dup_id),
+                        suggestion="Rename one of the duplicated nodes so each id is unique.",
+                    )
+                )
+
+        # 2. Edge node references
+        node_id_set = set(node_ids)
+        for idx, edge in enumerate(self.edges):
+            if edge.from_node_id not in node_id_set:
+                errors.append(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'from' references non-existent node '{edge.from_node_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=edge.from_node_id,
+                            edge_to=edge.to_node_id,
+                        ),
+                        available_values=sorted(node_id_set),
+                    )
+                )
+            if edge.to_node_id not in node_id_set:
+                errors.append(
+                    build_error(
+                        ErrorCode.INVALID_EDGE_REF,
+                        f"Edge 'to' references non-existent node '{edge.to_node_id}'",
+                        location=ErrorLocation(
+                            edge_index=idx,
+                            edge_from=edge.from_node_id,
+                            edge_to=edge.to_node_id,
+                        ),
+                        available_values=sorted(node_id_set),
+                    )
+                )
+
+        # 3. StartNode invariants
+        start_nodes = [n for n in self.nodes if n.get("type") == "StartNode"]
+        if not start_nodes:
+            errors.append(
+                build_error(
+                    ErrorCode.MISSING_START_NODE,
+                    "Workflow must contain exactly one StartNode",
+                    suggestion="Add a StartNode at the entry of the main flow.",
+                )
+            )
+        elif len(start_nodes) > 1:
+            offending_ids = [n.get("id") for n in start_nodes if n.get("id")]
+            errors.append(
+                build_error(
+                    ErrorCode.MULTIPLE_START_NODES,
+                    f"Workflow has {len(start_nodes)} StartNodes; only one is allowed",
+                    location=ErrorLocation(
+                        node_id=offending_ids[0] if offending_ids else None,
+                        node_type="StartNode",
+                    ),
+                    suggestion="Keep one StartNode and remove the others (use ScheduleNode for cron triggers).",
+                    details={"start_node_ids": offending_ids},
+                )
+            )
+
+        # 4. Cycle detection
+        cycle = self._detect_cycle()
+        if cycle:
+            cycle_path = " -> ".join(cycle)
+            errors.append(
+                build_error(
+                    ErrorCode.CYCLE_DETECTED,
+                    f"Cycle detected in the workflow DAG: {cycle_path}",
+                    location=ErrorLocation(node_id=cycle[0] if cycle else None),
+                    suggestion="Remove one of the edges in the cycle so execution order can be resolved.",
+                    details={"cycle_path": cycle},
+                )
+            )
+
+        return errors
+
+    def _detect_cycle(self) -> Optional[List[str]]:
+        """
+        DFS 기반 순환 참조 탐지 (3-color 알고리즘)
+
+        Returns:
+            순환 경로 리스트 (없으면 None)
+            예: ["node-a", "node-b", "node-c", "node-a"]
+        """
+        # 인접 리스트 구성
+        adjacency: Dict[str, List[str]] = {
+            node.get("id"): [] for node in self.nodes if node.get("id")
+        }
+        for edge in self.edges:
+            from_id = edge.from_node_id
+            to_id = edge.to_node_id
+            if from_id in adjacency:
+                adjacency[from_id].append(to_id)
+
+        # 방문 상태: 0=WHITE(미방문), 1=GRAY(방문중), 2=BLACK(완료)
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: Dict[str, int] = {node_id: WHITE for node_id in adjacency}
+        parent: Dict[str, Optional[str]] = {node_id: None for node_id in adjacency}
+
+        def dfs(node_id: str) -> Optional[List[str]]:
+            """DFS 탐색, 순환 발견 시 경로 반환"""
+            color[node_id] = GRAY
+
+            for neighbor in adjacency.get(node_id, []):
+                if neighbor not in color:
+                    # 존재하지 않는 노드 참조 (다른 검증에서 처리)
+                    continue
+
+                if color[neighbor] == GRAY:
+                    # 순환 발견! 경로 구성
+                    cycle = [neighbor]
+                    current = node_id
+                    while current != neighbor:
+                        cycle.append(current)
+                        current = parent.get(current)
+                        if current is None:
+                            break
+                    cycle.append(neighbor)
+                    return list(reversed(cycle))
+
+                if color[neighbor] == WHITE:
+                    parent[neighbor] = node_id
+                    result = dfs(neighbor)
+                    if result:
+                        return result
+
+            color[node_id] = BLACK
+            return None
+
+        # 모든 노드에서 DFS 시작 (연결되지 않은 컴포넌트 처리)
+        for node_id in adjacency:
+            if color[node_id] == WHITE:
+                result = dfs(node_id)
+                if result:
+                    return result
+
+        return None

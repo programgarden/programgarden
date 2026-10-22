@@ -1,0 +1,252 @@
+"""
+ProgramGarden Core - Futures Market Data Node
+
+해외선물 시세 조회:
+- OverseasFuturesMarketDataNode: 해외선물 REST API 시세 조회 (CME, EUREX, SGX, HKEX)
+
+Item-based execution:
+- Input: 단일 symbol (SplitNode에서 분리된 아이템)
+- Output: 단일 value (해당 종목의 시세)
+"""
+
+from typing import Any, List, Literal, Dict, ClassVar, Optional, TYPE_CHECKING
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from programgarden_core.models.field_binding import FieldSchema
+
+from programgarden_core.nodes.base import (
+    BaseNode,
+    NodeCategory,
+    InputPort,
+    OutputPort,
+    ProductScope,
+    BrokerProvider,
+    OVERSEAS_FUTURES_PRICE_DATA_FIELDS,
+)
+
+
+FUTURES_REST_PRICE_FIELDS = OVERSEAS_FUTURES_PRICE_DATA_FIELDS + [
+    {"name": "tick_size", "type": "number", "description": "Observed o3105 UntPrc quotation increment; null if unavailable."},
+]
+
+
+class OverseasFuturesMarketDataNode(BaseNode):
+    """
+    해외선물 REST API 시세 조회 노드 (단일 종목)
+
+    SplitNode와 함께 사용하여 개별 종목의 시세를 조회합니다.
+    거래소: CME, EUREX, SGX, HKEX
+
+    Item-based execution:
+    - Input: symbol (단일 종목 {exchange, symbol})
+    - Output: value (해당 종목의 시세 데이터)
+    """
+
+    type: Literal["OverseasFuturesMarketDataNode"] = "OverseasFuturesMarketDataNode"
+    category: NodeCategory = NodeCategory.MARKET
+    description: str = "i18n:nodes.OverseasFuturesMarketDataNode.description"
+    _img_url: ClassVar[str] = ""
+    _product_scope: ClassVar[ProductScope] = ProductScope.FUTURES
+    _broker_provider: ClassVar[BrokerProvider] = BrokerProvider.LS
+
+    # 단일 종목 (Item-based execution)
+    symbol: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Single symbol entry with exchange and symbol code",
+    )
+    # symbols (복수) — executor 폴백 입력(config.get("symbols")). 선언 누락으로
+    # R5(unknown_node_field)가 정상 워크플로우를 오탐하던 이원화 정리 (⑭ count 동형).
+    symbols: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Symbol list [{exchange, symbol}] — manual list or list binding; upstream array input takes precedence",
+    )
+
+    @classmethod
+    def is_tool_enabled(cls) -> bool:
+        return True
+
+    _usage: ClassVar[Dict[str, Any]] = {
+        "when_to_use": [
+            "Fetch the latest quote (price, volume, open interest) for a single overseas futures contract (CME, EUREX, SGX, HKEX)",
+            "Use after a SplitNode to query each futures contract's current price in a per-item iteration loop",
+            "Feed live futures pricing into PositionSizingNode or ConditionNode for signal evaluation",
+        ],
+        "when_not_to_use": [
+            "For US stock price data — use OverseasStockMarketDataNode",
+            "For Korean domestic stocks — use KoreaStockMarketDataNode",
+            "When you need tick-level streaming — use OverseasFuturesRealMarketDataNode (WebSocket) instead",
+            "When querying OHLCV history — use OverseasFuturesHistoricalDataNode",
+        ],
+        "typical_scenarios": [
+            "OverseasFuturesSymbolQueryNode → SplitNode → OverseasFuturesMarketDataNode → ConditionNode (futures screening)",
+            "SplitNode.item → OverseasFuturesMarketDataNode → PositionSizingNode (contract price for sizing)",
+            "WatchlistNode → SplitNode → OverseasFuturesMarketDataNode → TableDisplayNode (futures monitor)",
+        ],
+    }
+    _features: ClassVar[List[str]] = [
+        "Returns a futures contract snapshot including tick_size from observed o3105 UntPrc; missing tick size remains null",
+        "Item-based execution: pair with SplitNode to query multiple contracts in sequence",
+        "is_tool_enabled=True — AI Agent can call this node to look up live futures prices autonomously",
+        "Supported exchanges: CME, EUREX, SGX, HKEX — symbol format includes contract month code (e.g., ESH26)",
+        "Broker connection is auto-injected via DAG traversal from OverseasFuturesBrokerNode",
+        "Replay resolves this node's request with the upstream broker's connection identity (provider, product, paper_trading, broker_node_id, and credential_id when the account is linked); a recording whose request omits that connection does not match",
+        "Only those five connection keys are allowed; each present key is a nonempty string except paper_trading, which is a boolean",
+        "A recording is {request, as_of, item, output}: a single call sets item to null and a per-symbol-iterated call records {items: {\"EXCHANGE:SYMBOL\": record}}; output keys must be declared ports and row fields must be among the port's documented fields",
+        "On a schedule tick this node re-runs and needs a fresh recording in that tick frame; on a realtime event only nodes downstream of the streaming source re-run",
+        "In replay the one-shot quote records its `values` port as a flat row list at nodes.<id>.output.values; this is not the realtime symbol-keyed ohlcv_data shape",
+    ]
+    _anti_patterns: ClassVar[List[Dict[str, str]]] = [
+        {
+            "pattern": "Using {\"ESH26\": {...}} dict-keyed format for the symbol field",
+            "reason": "ProgramGarden requires {symbol, exchange} format. Dict-keyed symbols fail validation.",
+            "alternative": "Use {\"symbol\": \"ESH26\", \"exchange\": \"CME\"} format.",
+        },
+        {
+            "pattern": "Passing a list of contracts directly to the symbol field",
+            "reason": "The symbol field expects a single {exchange, symbol} dict. Lists cause a runtime type error.",
+            "alternative": "Use SplitNode upstream to iterate over the contract list one at a time.",
+        },
+    ]
+    _examples: ClassVar[List[Dict[str, Any]]] = [
+        {
+            "title": "Fetch current price for E-mini S&P 500 futures",
+            "description": "Broker connects, then OverseasFuturesMarketDataNode fetches the latest quote for the ESH26 contract.",
+            "workflow_snippet": {
+                "id": "overseas_futures_market_data_basic",
+                "name": "Futures Quote Fetch",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbols": [{"symbol": "ESH26", "exchange": "CME"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "values port: array of {symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close}.",
+        },
+        {
+            "title": "Multi-contract scan — compare HKEX futures prices",
+            "description": "Fetch prices for multiple HKEX mini-futures contracts and display them in a table.",
+            "workflow_snippet": {
+                "id": "overseas_futures_market_data_multi",
+                "name": "HKEX Futures Scan",
+                "nodes": [
+                    {"id": "start", "type": "StartNode"},
+                    {"id": "broker", "type": "OverseasFuturesBrokerNode", "credential_id": "broker_cred", "paper_trading": False},
+                    {"id": "market", "type": "OverseasFuturesMarketDataNode", "symbols": [{"symbol": "MHIH26", "exchange": "HKEX"}, {"symbol": "MHIK26", "exchange": "HKEX"}]},
+                    {"id": "display", "type": "TableDisplayNode", "data": "{{ nodes.market.values }}"},
+                ],
+                "edges": [
+                    {"from": "start", "to": "broker"},
+                    {"from": "broker", "to": "market"},
+                    {"from": "market", "to": "display"},
+                ],
+                "credentials": [
+                    {
+                        "credential_id": "broker_cred",
+                        "type": "broker_ls_overseas_futures",
+                        "data": [
+                            {"key": "appkey", "value": "", "type": "password", "label": "App Key"},
+                            {"key": "appsecret", "value": "", "type": "password", "label": "App Secret"},
+                        ],
+                    }
+                ],
+            },
+            "expected_output": "market.values — array with one {price, volume, ...} entry per HKEX mini-futures contract.",
+        },
+    ]
+    _node_guide: ClassVar[Dict[str, Any]] = {
+        "input_handling": (
+            "The `symbols` field takes an array of {exchange, symbol} dicts — or bind a list source. "
+            "Exchange values: CME, EUREX, SGX, HKEX. Symbol includes contract month code (e.g., ESH26 for March 2026). "
+            "Broker connection auto-injected from OverseasFuturesBrokerNode."
+        ),
+        "output_consumption": (
+            "Consume the `values` port ONLY — an array of {symbol, exchange, symbol_name, price, change, change_pct, volume, open, high, low, close}. "
+            "Each REST quote also includes tick_size from o3105 UntPrc; require a finite positive value before tick-dependent orders. "
+            "⚠️ The `value` (singular) port is NOT populated at runtime — the executor emits `values` only; "
+            "binding `{{ nodes.market.value }}` (or `.value.price`) silently resolves to None. "
+            "TableDisplayNode.data ← `{{ nodes.market.values }}`; PositionSizingNode.market_data ← `{{ nodes.market.values }}`."
+        ),
+        "common_combinations": [
+            "OverseasFuturesSymbolQueryNode → OverseasFuturesMarketDataNode.symbols (multi-contract fetch)",
+            "OverseasFuturesMarketDataNode.values → TableDisplayNode.data (futures monitor)",
+            "OverseasFuturesMarketDataNode.values → PositionSizingNode.market_data (with symbols + balance)",
+        ],
+        "pitfalls": [
+            "If the bound symbol source (ConditionNode.passed_symbols / SymbolFilterNode.symbols) is empty for this run the node returns values=[] with no error (normal no-signal). The `symbols 필드가 필수입니다` error is raised only when no symbol source is configured or the binding did not resolve",
+            "Symbol must include contract month code (e.g., ESH26 not ES) — check OverseasFuturesSymbolQueryNode for valid codes",
+            "Use OverseasFuturesBrokerNode (not OverseasStockBrokerNode) as the upstream broker",
+            "REST polling returns a snapshot; for tick-level streaming use OverseasFuturesRealMarketDataNode",
+        ],
+    }
+
+    _inputs: List[InputPort] = [
+        InputPort(name="symbol", type="symbol", description="i18n:ports.symbol"),
+        InputPort(name="trigger", type="signal", description="i18n:ports.trigger", required=False),
+    ]
+    _outputs: List[OutputPort] = [
+        OutputPort(
+            name="values",
+            type="array",
+            description="Array of per-contract market quotes — [{symbol, exchange, price, change, change_pct, ...}, ...]",
+            fields=FUTURES_REST_PRICE_FIELDS,
+        ),
+    ]
+
+    _version: ClassVar[str] = "1.0.1"
+    _updated_at: ClassVar[str] = "2026-09-23"
+    _change_note: ClassVar[Optional[str]] = "Remove nonexistent singular quote output; bind the values array."
+
+    @classmethod
+    def get_field_schema(cls) -> Dict[str, "FieldSchema"]:
+        from programgarden_core.models.field_binding import FieldSchema, FieldType, FieldCategory, ExpressionMode
+        return {
+            "symbol": FieldSchema(
+                name="symbol",
+                type=FieldType.OBJECT,
+                display_name="i18n:fieldNames.OverseasFuturesMarketDataNode.symbol",
+                description="i18n:fields.OverseasFuturesMarketDataNode.symbol",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.EXPRESSION_ONLY,
+                example={"exchange": "CME", "symbol": "ESH26"},
+                example_binding="{{ nodes.split.item }}",
+                bindable_sources=[
+                    "SplitNode.item",
+                ],
+                expected_type="{exchange: str, symbol: str}",
+                help_text="i18n:fields.OverseasFuturesMarketDataNode.symbol.help_text",
+                object_schema=[
+                    {"name": "exchange", "type": "STRING", "label": "i18n:fields.OverseasFuturesMarketDataNode.symbol.exchange", "required": True},
+                    {"name": "symbol", "type": "STRING", "label": "i18n:fields.OverseasFuturesMarketDataNode.symbol.symbol", "required": True},
+                ],
+            ),
+            "symbols": FieldSchema(
+                name="symbols",
+                type=FieldType.ARRAY,
+                description="Symbol list [{exchange, symbol}] — manual list or list binding, used when no upstream array input is wired (an upstream array triggers per-item auto-iteration instead)",
+                default=None,
+                category=FieldCategory.PARAMETERS,
+                expression_mode=ExpressionMode.BOTH,
+                example=[{"exchange": "CME", "symbol": "ESH26"}],
+                example_binding="{{ nodes.contract.symbols }}",
+                bindable_sources=["FuturesContractNode.symbols", "WatchlistNode.symbols"],
+                expected_type="[{exchange: str, symbol: str}]",
+            ),
+        }
